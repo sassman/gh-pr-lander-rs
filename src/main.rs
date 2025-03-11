@@ -171,18 +171,24 @@ async fn fetch_github_data(
             .unwrap_or(&"".to_string())
             .contains(&filter.title)
     }) {
-        let mergeable_state = if pr.mergeable_state.is_none() {
+        let (mergeable_state, merge_commit) = if pr.mergeable_state.is_none() {
             let pr_no = pr.number;
             let pr_details = octocrab.pulls(&repo.org, &repo.repo).get(pr_no).await.ok();
             if let Some(pr_details) = pr_details {
-                pr_details
-                    .mergeable_state
-                    .or(Some(octocrab::models::pulls::MergeableState::Unknown))
+                let merge_commit = pr_details.merge_commit_sha;
+                (
+                    Some(
+                        pr_details
+                            .mergeable_state
+                            .unwrap_or(octocrab::models::pulls::MergeableState::Unknown),
+                    ),
+                    merge_commit,
+                )
             } else {
-                Some(octocrab::models::pulls::MergeableState::Unknown)
+                (Some(octocrab::models::pulls::MergeableState::Unknown), None)
             }
         } else {
-            Some(octocrab::models::pulls::MergeableState::Unknown)
+            (Some(octocrab::models::pulls::MergeableState::Unknown), None)
         };
 
         let row = vec![
@@ -192,18 +198,20 @@ async fn fetch_github_data(
             pr.mergeable_state
                 .or(mergeable_state)
                 .map(|merge_state| match merge_state {
-                    octocrab::models::pulls::MergeableState::Behind => "n",
-                    octocrab::models::pulls::MergeableState::Blocked => "n",
-                    octocrab::models::pulls::MergeableState::Clean => "y",
-                    octocrab::models::pulls::MergeableState::Dirty => "n",
-                    octocrab::models::pulls::MergeableState::Draft => "n",
-                    octocrab::models::pulls::MergeableState::HasHooks => "n",
-                    octocrab::models::pulls::MergeableState::Unknown => "na",
-                    octocrab::models::pulls::MergeableState::Unstable => "n",
+                    octocrab::models::pulls::MergeableState::Behind => "n".to_string(),
+                    octocrab::models::pulls::MergeableState::Blocked => "n".to_string(),
+                    octocrab::models::pulls::MergeableState::Clean => match merge_commit {
+                        Some(merge_commit) => format!("y:{merge_commit}"),
+                        None => "y".to_string(),
+                    },
+                    octocrab::models::pulls::MergeableState::Dirty => "n".to_string(),
+                    octocrab::models::pulls::MergeableState::Draft => "n".to_string(),
+                    octocrab::models::pulls::MergeableState::HasHooks => "n".to_string(),
+                    octocrab::models::pulls::MergeableState::Unknown => "na".to_string(),
+                    octocrab::models::pulls::MergeableState::Unstable => "n".to_string(),
                     _ => todo!(),
                 })
-                .unwrap()
-                .to_string(),
+                .unwrap(),
         ];
         items.push(row);
     }
