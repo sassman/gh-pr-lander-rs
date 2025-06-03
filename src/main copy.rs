@@ -2,22 +2,21 @@ use anyhow::{Context, Result, bail};
 use log::debug;
 use octocrab::{Octocrab, params};
 use ratatui::{
-    crossterm::{
-        self,
-        event::{self, Event, KeyCode, KeyEvent, KeyEventKind},
-    },
+    crossterm::{self, event},
     prelude::*,
     style::palette::tailwind,
     widgets::*,
 };
 use serde::{Deserialize, Serialize};
-use std::{env, fs::File, io::BufReader};
+use std::{
+    env,
+    fs::File,
+    io::{self, BufReader},
+};
 use tokio::sync::mpsc;
 
-use crate::gh::{comment, merge};
 use crate::pr::Pr;
 
-mod gh;
 mod pr;
 
 const PALETTES: [tailwind::Palette; 4] = [
@@ -79,6 +78,14 @@ struct App {
     loading_state: LoadingState,
 }
 
+#[derive(PartialEq)]
+enum Action {
+    Increment,
+    Decrement,
+    Quit,
+    None,
+}
+
 #[derive(Debug, Serialize, Deserialize, Eq, Clone, PartialEq)]
 struct PersistedState {
     selected_repo: Repo,
@@ -125,69 +132,40 @@ fn shutdown() -> Result<()> {
     crossterm::terminal::disable_raw_mode()?;
     Ok(())
 }
-#[derive(PartialEq)]
-enum Action {
-    Bootstrap,
-    Rebase,
-    SelectNextRepo,
-    TogglePrSelection,
-    NavigateToNextPr,
-    NavigateToPreviousPr,
-    MergeSelectedPrs,
 
-    Quit,
-    None,
-}
-
-async fn update(app: &mut App, msg: Action) -> Result<Action> {
+fn update(app: &mut App, msg: Action) -> Action {
     match msg {
         Action::Quit => app.should_quit = true, // You can handle cleanup and exit here
-        Action::Bootstrap => {
-            // Create app state
-            app.recent_repos = loading_recent_repos()?;
-
-            if let Ok(state) = load_persisted_state() {
-                app.restore_session(state).await?;
-            } else {
-                app.select_repo().await?;
-            }
-        }
-        Action::Rebase => {
-            app.rebase().await?;
-        }
-        Action::SelectNextRepo => {
-            app.select_next_repo().await?;
-        }
-        Action::TogglePrSelection => {
-            app.select_toggle();
-        }
-        Action::NavigateToNextPr => {
-            app.next();
-        }
-        Action::NavigateToPreviousPr => {
-            app.previous();
-        }
-        Action::MergeSelectedPrs => {
-            app.merge().await?;
-        }
         _ => {}
     };
-    Ok(Action::None)
+    Action::None
 }
 
 fn start_event_handler(
-    _app: &App,
+    app: &App,
     tx: mpsc::UnboundedSender<Action>,
 ) -> tokio::task::JoinHandle<()> {
     let tick_rate = std::time::Duration::from_millis(250);
     tokio::spawn(async move {
         loop {
             let action = if crossterm::event::poll(tick_rate).unwrap() {
-                handle_events().unwrap_or(Action::None)
+                if let crossterm::event::Event::Key(key) = crossterm::event::read().unwrap() {
+                    if key.kind == event::KeyEventKind::Press {
+                        match key.code {
+                            crossterm::event::KeyCode::Char('j') => Action::Increment,
+                            crossterm::event::KeyCode::Char('k') => Action::Decrement,
+                            crossterm::event::KeyCode::Char('q') => Action::Quit,
+                            _ => Action::None,
+                        }
+                    } else {
+                        Action::None
+                    }
+                } else {
+                    Action::None
+                }
             } else {
                 Action::None
             };
-
             if let Err(_) = tx.send(action) {
                 break;
             }
@@ -200,12 +178,18 @@ async fn run() -> Result<()> {
 
     let (action_tx, mut action_rx) = mpsc::unbounded_channel();
 
-    let mut app = App::new(action_tx);
+    // Create app state
+    let recent_repos = loading_recent_repos()?;
+    let persisted_state = load_persisted_state();
+    let mut app = App::new(recent_repos, action_tx);
+
+    if let Ok(state) = persisted_state {
+        app.restore_session(state).await?;
+    } else {
+        app.select_repo().await?;
+    }
 
     let task = start_event_handler(&app, app.action_tx.clone());
-    app.action_tx
-        .send(Action::Bootstrap)
-        .expect("Failed to send bootstrap action");
 
     loop {
         t.draw(|f| {
@@ -213,23 +197,13 @@ async fn run() -> Result<()> {
         })?;
 
         if let Some(action) = action_rx.recv().await {
-            if let Err(err) = update(&mut app, action).await {
-                app.loading_state = LoadingState::Error(err.to_string());
-                app.should_quit = true;
-                debug!("Error updating app: {}", err);
-            }
+            update(&mut app, action);
         }
 
         if app.should_quit {
-            store_recent_repos(&app.recent_repos)?;
-            if let Some(repo) = app.repo().cloned() {
-                let persisted_state = PersistedState {
-                    selected_repo: repo,
-                };
-                store_persisted_state(&persisted_state)?;
-            }
             break;
         }
+        app.ticker += 1;
     }
 
     task.abort();
@@ -238,69 +212,23 @@ async fn run() -> Result<()> {
 }
 
 fn ui(f: &mut Frame, app: &mut App) {
-    let Some(selected_repo) = app.repo() else {
-        f.render_widget(
-            Paragraph::new("No repository selected").centered(),
-            f.area(),
-        );
-        return;
-    };
-    let size = f.area();
-
-    let loading_state = Line::from(format!("{:?}", app.loading_state)).right_aligned();
-
-    let block = Block::default()
-        .title(format!(
-            "[/] GitHub PRs: {}/{}@{}",
-            &selected_repo.org, &selected_repo.repo, &selected_repo.branch
+    let area = f.area();
+    f.render_widget(
+        Paragraph::new(format!(
+            "Press j or k to increment or decrement.\n\nCounter: {:?}\n\nTicker: {}",
+            app.loading_state, app.selected_repo
         ))
-        .title(loading_state)
-        .borders(Borders::ALL);
-
-    let header_style = Style::default()
-        .fg(app.colors.header_fg)
-        .bg(app.colors.header_bg);
-
-    let header_cells = ["#PR", "Description", "Author", "#Comments", "Mergable"]
-        .iter()
-        .map(|h| Cell::from(*h).style(header_style));
-
-    let header = Row::new(header_cells)
-        .style(Style::default().bg(Color::Blue))
-        .height(1);
-
-    let selected_row_style = Style::default()
-        .add_modifier(Modifier::REVERSED)
-        .fg(app.colors.selected_row_style_fg);
-
-    let rows = app.prs.iter().enumerate().map(|(i, item)| {
-        let color = match i % 2 {
-            0 => app.colors.normal_row_color,
-            _ => app.colors.alt_row_color,
-        };
-        let color = if app.selected_prs.contains(&i) {
-            app.colors.selected_cell_style_fg
-        } else {
-            color
-        };
-        let row: Row = item.into();
-        row.style(Style::new().fg(app.colors.row_fg).bg(color))
-            .height(1)
-    });
-
-    let widths = [
-        Constraint::Percentage(10),
-        Constraint::Percentage(70),
-        Constraint::Percentage(10),
-        Constraint::Percentage(10),
-    ];
-
-    let table = Table::new(rows, widths)
-        .header(header)
-        .block(block)
-        .row_highlight_style(selected_row_style);
-
-    f.render_stateful_widget(table, size, &mut app.state);
+        .block(
+            Block::default()
+                .title("ratatui async counter app")
+                .title_alignment(Alignment::Center)
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded),
+        )
+        .style(Style::default().fg(Color::Cyan))
+        .alignment(Alignment::Center),
+        area,
+    );
 }
 
 #[tokio::main]
@@ -313,13 +241,13 @@ async fn main() -> Result<()> {
 }
 
 impl App {
-    fn new(action_tx: mpsc::UnboundedSender<Action>) -> App {
+    fn new(recent_repos: Vec<Repo>, action_tx: mpsc::UnboundedSender<Action>) -> App {
         App {
             action_tx,
             should_quit: false,
             state: TableState::default(),
             prs: Vec::new(),
-            recent_repos: Vec::new(),
+            recent_repos,
             selected_repo: 0,
             filter: PrFilter {
                 title: "chore".to_string(),
@@ -338,25 +266,19 @@ impl App {
             .build()?)
     }
 
-    fn repo(&self) -> Option<&Repo> {
-        self.recent_repos.get(self.selected_repo)
+    fn repo(&self) -> &Repo {
+        &self.recent_repos[self.selected_repo]
     }
 
     async fn restore_session(&mut self, state: PersistedState) -> Result<()> {
-        let Some(repo) = self.repo().cloned() else {
-            debug!("No repository selected");
-            return Ok(());
-        };
-
         // Restore the selected repository from the persisted state
         if let Some(index) = self
             .recent_repos
-            .clone()
             .iter()
             .position(|r| r == &state.selected_repo)
         {
             self.selected_repo = index;
-            self.fetch_data(&repo).await?;
+            self.fetch_data().await?;
             self.state.select(Some(0));
         } else {
             bail!("Selected repository not found in recent repositories");
@@ -366,11 +288,11 @@ impl App {
     }
 
     /// Fetch data from GitHub for the selected repository and filter
-    async fn fetch_data(&mut self, repo: &Repo) -> Result<()> {
+    async fn fetch_data(&mut self) -> Result<()> {
         self.loading_state = LoadingState::Loading;
 
         let octocrab = self.octocrab()?.clone();
-        let repo = repo.clone();
+        let repo = self.repo().clone();
         let filter = self.filter.clone();
 
         let github_data =
@@ -435,16 +357,12 @@ impl App {
     }
 
     async fn select_repo(&mut self) -> Result<()> {
-        let Some(repo) = self.repo().cloned() else {
-            bail!("No repository selected");
-        };
-        debug!("Selecting repo: {:?}", repo);
-
         // This function is a placeholder for future implementation
         // It could be used to select a specific repo from a list or input
         self.selected_prs.clear();
-        self.fetch_data(&repo).await?;
+        self.fetch_data().await?;
         self.state.select(Some(0));
+        debug!("Selecting repo: {}", self.repo().repo);
         Ok(())
     }
 
@@ -457,16 +375,13 @@ impl App {
     async fn rebase(&mut self) -> Result<()> {
         // for all selected PRs, authored by `dependabot` we rebase by adding the commend `@dependabot rebase`
 
-        let Some(repo) = self.repo() else {
-            bail!("No repository selected for rebasing");
-        };
         let octocrab = self.octocrab()?;
         for &pr_index in &self.selected_prs {
             if let Some(pr) = self.prs.get(pr_index) {
                 if pr.author.starts_with("dependabot") {
                     debug!("Rebasing PR #{}", pr.number);
 
-                    comment(&octocrab, repo, pr, "@dependabot rebase").await?;
+                    comment(&octocrab, self.repo(), pr, "@dependabot rebase").await?;
                 } else {
                     debug!("Skipping PR #{} authored by {}", pr.number, pr.author);
                 }
@@ -475,39 +390,6 @@ impl App {
             }
         }
         debug!("Rebasing selected PRs: {:?}", self.selected_prs);
-
-        Ok(())
-    }
-
-    /// Merge the selected PRs
-    async fn merge(&mut self) -> Result<()> {
-        let Some(repo) = self.repo() else {
-            bail!("No repository selected for merging");
-        };
-        let octocrab = self.octocrab()?;
-        let mut selected_prs = self.selected_prs.clone();
-        for &pr_index in self.selected_prs.iter() {
-            if let Some(pr) = self.prs.get(pr_index) {
-                debug!("Merging PR #{}", pr.number);
-                match merge(&octocrab, repo, pr).await {
-                    Ok(_) => {
-                        debug!("Successfully merged PR #{}", pr.number);
-                        selected_prs.retain(|&x| x != pr_index);
-                    }
-                    Err(err) => {
-                        debug!("Failed to merge PR #{}: {}", pr.number, err);
-                    }
-                }
-            } else {
-                debug!("No PR found at index {}", pr_index);
-            }
-        }
-
-        // todo: now clean up `self.prs` by those that are not in `selected_prs` anymore,
-        // there the index of the PRs is to take
-
-        self.selected_prs = selected_prs;
-        debug!("Merging selected PRs: {:?}", self.selected_prs);
 
         Ok(())
     }
@@ -545,25 +427,142 @@ async fn fetch_github_data<'a>(
     Ok(prs)
 }
 
-fn handle_events() -> Result<Action> {
-    Ok(match event::read()? {
-        Event::Key(key) if key.kind == KeyEventKind::Press => handle_key_event(key),
-        _ => Action::None,
-    })
+#[tokio::main]
+async fn main() -> Result<()> {
+    // Set up terminal
+    enable_raw_mode()?;
+    let mut stdout = io::stdout();
+    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+    let backend = CrosstermBackend::new(stdout);
+    let mut terminal = Terminal::new(backend)?;
+
+    // Main loop
+    loop {
+        terminal.draw(|f| {
+            let selected_repo = app.repo();
+            let size = f.area();
+
+            let loading_state = Line::from(format!("{:?}", app.loading_state)).right_aligned();
+
+            let block = Block::default()
+                .title(format!(
+                    "[/] GitHub PRs: {}/{}@{}",
+                    &selected_repo.org, &selected_repo.repo, &selected_repo.branch
+                ))
+                .title(loading_state)
+                .borders(Borders::ALL);
+
+            let header_style = Style::default()
+                .fg(app.colors.header_fg)
+                .bg(app.colors.header_bg);
+
+            let header_cells = ["#PR", "Description", "Author", "#Comments", "Mergable"]
+                .iter()
+                .map(|h| Cell::from(*h).style(header_style));
+
+            let header = Row::new(header_cells)
+                .style(Style::default().bg(Color::Blue))
+                .height(1);
+
+            let selected_row_style = Style::default()
+                .add_modifier(Modifier::REVERSED)
+                .fg(app.colors.selected_row_style_fg);
+
+            let rows = app.prs.iter().enumerate().map(|(i, item)| {
+                let color = match i % 2 {
+                    0 => app.colors.normal_row_color,
+                    _ => app.colors.alt_row_color,
+                };
+                let color = if app.selected_prs.contains(&i) {
+                    app.colors.selected_cell_style_fg
+                } else {
+                    color
+                };
+                let row: Row = item.into();
+                row.style(Style::new().fg(app.colors.row_fg).bg(color))
+                    .height(1)
+            });
+
+            let widths = [
+                Constraint::Percentage(10),
+                Constraint::Percentage(70),
+                Constraint::Percentage(10),
+                Constraint::Percentage(10),
+            ];
+
+            let table = Table::new(rows, widths)
+                .header(header)
+                .block(block)
+                .row_highlight_style(selected_row_style);
+
+            f.render_stateful_widget(table, size, &mut app.state);
+        })?;
+
+        if let Err(e) = handle_events(&mut app).await {
+            debug!("Error handling events: {}", e);
+            break;
+        }
+    }
+
+    // Store recent repositories to a file
+    if let Err(e) = store_recent_repos(&app.recent_repos) {
+        debug!("Error storing recent repositories: {}", e);
+    }
+
+    // Store the current state to a file
+    let state = PersistedState {
+        selected_repo: app.repo().clone(),
+    };
+    if let Err(e) = store_persisted_state(&state) {
+        debug!("Error storing persisted state: {}", e);
+    }
+
+    // Restore terminal
+    disable_raw_mode()?;
+    execute!(
+        terminal.backend_mut(),
+        LeaveAlternateScreen,
+        DisableMouseCapture
+    )?;
+    terminal.show_cursor()?;
+
+    Ok(())
 }
 
-fn handle_key_event(key: KeyEvent) -> Action {
+async fn handle_events(app: &mut App) -> Result<()> {
+    match event::read()? {
+        Event::Key(key) if key.kind == KeyEventKind::Press => handle_key_event(app, key).await,
+        _ => Ok(()),
+    }
+}
+
+async fn handle_key_event(app: &mut App, key: KeyEvent) -> Result<()> {
     // let shift_pressed = key.modifiers.contains(KeyModifiers::SHIFT);
     match key.code {
-        KeyCode::Char('q') => Action::Quit,
-        KeyCode::Char('r') => Action::Rebase,
-        KeyCode::Char('/') => Action::SelectNextRepo,
-        KeyCode::Char('j') | KeyCode::Down => Action::NavigateToNextPr,
-        KeyCode::Char('k') | KeyCode::Up => Action::NavigateToPreviousPr,
-        KeyCode::Char(' ') => Action::TogglePrSelection,
-        KeyCode::Char('m') => Action::MergeSelectedPrs,
-        _ => Action::None,
+        KeyCode::Char('q') => app.exit(),
+        KeyCode::Char('r') => app.rebase().await,
+        KeyCode::Char('/') => app.select_next_repo().await,
+        KeyCode::Char('j') | KeyCode::Down => {
+            app.next();
+            Ok(())
+        }
+        KeyCode::Char('k') | KeyCode::Up => {
+            app.previous();
+            Ok(())
+        }
+        KeyCode::Char(' ') => {
+            app.select_toggle();
+            Ok(())
+        }
+        _ => Ok(()),
     }
+}
+
+async fn comment(octocrab: &Octocrab, repo: &Repo, pr: &Pr, body: &str) -> Result<()> {
+    let issue = octocrab.issues(&repo.org, &repo.repo);
+    issue.create_comment(pr.number as _, body).await?;
+
+    Ok(())
 }
 
 /// loading recent repositories from a local config file, that is just json file
