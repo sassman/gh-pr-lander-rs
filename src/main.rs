@@ -368,34 +368,42 @@ async fn update(app: &mut App, msg: Action) -> Result<Action> {
         }
 
         Action::Rebase => {
-            // Auto-select all PRs that need rebase, then trigger background rebase
+            // If user has manually selected PRs, rebase those
+            // Otherwise, auto-select all PRs that need rebase
             if let Some(repo) = app.repo().cloned() {
-                let (prs_needing_rebase, prs_clone) = {
+                let (selected_indices, prs_clone) = {
                     let repo_data = app.get_current_repo_data_mut();
 
-                    // Auto-select all PRs that need rebase
-                    let prs_needing_rebase: Vec<usize> = repo_data.prs
-                        .iter()
-                        .enumerate()
-                        .filter(|(_, pr)| pr.needs_rebase)
-                        .map(|(idx, _)| idx)
-                        .collect();
+                    // Check if user has manually selected PRs
+                    let selected_indices = if !repo_data.selected_prs.is_empty() {
+                        // Use manual selection
+                        repo_data.selected_prs.clone()
+                    } else {
+                        // Auto-select all PRs that need rebase
+                        let prs_needing_rebase: Vec<usize> = repo_data.prs
+                            .iter()
+                            .enumerate()
+                            .filter(|(_, pr)| pr.needs_rebase)
+                            .map(|(idx, _)| idx)
+                            .collect();
 
-                    if prs_needing_rebase.is_empty() {
-                        debug!("No PRs need rebase");
-                        return Ok(Action::None);
-                    }
+                        if prs_needing_rebase.is_empty() {
+                            debug!("No PRs selected and no PRs need rebase");
+                            return Ok(Action::None);
+                        }
 
-                    // Update selection to PRs needing rebase
-                    repo_data.selected_prs = prs_needing_rebase.clone();
+                        // Update selection to PRs needing rebase for visual feedback
+                        repo_data.selected_prs = prs_needing_rebase.clone();
+                        prs_needing_rebase
+                    };
 
-                    (prs_needing_rebase, repo_data.prs.clone())
+                    (selected_indices, repo_data.prs.clone())
                 };
 
                 let _ = app.task_tx.send(BackgroundTask::Rebase {
                     repo,
                     prs: prs_clone,
-                    selected_indices: prs_needing_rebase,
+                    selected_indices,
                     octocrab: app.octocrab()?,
                 });
             }
@@ -886,20 +894,12 @@ fn render_action_panel(f: &mut Frame, app: &App, area: Rect) {
             tailwind::GREEN.c700,
         ));
 
-        // Check if any selected PRs are from dependabot
-        let has_dependabot = repo_data.selected_prs.iter().any(|&idx| {
-            repo_data.prs.get(idx)
-                .map(|pr| pr.author.starts_with("dependabot"))
-                .unwrap_or(false)
-        });
-
-        if has_dependabot {
-            context_actions.push((
-                "r".to_string(),
-                format!("Rebase ({})", selected_count),
-                tailwind::BLUE.c700,
-            ));
-        }
+        // Show rebase action for manually selected PRs
+        context_actions.push((
+            "r".to_string(),
+            format!("Rebase ({})", selected_count),
+            tailwind::BLUE.c700,
+        ));
     } else if !repo_data.prs.is_empty() {
         // When nothing selected, show how to select
         context_actions.push((
@@ -907,16 +907,16 @@ fn render_action_panel(f: &mut Frame, app: &App, area: Rect) {
             "Select".to_string(),
             tailwind::AMBER.c600,
         ));
-    }
 
-    // Check if there are PRs that need rebase
-    let prs_needing_rebase = repo_data.prs.iter().filter(|pr| pr.needs_rebase).count();
-    if prs_needing_rebase > 0 {
-        context_actions.push((
-            "r".to_string(),
-            format!("Auto-rebase ({})", prs_needing_rebase),
-            tailwind::YELLOW.c600,
-        ));
+        // Check if there are PRs that need rebase - show auto-rebase option
+        let prs_needing_rebase = repo_data.prs.iter().filter(|pr| pr.needs_rebase).count();
+        if prs_needing_rebase > 0 {
+            context_actions.push((
+                "r".to_string(),
+                format!("Auto-rebase ({})", prs_needing_rebase),
+                tailwind::YELLOW.c600,
+            ));
+        }
     }
 
     // Add Enter action when PR(s) are selected or focused
