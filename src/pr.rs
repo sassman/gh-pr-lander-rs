@@ -4,6 +4,7 @@ use ratatui::widgets::Row;
 
 use crate::Repo;
 
+#[derive(Debug, Clone)]
 pub struct Pr {
     pub number: usize,
     pub title: String,
