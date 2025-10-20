@@ -66,6 +66,17 @@ enum LoadingState {
     Error(String),
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+enum BootstrapState {
+    #[default]
+    NotStarted,
+    LoadingRepositories,
+    RestoringSession,
+    LoadingPRs,
+    Completed,
+    Error(String),
+}
+
 struct App {
     action_tx: mpsc::UnboundedSender<Action>,
     should_quit: bool,
@@ -76,6 +87,17 @@ struct App {
     filter: PrFilter,
     selected_prs: Vec<usize>,
     colors: TableColors,
+    loading_state: LoadingState,
+    bootstrap_state: BootstrapState,
+    // Tabbed view: store PRs and state for each repo
+    repo_data: std::collections::HashMap<usize, RepoData>,
+}
+
+#[derive(Debug, Clone, Default)]
+struct RepoData {
+    prs: Vec<Pr>,
+    table_state: TableState,
+    selected_prs: Vec<usize>,
     loading_state: LoadingState,
 }
 
@@ -129,7 +151,10 @@ fn shutdown() -> Result<()> {
 enum Action {
     Bootstrap,
     Rebase,
+    RefreshCurrentRepo,
     SelectNextRepo,
+    SelectPreviousRepo,
+    SelectRepoByIndex(usize),
     TogglePrSelection,
     NavigateToNextPr,
     NavigateToPreviousPr,
@@ -143,20 +168,73 @@ async fn update(app: &mut App, msg: Action) -> Result<Action> {
     match msg {
         Action::Quit => app.should_quit = true, // You can handle cleanup and exit here
         Action::Bootstrap => {
-            // Create app state
-            app.recent_repos = loading_recent_repos()?;
+            // Stage 1: Loading repositories
+            app.bootstrap_state = BootstrapState::LoadingRepositories;
 
-            if let Ok(state) = load_persisted_state() {
-                app.restore_session(state).await?;
+            match loading_recent_repos() {
+                Ok(repos) => {
+                    app.recent_repos = repos;
+
+                    // Ensure we have at least one repo
+                    if app.recent_repos.is_empty() {
+                        app.bootstrap_state = BootstrapState::Error(
+                            "No repositories configured. Add repositories to .recent-repositories.json".to_string()
+                        );
+                        return Ok(Action::None);
+                    }
+                }
+                Err(err) => {
+                    app.bootstrap_state = BootstrapState::Error(format!("Failed to load repositories: {}", err));
+                    return Ok(Action::None);
+                }
+            }
+
+            // Stage 2: Restoring session
+            app.bootstrap_state = BootstrapState::RestoringSession;
+
+            let restored = if let Ok(state) = load_persisted_state() {
+                if let Err(err) = app.restore_session(state).await {
+                    debug!("Failed to restore session: {}", err);
+                    // Don't fail the bootstrap, just log and continue
+                    false
+                } else {
+                    true
+                }
             } else {
-                app.select_repo().await?;
+                false
+            };
+
+            // If we didn't restore a session, select the first repo by default
+            if !restored {
+                app.selected_repo = 0;
+            }
+
+            // Stage 3: Loading PRs
+            app.bootstrap_state = BootstrapState::LoadingPRs;
+
+            match app.load_all_repos().await {
+                Ok(_) => {
+                    app.bootstrap_state = BootstrapState::Completed;
+                }
+                Err(err) => {
+                    app.bootstrap_state = BootstrapState::Error(format!("Failed to load PRs: {}", err));
+                }
             }
         }
         Action::Rebase => {
             app.rebase().await?;
         }
+        Action::RefreshCurrentRepo => {
+            app.refresh_current_repo().await?;
+        }
         Action::SelectNextRepo => {
-            app.select_next_repo().await?;
+            app.select_next_repo();
+        }
+        Action::SelectPreviousRepo => {
+            app.select_previous_repo();
+        }
+        Action::SelectRepoByIndex(index) => {
+            app.select_repo_by_index(index);
         }
         Action::TogglePrSelection => {
             app.select_toggle();
@@ -238,20 +316,109 @@ async fn run() -> Result<()> {
 }
 
 fn ui(f: &mut Frame, app: &mut App) {
-    let Some(selected_repo) = app.repo() else {
+    // Show bootstrap status if not completed
+    if app.bootstrap_state != BootstrapState::Completed {
+        let message = match &app.bootstrap_state {
+            BootstrapState::NotStarted => "Initializing application...",
+            BootstrapState::LoadingRepositories => "Loading repositories...",
+            BootstrapState::RestoringSession => "Restoring session...",
+            BootstrapState::LoadingPRs => "Loading pull requests from all repositories...",
+            BootstrapState::Error(err) => {
+                // Return early for error to show it
+                f.render_widget(
+                    Paragraph::new(format!("Error: {}", err))
+                        .centered()
+                        .style(Style::default().fg(Color::Red)),
+                    f.area(),
+                );
+                return;
+            }
+            BootstrapState::Completed => unreachable!(),
+        };
+
         f.render_widget(
-            Paragraph::new("No repository selected").centered(),
+            Paragraph::new(message)
+                .centered()
+                .style(Style::default().fg(app.colors.row_fg)),
             f.area(),
         );
         return;
-    };
-    let size = f.area();
+    }
 
-    let loading_state = Line::from(format!("{:?}", app.loading_state)).right_aligned();
+    // If no repositories at all (shouldn't happen after bootstrap completes)
+    if app.recent_repos.is_empty() {
+        f.render_widget(
+            Paragraph::new("No repositories configured. Add repositories to .recent-repositories.json").centered(),
+            f.area(),
+        );
+        return;
+    }
+
+    // Split the layout: tabs on top, table below
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3), // Tabs
+            Constraint::Min(0),    // Table
+        ])
+        .split(f.area());
+
+    // Render tabs (always visible when there are repos)
+    let tab_titles: Vec<Line> = app
+        .recent_repos
+        .iter()
+        .enumerate()
+        .map(|(i, repo)| {
+            let number = if i < 9 { format!("{} ", i + 1) } else { String::new() };
+            Line::from(format!("{}{}/{}", number, repo.org, repo.repo))
+        })
+        .collect();
+
+    let tabs = Tabs::new(tab_titles)
+        .block(Block::default().borders(Borders::ALL).title("Projects [Tab/Shift+Tab or 1-9 to switch, / to cycle]"))
+        .select(app.selected_repo)
+        .style(Style::default().fg(app.colors.row_fg))
+        .highlight_style(
+            Style::default()
+                .fg(app.colors.selected_row_style_fg)
+                .add_modifier(Modifier::BOLD)
+                .bg(app.colors.header_bg),
+        );
+
+    f.render_widget(tabs, chunks[0]);
+
+    // Get the selected repo (should always exist if we have repos)
+    let Some(selected_repo) = app.repo() else {
+        f.render_widget(
+            Paragraph::new("Error: Invalid repository selection").centered(),
+            chunks[1],
+        );
+        return;
+    };
+
+    // Get the current repo data
+    let repo_data = app.get_current_repo_data();
+
+    // Format the loading state with refresh hint
+    let status_text = match &repo_data.loading_state {
+        LoadingState::Idle => "Idle [Ctrl+r to refresh]".to_string(),
+        LoadingState::Loading => "Loading...".to_string(),
+        LoadingState::Loaded => "Loaded [Ctrl+r to refresh]".to_string(),
+        LoadingState::Error(err) => {
+            // Truncate error if too long
+            let err_short = if err.len() > 30 {
+                format!("{}...", &err[..30])
+            } else {
+                err.clone()
+            };
+            format!("Error: {} [Ctrl+r to retry]", err_short)
+        }
+    };
+    let loading_state = Line::from(status_text).right_aligned();
 
     let block = Block::default()
         .title(format!(
-            "[/] GitHub PRs: {}/{}@{}",
+            "GitHub PRs: {}/{}@{}",
             &selected_repo.org, &selected_repo.repo, &selected_repo.branch
         ))
         .title(loading_state)
@@ -273,34 +440,52 @@ fn ui(f: &mut Frame, app: &mut App) {
         .add_modifier(Modifier::REVERSED)
         .fg(app.colors.selected_row_style_fg);
 
-    let rows = app.prs.iter().enumerate().map(|(i, item)| {
-        let color = match i % 2 {
-            0 => app.colors.normal_row_color,
-            _ => app.colors.alt_row_color,
+    // Check if we should show a message instead of PRs
+    if repo_data.prs.is_empty() {
+        let message = match &repo_data.loading_state {
+            LoadingState::Loading => "Loading pull requests...",
+            LoadingState::Error(_err) => "Error loading data. Press Ctrl+r to retry.",
+            _ => "No pull requests found matching filter",
         };
-        let color = if app.selected_prs.contains(&i) {
-            app.colors.selected_cell_style_fg
-        } else {
-            color
-        };
-        let row: Row = item.into();
-        row.style(Style::new().fg(app.colors.row_fg).bg(color))
-            .height(1)
-    });
 
-    let widths = [
-        Constraint::Percentage(10),
-        Constraint::Percentage(70),
-        Constraint::Percentage(10),
-        Constraint::Percentage(10),
-    ];
+        let paragraph = Paragraph::new(message)
+            .block(block)
+            .style(Style::default().fg(app.colors.row_fg))
+            .alignment(ratatui::layout::Alignment::Center);
 
-    let table = Table::new(rows, widths)
-        .header(header)
-        .block(block)
-        .row_highlight_style(selected_row_style);
+        f.render_widget(paragraph, chunks[1]);
+    } else {
+        let rows = repo_data.prs.iter().enumerate().map(|(i, item)| {
+            let color = match i % 2 {
+                0 => app.colors.normal_row_color,
+                _ => app.colors.alt_row_color,
+            };
+            let color = if repo_data.selected_prs.contains(&i) {
+                app.colors.selected_cell_style_fg
+            } else {
+                color
+            };
+            let row: Row = item.into();
+            row.style(Style::new().fg(app.colors.row_fg).bg(color))
+                .height(1)
+        });
 
-    f.render_stateful_widget(table, size, &mut app.state);
+        let widths = [
+            Constraint::Percentage(10),
+            Constraint::Percentage(70),
+            Constraint::Percentage(10),
+            Constraint::Percentage(10),
+        ];
+
+        let table = Table::new(rows, widths)
+            .header(header)
+            .block(block)
+            .row_highlight_style(selected_row_style);
+
+        // Get mutable reference to the current repo's table state
+        let table_state = &mut app.get_current_repo_data_mut().table_state;
+        f.render_stateful_widget(table, chunks[1], table_state);
+    }
 }
 
 #[tokio::main]
@@ -327,7 +512,40 @@ impl App {
             selected_prs: Vec::new(),
             colors: TableColors::new(&PALETTES[0]),
             loading_state: LoadingState::Idle,
+            bootstrap_state: BootstrapState::NotStarted,
+            repo_data: std::collections::HashMap::new(),
         }
+    }
+
+    /// Get the current repo data (read-only)
+    fn get_current_repo_data(&self) -> RepoData {
+        self.repo_data
+            .get(&self.selected_repo)
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    /// Get the current repo data (mutable)
+    fn get_current_repo_data_mut(&mut self) -> &mut RepoData {
+        self.repo_data.entry(self.selected_repo).or_default()
+    }
+
+    /// Save current state to the repo data before switching tabs
+    fn save_current_repo_state(&mut self) {
+        let data = self.repo_data.entry(self.selected_repo).or_default();
+        data.prs = self.prs.clone();
+        data.table_state = self.state.clone();
+        data.selected_prs = self.selected_prs.clone();
+        data.loading_state = self.loading_state.clone();
+    }
+
+    /// Load state from repo data when switching tabs
+    fn load_repo_state(&mut self) {
+        let data = self.get_current_repo_data();
+        self.prs = data.prs;
+        self.state = data.table_state;
+        self.selected_prs = data.selected_prs;
+        self.loading_state = data.loading_state;
     }
 
     fn octocrab(&self) -> Result<Octocrab> {
@@ -343,23 +561,17 @@ impl App {
     }
 
     async fn restore_session(&mut self, state: PersistedState) -> Result<()> {
-        let Some(repo) = self.repo().cloned() else {
-            debug!("No repository selected");
-            return Ok(());
-        };
-
         // Restore the selected repository from the persisted state
         if let Some(index) = self
             .recent_repos
-            .clone()
             .iter()
             .position(|r| r == &state.selected_repo)
         {
             self.selected_repo = index;
-            self.fetch_data(&repo).await?;
-            self.state.select(Some(0));
         } else {
-            bail!("Selected repository not found in recent repositories");
+            // If the persisted repo is not found, default to first repo
+            debug!("Persisted repository not found in recent repositories, defaulting to first");
+            self.selected_repo = 0;
         }
 
         Ok(())
@@ -423,13 +635,101 @@ impl App {
         }
     }
 
-    /// todo: This should be opening a pop-up dialog to let the user type in a org, repo, and branch
-    /// Here is the cheap version that just cycles through the recent repos
-    async fn select_next_repo(&mut self) -> Result<()> {
-        let next_repo_index = (self.selected_repo + 1) % self.recent_repos.len();
+    /// Select the next repo (cycle forward through tabs)
+    fn select_next_repo(&mut self) {
+        self.save_current_repo_state();
+        self.selected_repo = (self.selected_repo + 1) % self.recent_repos.len();
+        self.load_repo_state();
+    }
 
-        self.selected_repo = next_repo_index;
-        self.select_repo().await?;
+    /// Select the previous repo (cycle backward through tabs)
+    fn select_previous_repo(&mut self) {
+        self.save_current_repo_state();
+        self.selected_repo = if self.selected_repo == 0 {
+            self.recent_repos.len() - 1
+        } else {
+            self.selected_repo - 1
+        };
+        self.load_repo_state();
+    }
+
+    /// Select a repo by index (for number key shortcuts)
+    fn select_repo_by_index(&mut self, index: usize) {
+        if index < self.recent_repos.len() {
+            self.save_current_repo_state();
+            self.selected_repo = index;
+            self.load_repo_state();
+        }
+    }
+
+    /// Load data for all repositories in parallel on startup
+    async fn load_all_repos(&mut self) -> Result<()> {
+        let octocrab = self.octocrab()?;
+        let filter = self.filter.clone();
+        let repos = self.recent_repos.clone();
+
+        // Set all repos to loading state
+        for i in 0..repos.len() {
+            let data = self.repo_data.entry(i).or_default();
+            data.loading_state = LoadingState::Loading;
+        }
+
+        // Spawn tasks to fetch data for each repo in parallel
+        let mut tasks = Vec::new();
+        for (index, repo) in repos.iter().enumerate() {
+            let octocrab = octocrab.clone();
+            let repo = repo.clone();
+            let filter = filter.clone();
+
+            let task = tokio::spawn(async move {
+                let result = fetch_github_data(&octocrab, &repo, &filter).await;
+                (index, result)
+            });
+            tasks.push(task);
+        }
+
+        // Collect results as they complete
+        for task in tasks {
+            if let Ok((index, result)) = task.await {
+                let data = self.repo_data.entry(index).or_default();
+                match result {
+                    Ok(prs) => {
+                        data.prs = prs;
+                        data.loading_state = LoadingState::Loaded;
+                        if data.table_state.selected().is_none() && !data.prs.is_empty() {
+                            data.table_state.select(Some(0));
+                        }
+                    }
+                    Err(err) => {
+                        data.loading_state = LoadingState::Error(err.to_string());
+                    }
+                }
+            }
+        }
+
+        // Load the current repo state into the app
+        self.load_repo_state();
+
+        Ok(())
+    }
+
+    /// Refresh the current repository's data
+    async fn refresh_current_repo(&mut self) -> Result<()> {
+        let Some(repo) = self.repo().cloned() else {
+            bail!("No repository selected");
+        };
+
+        // Set to loading state
+        self.loading_state = LoadingState::Loading;
+        let data = self.repo_data.entry(self.selected_repo).or_default();
+        data.loading_state = LoadingState::Loading;
+
+        self.fetch_data(&repo).await?;
+
+        // Update the repo data cache
+        let data = self.repo_data.entry(self.selected_repo).or_default();
+        data.prs = self.prs.clone();
+        data.loading_state = self.loading_state.clone();
 
         Ok(())
     }
@@ -553,15 +853,32 @@ fn handle_events() -> Result<Action> {
 }
 
 fn handle_key_event(key: KeyEvent) -> Action {
-    // let shift_pressed = key.modifiers.contains(KeyModifiers::SHIFT);
+    use crossterm::event::KeyModifiers;
+    let shift_pressed = key.modifiers.contains(KeyModifiers::SHIFT);
+    let ctrl_pressed = key.modifiers.contains(KeyModifiers::CONTROL);
+
     match key.code {
         KeyCode::Char('q') => Action::Quit,
+        KeyCode::Char('r') if ctrl_pressed => Action::RefreshCurrentRepo,
         KeyCode::Char('r') => Action::Rebase,
         KeyCode::Char('/') => Action::SelectNextRepo,
+        KeyCode::Tab if shift_pressed => Action::SelectPreviousRepo,
+        KeyCode::Tab => Action::SelectNextRepo,
+        KeyCode::BackTab => Action::SelectPreviousRepo, // Shift+Tab on some terminals
         KeyCode::Char('j') | KeyCode::Down => Action::NavigateToNextPr,
         KeyCode::Char('k') | KeyCode::Up => Action::NavigateToPreviousPr,
         KeyCode::Char(' ') => Action::TogglePrSelection,
         KeyCode::Char('m') => Action::MergeSelectedPrs,
+        // Number keys 1-9 for direct tab selection
+        KeyCode::Char('1') => Action::SelectRepoByIndex(0),
+        KeyCode::Char('2') => Action::SelectRepoByIndex(1),
+        KeyCode::Char('3') => Action::SelectRepoByIndex(2),
+        KeyCode::Char('4') => Action::SelectRepoByIndex(3),
+        KeyCode::Char('5') => Action::SelectRepoByIndex(4),
+        KeyCode::Char('6') => Action::SelectRepoByIndex(5),
+        KeyCode::Char('7') => Action::SelectRepoByIndex(6),
+        KeyCode::Char('8') => Action::SelectRepoByIndex(7),
+        KeyCode::Char('9') => Action::SelectRepoByIndex(8),
         _ => Action::None,
     }
 }
