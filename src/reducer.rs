@@ -48,13 +48,27 @@ fn ui_reducer(mut state: UiState, action: &Action) -> UiState {
 /// Repository and PR state reducer
 fn repos_reducer(mut state: ReposState, action: &Action) -> ReposState {
     match action {
+        // Internal state update actions
+        Action::SetBootstrapState(new_state) => {
+            state.bootstrap_state = new_state.clone();
+        }
+        Action::SetLoadingState(new_state) => {
+            state.loading_state = new_state.clone();
+        }
+        Action::SetReposLoading(indices) => {
+            for &index in indices {
+                let data = state.repo_data.entry(index).or_default();
+                data.loading_state = LoadingState::Loading;
+            }
+        }
+
         Action::BootstrapComplete(Ok(result)) => {
             state.recent_repos = result.repos.clone();
             state.selected_repo = result.selected_repo;
             state.bootstrap_state = BootstrapState::LoadingPRs;
         }
-        Action::BootstrapComplete(Err(_)) => {
-            // Error handled elsewhere
+        Action::BootstrapComplete(Err(err)) => {
+            state.bootstrap_state = BootstrapState::Error(err.clone());
         }
         Action::SelectRepoByIndex(index) => {
             if *index < state.recent_repos.len() {
@@ -271,6 +285,11 @@ fn merge_bot_reducer(mut state: MergeBotState, action: &Action) -> MergeBotState
 /// Task status reducer
 fn task_reducer(mut state: TaskState, action: &Action) -> TaskState {
     match action {
+        // Internal state update action
+        Action::SetTaskStatus(new_status) => {
+            state.status = new_status.clone();
+        }
+
         Action::RefreshCurrentRepo => {
             state.status = Some(TaskStatus {
                 message: "Refreshing...".to_string(),

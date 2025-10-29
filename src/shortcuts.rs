@@ -9,6 +9,7 @@ use ratatui::{
 // Action enum - represents all possible actions in the application
 #[derive(Debug, Clone)]
 pub enum Action {
+    // User-initiated actions
     Bootstrap,
     Rebase,
     RefreshCurrentRepo,
@@ -34,6 +35,12 @@ pub enum Action {
     ToggleShortcuts,
     ScrollShortcutsUp,
     ScrollShortcutsDown,
+
+    // State update actions (dispatched internally)
+    SetBootstrapState(crate::state::BootstrapState),
+    SetLoadingState(crate::state::LoadingState),
+    SetTaskStatus(Option<crate::state::TaskStatus>),
+    SetReposLoading(Vec<usize>), // Set multiple repos to loading state
 
     // Background task completion notifications
     BootstrapComplete(Result<BootstrapResult, String>),

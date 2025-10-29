@@ -21,7 +21,7 @@ use crate::config::Config;
 use crate::gh::{comment, merge};
 use crate::log::{LogPanel, LogSection, PrContext};
 use crate::pr::Pr;
-use crate::shortcuts::Action;
+use crate::shortcuts::{Action, BootstrapResult};
 use crate::state::*;
 use crate::store::Store;
 use crate::theme::Theme;
@@ -152,115 +152,129 @@ async fn update(app: &mut App, msg: Action) -> Result<Action> {
         msg
     };
 
-    match msg {
-        Action::Quit => {
-            // Use Redux dispatch for simple state updates
-            app.store.dispatch(Action::Quit);
+    // Redux principle: ALL state updates go through reducers via dispatch
+    // This function only handles side effects (API calls, background tasks)
+
+    match msg.clone() {
+        // Pure state updates - just dispatch to reducers
+        Action::Quit
+        | Action::ToggleShortcuts
+        | Action::ScrollShortcutsUp
+        | Action::ScrollShortcutsDown
+        | Action::NavigateToNextPr
+        | Action::NavigateToPreviousPr
+        | Action::TogglePrSelection
+        | Action::CloseLogPanel
+        | Action::ScrollLogPanelUp
+        | Action::ScrollLogPanelDown
+        | Action::ScrollLogPanelLeft
+        | Action::ScrollLogPanelRight
+        | Action::NextLogSection
+        | Action::ToggleTimestamps
+        | Action::SelectNextRepo
+        | Action::SelectPreviousRepo
+        | Action::SelectRepoByIndex(_)
+        | Action::MergeStatusUpdated(_, _, _)
+        | Action::RebaseStatusUpdated(_, _, _)
+        | Action::PRMergedConfirmed(_, _, _)
+        | Action::BuildLogsLoaded(_, _)
+        | Action::RebaseComplete(_)
+        | Action::MergeComplete(_)
+        | Action::IDEOpenComplete(_)
+        | Action::SetBootstrapState(_)
+        | Action::SetLoadingState(_)
+        | Action::SetTaskStatus(_)
+        | Action::SetReposLoading(_)
+        | Action::BootstrapComplete(_) => {
+            // Pure state update - let reducer handle it
+            app.store.dispatch(msg.clone());
         }
 
         Action::Bootstrap => {
+            // Redux: Dispatch state changes, perform side effects, dispatch results
+
             // Stage 1: Loading repositories (fast, synchronous)
-            app.store.state_mut().repos.bootstrap_state = BootstrapState::LoadingRepositories;
+            app.store.dispatch(Action::SetBootstrapState(
+                BootstrapState::LoadingRepositories,
+            ));
 
             match loading_recent_repos() {
                 Ok(repos) => {
-                    app.store.state_mut().repos.recent_repos = repos;
-
-                    if app.store.state().repos.recent_repos.is_empty() {
-                        app.store.state_mut().repos.bootstrap_state = BootstrapState::Error(
+                    if repos.is_empty() {
+                        app.store.dispatch(Action::SetBootstrapState(BootstrapState::Error(
                             "No repositories configured. Add repositories to .recent-repositories.json".to_string()
-                        );
+                        )));
                         return Ok(Action::None);
                     }
+
+                    // Stage 2: Restoring session (fast, synchronous)
+                    app.store
+                        .dispatch(Action::SetBootstrapState(BootstrapState::RestoringSession));
+
+                    let selected_repo = if let Ok(state) = load_persisted_state() {
+                        if let Some(index) = repos.iter().position(|r| r == &state.selected_repo) {
+                            index
+                        } else {
+                            debug!("Persisted repository not found, defaulting to first");
+                            0
+                        }
+                    } else {
+                        0
+                    };
+
+                    // Dispatch bootstrap complete with repos and selected index
+                    let result = BootstrapResult {
+                        repos: repos.clone(),
+                        selected_repo,
+                    };
+                    app.store.dispatch(Action::BootstrapComplete(Ok(result)));
+
+                    // Stage 3: Loading PRs (slow, move to background)
+                    let num_repos = repos.len();
+                    app.store.dispatch(Action::SetTaskStatus(Some(TaskStatus {
+                        message: format!("Loading PRs from {} repositories...", num_repos),
+                        status_type: TaskStatusType::Running,
+                    })));
+
+                    // Set all repos to loading state
+                    let indices: Vec<usize> = (0..num_repos).collect();
+                    app.store.dispatch(Action::SetReposLoading(indices));
+
+                    // Trigger background loading
+                    let _ = app.task_tx.send(BackgroundTask::LoadAllRepos {
+                        repos,
+                        filter: app.store.state().repos.filter.clone(),
+                        octocrab: app.octocrab()?,
+                    });
                 }
                 Err(err) => {
-                    app.store.state_mut().repos.bootstrap_state =
-                        BootstrapState::Error(format!("Failed to load repositories: {}", err));
-                    return Ok(Action::None);
+                    app.store.dispatch(Action::SetBootstrapState(BootstrapState::Error(
+                        format!("Failed to load repositories: {}", err),
+                    )));
                 }
             }
-
-            // Stage 2: Restoring session (fast, synchronous)
-            app.store.state_mut().repos.bootstrap_state = BootstrapState::RestoringSession;
-
-            let restored = if let Ok(state) = load_persisted_state() {
-                if let Err(err) = app.restore_session(state).await {
-                    debug!("Failed to restore session: {}", err);
-                    false
-                } else {
-                    true
-                }
-            } else {
-                false
-            };
-
-            if !restored {
-                app.store.state_mut().repos.selected_repo = 0;
-            }
-
-            // Stage 3: Loading PRs (slow, move to background)
-            app.store.state_mut().repos.bootstrap_state = BootstrapState::LoadingPRs;
-
-            // Set status
-            app.store.state_mut().task.status = Some(TaskStatus {
-                message: format!(
-                    "Loading PRs from {} repositories...",
-                    app.store.state().repos.recent_repos.len()
-                ),
-                status_type: TaskStatusType::Running,
-            });
-
-            // Set all repos to loading state
-            for i in 0..app.store.state().repos.recent_repos.len() {
-                let data = app.store.state_mut().repos.repo_data.entry(i).or_default();
-                data.loading_state = LoadingState::Loading;
-            }
-
-            // Trigger background loading
-            let _ = app.task_tx.send(BackgroundTask::LoadAllRepos {
-                repos: app.store.state().repos.recent_repos.clone(),
-                filter: app.store.state().repos.filter.clone(),
-                octocrab: app.octocrab()?,
-            });
         }
 
         Action::RepoDataLoaded(index, result) => {
-            // Handle completion of background repo loading
-            let data = app.store.state_mut().repos.repo_data.entry(index).or_default();
-            match result {
-                Ok(prs) => {
-                    data.prs = prs.clone();
-                    data.loading_state = LoadingState::Loaded;
-                    if data.table_state.selected().is_none() && !data.prs.is_empty() {
-                        data.table_state.select(Some(0));
-                    }
+            // Redux: Dispatch to reducer, handle side effects
+            app.store.dispatch(msg.clone());
 
-                    // Trigger background merge status checks for this repo
-                    if let Some(repo) = app.store.state().repos.recent_repos.get(index).cloned() {
-                        let pr_numbers: Vec<usize> = prs.iter().map(|pr| pr.number).collect();
-                        let _ = app.task_tx.send(BackgroundTask::CheckMergeStatus {
-                            repo_index: index,
-                            repo,
-                            pr_numbers,
-                            octocrab: app.octocrab().unwrap_or_else(|_| {
-                                // Fallback - shouldn't happen
-                                Octocrab::default()
-                            }),
-                        });
-                    }
-                }
-                Err(err) => {
-                    data.loading_state = LoadingState::Error(err);
+            // Side effect: Trigger background merge status checks for loaded PRs
+            if let Ok(prs) = result {
+                if let Some(repo) = app.store.state().repos.recent_repos.get(index).cloned() {
+                    let pr_numbers: Vec<usize> = prs.iter().map(|pr| pr.number).collect();
+                    let _ = app.task_tx.send(BackgroundTask::CheckMergeStatus {
+                        repo_index: index,
+                        repo,
+                        pr_numbers,
+                        octocrab: app.octocrab().unwrap_or_else(|_| Octocrab::default()),
+                    });
                 }
             }
 
-            // Load current repo state if this is the selected repo
-            if index == app.store.state().repos.selected_repo {
-                app.load_repo_state();
-            }
-
-            // Check if all repos are done loading
-            let all_loaded = app.store.state().repos.repo_data.len() == app.store.state().repos.recent_repos.len()
+            // Check if all repos are done loading and dispatch completion
+            let all_loaded = app.store.state().repos.repo_data.len()
+                == app.store.state().repos.recent_repos.len()
                 && app.store.state().repos.repo_data.values().all(|d| {
                     matches!(
                         d.loading_state,
@@ -268,13 +282,15 @@ async fn update(app: &mut App, msg: Action) -> Result<Action> {
                     )
                 });
 
-            if all_loaded && app.store.state_mut().repos.bootstrap_state == BootstrapState::LoadingPRs {
-                app.store.state_mut().repos.bootstrap_state = BootstrapState::Completed;
-                // Clear loading status and show success
-                app.store.state_mut().task.status = Some(TaskStatus {
+            if all_loaded
+                && app.store.state().repos.bootstrap_state == BootstrapState::LoadingPRs
+            {
+                app.store
+                    .dispatch(Action::SetBootstrapState(BootstrapState::Completed));
+                app.store.dispatch(Action::SetTaskStatus(Some(TaskStatus {
                     message: "All repositories loaded successfully".to_string(),
                     status_type: TaskStatusType::Success,
-                });
+                })));
             }
         }
 
