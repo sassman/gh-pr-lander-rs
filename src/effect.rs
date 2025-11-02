@@ -11,6 +11,9 @@ pub enum Effect {
     /// Load .env file if GITHUB_TOKEN is not set
     LoadEnvFile,
 
+    /// Initialize Octocrab client (must happen after LoadEnvFile)
+    InitializeOctocrab,
+
     /// Load repositories from config file
     LoadRepositories,
 

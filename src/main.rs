@@ -57,6 +57,8 @@ struct App {
     // Communication channels
     action_tx: mpsc::UnboundedSender<Action>,
     task_tx: mpsc::UnboundedSender<BackgroundTask>,
+    // Lazy-initialized octocrab client (created after .env is loaded)
+    octocrab: Option<Octocrab>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Eq, Clone, PartialEq)]
@@ -190,6 +192,34 @@ async fn execute_effect(app: &mut App, effect: Effect) -> Result<()> {
                         // User might have GITHUB_TOKEN set via other means
                         debug!(".env file not found, will rely on environment variables");
                     }
+                }
+            }
+        }
+
+        Effect::InitializeOctocrab => {
+            // Initialize octocrab client with GITHUB_TOKEN
+            // This happens after LoadEnvFile, ensuring token is available
+            match env::var("GITHUB_TOKEN") {
+                Ok(token) => {
+                    match Octocrab::builder().personal_token(token).build() {
+                        Ok(client) => {
+                            app.octocrab = Some(client);
+                            debug!("Octocrab client initialized successfully");
+                        }
+                        Err(e) => {
+                            debug!("Failed to initialize octocrab: {}", e);
+                            let _ = app.action_tx.send(Action::BootstrapComplete(Err(
+                                format!("Failed to initialize GitHub client: {}", e)
+                            )));
+                            return Ok(());
+                        }
+                    }
+                }
+                Err(_) => {
+                    let _ = app.action_tx.send(Action::BootstrapComplete(Err(
+                        "GITHUB_TOKEN environment variable not set. Please set it or create a .env file.".to_string()
+                    )));
+                    return Ok(());
                 }
             }
         }
@@ -2023,6 +2053,7 @@ impl App {
             store: Store::new(initial_state),
             action_tx,
             task_tx,
+            octocrab: None, // Initialized lazily during bootstrap after .env is loaded
         }
     }
 
@@ -2079,11 +2110,10 @@ impl App {
     }
 
     fn octocrab(&self) -> Result<Octocrab> {
-        Ok(Octocrab::builder()
-            .personal_token(
-                env::var("GITHUB_TOKEN").expect("GITHUB_TOKEN environment variable must be set"),
-            )
-            .build()?)
+        // Return cached octocrab instance (initialized during bootstrap)
+        self.octocrab.clone().ok_or_else(|| {
+            anyhow::anyhow!("Octocrab not initialized. This is a bug - octocrab should be initialized during bootstrap.")
+        })
     }
 
     fn repo(&self) -> Option<&Repo> {

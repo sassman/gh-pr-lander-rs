@@ -73,6 +73,8 @@ fn repos_reducer(
             state.bootstrap_state = BootstrapState::LoadingRepositories;
             // Effect: Load .env file if needed (checked by effect executor)
             effects.push(Effect::LoadEnvFile);
+            // Effect: Initialize octocrab client (must happen after .env is loaded)
+            effects.push(Effect::InitializeOctocrab);
             // Effect: Load repositories from config file
             effects.push(Effect::LoadRepositories);
         }
