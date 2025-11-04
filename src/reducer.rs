@@ -397,15 +397,23 @@ fn repos_reducer(
             }
         }
         Action::OpenInIDE => {
-            // Effect: Open current PR in IDE
-            if let Some(selected_idx) = state.state.selected() {
-                if let Some(pr) = state.prs.get(selected_idx) {
-                    if let Some(repo) = state.recent_repos.get(state.selected_repo).cloned() {
+            // Effect: Open current PR in IDE, or main branch if no PR selected
+            if let Some(repo) = state.recent_repos.get(state.selected_repo).cloned() {
+                if let Some(selected_idx) = state.state.selected() {
+                    if let Some(pr) = state.prs.get(selected_idx) {
+                        // Open the selected PR
                         effects.push(Effect::OpenInIDE {
                             repo,
                             pr_number: pr.number,
                         });
                     }
+                } else {
+                    // No PR selected (empty list) - open main branch
+                    // Use pr_number = 0 as a special marker for main branch
+                    effects.push(Effect::OpenInIDE {
+                        repo,
+                        pr_number: 0,
+                    });
                 }
             }
         }

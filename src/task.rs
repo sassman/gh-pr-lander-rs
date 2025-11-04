@@ -695,9 +695,13 @@ pub fn start_task_worker(
                         return;
                     }
 
-                    // Create unique directory for this PR
-                    let pr_dir = PathBuf::from(&temp_dir)
-                        .join(format!("{}-{}-pr-{}", repo.org, repo.repo, pr_number));
+                    // Create unique directory for this PR or main branch
+                    let dir_name = if pr_number == 0 {
+                        format!("{}-{}-main", repo.org, repo.repo)
+                    } else {
+                        format!("{}-{}-pr-{}", repo.org, repo.repo, pr_number)
+                    };
+                    let pr_dir = PathBuf::from(&temp_dir).join(dir_name);
 
                     // Remove existing directory if present
                     if pr_dir.exists() {
@@ -738,28 +742,79 @@ pub fn start_task_worker(
                         return;
                     }
 
-                    // Now checkout the PR using gh pr checkout
-                    let checkout_output = Command::new("gh")
-                        .args(&["pr", "checkout", &pr_number.to_string()])
-                        .current_dir(&pr_dir)
-                        .output();
+                    // Checkout PR branch or main branch
+                    if pr_number == 0 {
+                        // Checkout main branch and pull latest
+                        let checkout_output = Command::new("git")
+                            .args(&["checkout", "main"])
+                            .current_dir(&pr_dir)
+                            .output();
 
-                    if let Err(err) = checkout_output {
-                        let _ = action_tx.send(Action::IDEOpenComplete(Err(format!(
-                            "Failed to run gh pr checkout: {}",
-                            err
-                        ))));
-                        return;
-                    }
+                        if let Err(err) = checkout_output {
+                            let _ = action_tx.send(Action::IDEOpenComplete(Err(format!(
+                                "Failed to run git checkout main: {}",
+                                err
+                            ))));
+                            return;
+                        }
 
-                    let checkout_output = checkout_output.unwrap();
-                    if !checkout_output.status.success() {
-                        let stderr = String::from_utf8_lossy(&checkout_output.stderr);
-                        let _ = action_tx.send(Action::IDEOpenComplete(Err(format!(
-                            "gh pr checkout failed: {}",
-                            stderr
-                        ))));
-                        return;
+                        let checkout_output = checkout_output.unwrap();
+                        if !checkout_output.status.success() {
+                            let stderr = String::from_utf8_lossy(&checkout_output.stderr);
+                            let _ = action_tx.send(Action::IDEOpenComplete(Err(format!(
+                                "git checkout main failed: {}",
+                                stderr
+                            ))));
+                            return;
+                        }
+
+                        // Pull latest changes
+                        let pull_output = Command::new("git")
+                            .args(&["pull"])
+                            .current_dir(&pr_dir)
+                            .output();
+
+                        if let Err(err) = pull_output {
+                            let _ = action_tx.send(Action::IDEOpenComplete(Err(format!(
+                                "Failed to run git pull: {}",
+                                err
+                            ))));
+                            return;
+                        }
+
+                        let pull_output = pull_output.unwrap();
+                        if !pull_output.status.success() {
+                            let stderr = String::from_utf8_lossy(&pull_output.stderr);
+                            let _ = action_tx.send(Action::IDEOpenComplete(Err(format!(
+                                "git pull failed: {}",
+                                stderr
+                            ))));
+                            return;
+                        }
+                    } else {
+                        // Checkout the PR using gh pr checkout
+                        let checkout_output = Command::new("gh")
+                            .args(&["pr", "checkout", &pr_number.to_string()])
+                            .current_dir(&pr_dir)
+                            .output();
+
+                        if let Err(err) = checkout_output {
+                            let _ = action_tx.send(Action::IDEOpenComplete(Err(format!(
+                                "Failed to run gh pr checkout: {}",
+                                err
+                            ))));
+                            return;
+                        }
+
+                        let checkout_output = checkout_output.unwrap();
+                        if !checkout_output.status.success() {
+                            let stderr = String::from_utf8_lossy(&checkout_output.stderr);
+                            let _ = action_tx.send(Action::IDEOpenComplete(Err(format!(
+                                "gh pr checkout failed: {}",
+                                stderr
+                            ))));
+                            return;
+                        }
                     }
 
                     // Set origin URL to SSH (gh checkout doesn't do this)

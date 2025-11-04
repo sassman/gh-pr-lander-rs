@@ -314,9 +314,14 @@ pub async fn execute_effect(app: &mut App, effect: Effect) -> Result<()> {
         }
 
         Effect::OpenInIDE { repo, pr_number } => {
-            // Open PR in IDE
+            // Open PR or main branch in IDE
+            let message = if pr_number == 0 {
+                "Opening main branch in IDE...".to_string()
+            } else {
+                format!("Opening PR #{} in IDE...", pr_number)
+            };
             let _ = app.action_tx.send(Action::SetTaskStatus(Some(TaskStatus {
-                message: format!("Opening PR #{} in IDE...", pr_number),
+                message,
                 status_type: TaskStatusType::Running,
             })));
 
