@@ -1620,7 +1620,7 @@ fn ui(f: &mut Frame, app: &mut App) {
         .map(|h| Cell::from(*h).style(header_style));
 
     let header = Row::new(header_cells)
-        .style(Style::default().bg(Color::Blue))
+        .style(Style::default().bg(app.store.state().theme.table_header_bg))
         .height(1);
 
     let selected_row_style = Style::default().add_modifier(Modifier::REVERSED).fg(app
@@ -1690,7 +1690,7 @@ fn ui(f: &mut Frame, app: &mut App) {
 
     // Render log panel LAST if it's open - covers only the table area
     if let Some(ref panel) = app.store.state().log_panel.panel {
-        crate::log::render_log_panel_card(f, panel, &app.store.state().repos.colors, chunks[1]);
+        crate::log::render_log_panel_card(f, panel, &app.store.state().theme, chunks[1]);
     }
 
     // Render shortcuts panel on top of everything if visible
@@ -1826,7 +1826,7 @@ fn render_action_panel(f: &mut Frame, app: &App, area: Rect) {
             spans.push(Span::styled(
                 format!(" {} ", key),
                 Style::default()
-                    .fg(Color::White)
+                    .fg(app.store.state().theme.selected_fg)
                     .bg(*bg_color)
                     .add_modifier(Modifier::BOLD),
             ));
@@ -1853,9 +1853,9 @@ fn render_action_panel(f: &mut Frame, app: &App, area: Rect) {
 fn render_status_line(f: &mut Frame, app: &App, area: Rect) {
     if let Some(ref status) = app.store.state().task.status {
         let (icon, color) = match status.status_type {
-            TaskStatusType::Running => ("⏳", Color::Yellow),
-            TaskStatusType::Success => ("✓", Color::Green),
-            TaskStatusType::Error => ("✗", Color::Red),
+            TaskStatusType::Running => ("⏳", app.store.state().theme.status_warning),
+            TaskStatusType::Success => ("✓", app.store.state().theme.status_success),
+            TaskStatusType::Error => ("✗", app.store.state().theme.status_error),
         };
 
         let status_text = format!(" {} {}", icon, status.message);
@@ -1981,14 +1981,14 @@ fn render_bootstrap_screen(f: &mut Frame, app: &App) {
         let spinner_widget = Paragraph::new(spinner_text)
             .style(
                 Style::default()
-                    .fg(Color::Yellow)
+                    .fg(app.store.state().theme.status_warning)
                     .add_modifier(Modifier::BOLD),
             )
             .alignment(ratatui::layout::Alignment::Center);
         f.render_widget(spinner_widget, chunks[3]);
     } else {
         let error_icon = Paragraph::new("✗ Error")
-            .style(Style::default().fg(Color::Red).add_modifier(Modifier::BOLD))
+            .style(Style::default().fg(app.store.state().theme.status_error).add_modifier(Modifier::BOLD))
             .alignment(ratatui::layout::Alignment::Center);
         f.render_widget(error_icon, chunks[3]);
     }
@@ -2002,16 +2002,16 @@ fn render_bootstrap_screen(f: &mut Frame, app: &App) {
         let progress_bar = format!("{}{}  {}%", "▰".repeat(filled), "▱".repeat(empty), progress);
 
         let bar_widget = Paragraph::new(progress_bar)
-            .style(Style::default().fg(tailwind::BLUE.c400))
+            .style(Style::default().fg(app.store.state().theme.status_info))
             .alignment(ratatui::layout::Alignment::Center);
         f.render_widget(bar_widget, chunks[5]);
     }
 
     // Status message
     let message_style = if is_error {
-        Style::default().fg(Color::Red)
+        Style::default().fg(app.store.state().theme.status_error)
     } else {
-        Style::default().fg(tailwind::SLATE.c300)
+        Style::default().fg(app.store.state().theme.text_secondary)
     };
 
     let message_widget = Paragraph::new(stage_message)
@@ -2036,17 +2036,18 @@ impl App {
         task_tx: mpsc::UnboundedSender<BackgroundTask>,
     ) -> App {
         // Initialize Redux store with default state
+        let theme = Theme::default();
         let initial_state = AppState {
             ui: UiState::default(),
             repos: ReposState {
-                colors: TableColors::new(&PALETTES[0]),
+                colors: TableColors::from_theme(&theme),
                 ..ReposState::default()
             },
             log_panel: LogPanelState::default(),
             merge_bot: MergeBotState::default(),
             task: TaskState::default(),
             config: Config::load(),
-            theme: Theme::default(),
+            theme,
         };
 
         App {

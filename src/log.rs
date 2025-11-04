@@ -1,7 +1,6 @@
 use anyhow::Result;
 use ratatui::{
     prelude::*,
-    style::palette::tailwind,
     widgets::*,
 };
 
@@ -206,13 +205,13 @@ pub fn extract_error_context(log_text: &str, _step_name: &str) -> Vec<String> {
 
 /// Render the log panel as a card overlay with PR context header
 /// Takes the available area (excluding top tabs and bottom panels)
-pub fn render_log_panel_card(f: &mut Frame, panel: &LogPanel, colors: &crate::state::TableColors, available_area: Rect) {
+pub fn render_log_panel_card(f: &mut Frame, panel: &LogPanel, theme: &crate::theme::Theme, available_area: Rect) {
     // Use Clear widget to completely clear the underlying content
     f.render_widget(Clear, available_area);
 
     // Then render a solid background to ensure complete coverage
     let background = Block::default()
-        .style(Style::default().bg(tailwind::SLATE.c800));
+        .style(Style::default().bg(theme.bg_panel));
     f.render_widget(background, available_area);
 
     // Use the full available area (same dimensions as PR panel)
@@ -233,19 +232,19 @@ pub fn render_log_panel_card(f: &mut Frame, panel: &LogPanel, colors: &crate::st
             Span::styled(
                 format!("#{} ", panel.pr_context.number),
                 Style::default()
-                    .fg(tailwind::BLUE.c400)
+                    .fg(theme.status_info)
                     .add_modifier(Modifier::BOLD),
             ),
             Span::styled(
                 panel.pr_context.title.clone(),
                 Style::default()
-                    .fg(tailwind::SLATE.c100)
+                    .fg(theme.text_primary)
                     .add_modifier(Modifier::BOLD),
             ),
         ]),
         Line::from(Span::styled(
             format!("by {}", panel.pr_context.author),
-            Style::default().fg(tailwind::SLATE.c400),
+            Style::default().fg(theme.text_muted),
         )),
     ];
 
@@ -254,20 +253,20 @@ pub fn render_log_panel_card(f: &mut Frame, panel: &LogPanel, colors: &crate::st
             .borders(Borders::ALL)
             .border_style(
                 Style::default()
-                    .fg(tailwind::CYAN.c400)
+                    .fg(theme.accent_primary)
                     .add_modifier(Modifier::BOLD),
             )
-            .style(Style::default().bg(tailwind::SLATE.c800)),
+            .style(Style::default().bg(theme.bg_panel)),
     );
 
     f.render_widget(pr_header, card_chunks[0]);
 
     // Render log content in the remaining area
-    render_log_panel_content(f, panel, card_chunks[1], colors);
+    render_log_panel_content(f, panel, card_chunks[1], theme);
 }
 
 /// Render the log panel showing build failure logs using a Table widget
-fn render_log_panel_content(f: &mut Frame, panel: &LogPanel, area: Rect, _colors: &crate::TableColors) {
+fn render_log_panel_content(f: &mut Frame, panel: &LogPanel, area: Rect, theme: &crate::theme::Theme) {
     // Build the log rows with timestamp extraction
     let mut log_rows: Vec<(String, String)> = Vec::new(); // (timestamp, content)
 
@@ -310,7 +309,7 @@ fn render_log_panel_content(f: &mut Frame, panel: &LogPanel, area: Rect, _colors
             let style = if content.starts_with("━━━") {
                 // Section headers - bright cyan
                 Style::default()
-                    .fg(tailwind::CYAN.c300)
+                    .fg(theme.accent_primary)
                     .add_modifier(Modifier::BOLD)
             } else if lower_trimmed.starts_with("error:")
                 || lower_trimmed.starts_with("error[")
@@ -321,22 +320,22 @@ fn render_log_panel_content(f: &mut Frame, panel: &LogPanel, area: Rect, _colors
             {
                 // Lines STARTING with error indicators - bright red with bold
                 Style::default()
-                    .fg(tailwind::RED.c400)
+                    .fg(theme.status_error)
                     .add_modifier(Modifier::BOLD)
             } else if content.contains("error") || content.contains("Error") || content.contains("ERROR") {
                 // Lines containing error anywhere - softer red
-                Style::default().fg(tailwind::RED.c500)
+                Style::default().fg(theme.status_error)
             } else if lower_trimmed.starts_with("warning:") || lower_trimmed.starts_with("warn:") {
                 // Lines starting with warning - bright yellow bold
                 Style::default()
-                    .fg(tailwind::YELLOW.c400)
+                    .fg(theme.status_warning)
                     .add_modifier(Modifier::BOLD)
             } else if content.contains("warning") || content.contains("Warning") || content.contains("WARN") {
                 // Lines containing warning - softer yellow
-                Style::default().fg(tailwind::YELLOW.c500)
+                Style::default().fg(theme.status_warning)
             } else {
                 // Normal lines - light slate
-                Style::default().fg(tailwind::SLATE.c100)
+                Style::default().fg(theme.text_primary)
             };
 
             // Create cells based on timestamp visibility
@@ -345,14 +344,14 @@ fn render_log_panel_content(f: &mut Frame, panel: &LogPanel, area: Rect, _colors
                 Row::new(vec![
                     Cell::from(timestamp.clone()).style(
                         Style::default()
-                            .fg(tailwind::SLATE.c500)
-                            .bg(tailwind::SLATE.c800)
+                            .fg(theme.text_muted)
+                            .bg(theme.bg_panel)
                     ),
-                    Cell::from(content.clone()).style(style.bg(tailwind::SLATE.c800)),
+                    Cell::from(content.clone()).style(style.bg(theme.bg_panel)),
                 ])
             } else {
                 // When timestamps hidden, use single column
-                Row::new(vec![Cell::from(content.clone()).style(style.bg(tailwind::SLATE.c800))])
+                Row::new(vec![Cell::from(content.clone()).style(style.bg(theme.bg_panel))])
             }
         })
         .collect();
@@ -368,10 +367,10 @@ fn render_log_panel_content(f: &mut Frame, panel: &LogPanel, area: Rect, _colors
         .title(scroll_info)
         .border_style(
             Style::default()
-                .fg(tailwind::CYAN.c400)
+                .fg(theme.accent_primary)
                 .add_modifier(Modifier::BOLD),
         )
-        .style(Style::default().bg(tailwind::SLATE.c800));
+        .style(Style::default().bg(theme.bg_panel));
 
     // Configure table with or without timestamp column
     let widths = if panel.show_timestamps {
@@ -385,8 +384,8 @@ fn render_log_panel_content(f: &mut Frame, panel: &LogPanel, area: Rect, _colors
         .column_spacing(0) // No spacing between columns to prevent gaps
         .style(
             Style::default()
-                .fg(tailwind::SLATE.c100)
-                .bg(tailwind::SLATE.c800),
+                .fg(theme.text_primary)
+                .bg(theme.bg_panel),
         );
 
     f.render_widget(table, area);

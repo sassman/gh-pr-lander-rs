@@ -176,38 +176,26 @@ pub struct TableColors {
 }
 
 impl TableColors {
-    pub const fn new(color: &ratatui::style::palette::tailwind::Palette) -> Self {
-        use ratatui::style::palette::tailwind;
+    pub fn from_theme(theme: &crate::theme::Theme) -> Self {
         Self {
-            buffer_bg: tailwind::SLATE.c950,
-            header_bg: color.c900,
-            header_fg: tailwind::SLATE.c200,
-            row_fg: tailwind::SLATE.c200,
-            selected_row_style_fg: color.c400,
-            selected_column_style_fg: color.c400,
-            selected_cell_style_fg: color.c600,
-            normal_row_color: tailwind::SLATE.c950,
-            alt_row_color: tailwind::SLATE.c900,
-            footer_border_color: color.c400,
+            buffer_bg: theme.bg_primary,
+            header_bg: theme.table_header_bg,
+            header_fg: theme.table_header_fg,
+            row_fg: theme.table_row_fg,
+            selected_row_style_fg: theme.selected_bg,
+            selected_column_style_fg: theme.selected_bg,
+            selected_cell_style_fg: theme.selected_bg,
+            normal_row_color: theme.table_row_bg_normal,
+            alt_row_color: theme.table_row_bg_alt,
+            footer_border_color: theme.selected_fg,
         }
     }
 }
 
 impl Default for TableColors {
     fn default() -> Self {
-        use ratatui::style::{palette::tailwind, Color};
-        Self {
-            buffer_bg: tailwind::SLATE.c950,
-            header_bg: tailwind::BLUE.c500,
-            header_fg: tailwind::SLATE.c200,
-            row_fg: tailwind::SLATE.c200,
-            selected_row_style_fg: tailwind::BLUE.c400,
-            selected_column_style_fg: tailwind::BLUE.c400,
-            selected_cell_style_fg: tailwind::BLUE.c600,
-            normal_row_color: tailwind::SLATE.c950,
-            alt_row_color: tailwind::SLATE.c900,
-            footer_border_color: Color::White,
-        }
+        // Use default theme colors
+        Self::from_theme(&crate::theme::Theme::default())
     }
 }
 

@@ -2,7 +2,6 @@ use anyhow::Result;
 use ratatui::{
     crossterm::event::{KeyCode, KeyEvent, KeyModifiers},
     prelude::*,
-    style::palette::tailwind,
     widgets::*,
 };
 
@@ -336,7 +335,7 @@ pub fn render_shortcuts_panel(f: &mut Frame, area: Rect, scroll_offset: usize, t
     // Clear the area and render background
     f.render_widget(Clear, popup_area);
     f.render_widget(
-        Block::default().style(Style::default().bg(tailwind::SLATE.c800)),
+        Block::default().style(Style::default().bg(theme.bg_panel)),
         popup_area,
     );
 
@@ -366,7 +365,7 @@ pub fn render_shortcuts_panel(f: &mut Frame, area: Rect, scroll_offset: usize, t
         text_lines.push(Line::from(vec![Span::styled(
             category.name,
             Style::default()
-                .fg(tailwind::YELLOW.c400)
+                .fg(theme.status_warning)
                 .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
         )]));
         text_lines.push(Line::from(""));
@@ -377,12 +376,12 @@ pub fn render_shortcuts_panel(f: &mut Frame, area: Rect, scroll_offset: usize, t
                 Span::styled(
                     format!("  {:18}", shortcut.key_display),
                     Style::default()
-                        .fg(tailwind::GREEN.c400)
+                        .fg(theme.status_success)
                         .add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(
                     shortcut.description,
-                    Style::default().fg(tailwind::SLATE.c200),
+                    Style::default().fg(theme.text_secondary),
                 ),
             ]));
         }
@@ -413,15 +412,15 @@ pub fn render_shortcuts_panel(f: &mut Frame, area: Rect, scroll_offset: usize, t
         .title(title)
         .title_style(
             Style::default()
-                .fg(tailwind::CYAN.c400)
+                .fg(theme.accent_primary)
                 .add_modifier(Modifier::BOLD),
         )
         .border_style(
             Style::default()
-                .fg(tailwind::CYAN.c400)
+                .fg(theme.accent_primary)
                 .add_modifier(Modifier::BOLD),
         )
-        .style(Style::default().bg(tailwind::SLATE.c800));
+        .style(Style::default().bg(theme.bg_panel));
 
     f.render_widget(block, popup_area);
 
@@ -429,34 +428,34 @@ pub fn render_shortcuts_panel(f: &mut Frame, area: Rect, scroll_offset: usize, t
     let paragraph = Paragraph::new(text_lines)
         .wrap(Wrap { trim: false })
         .scroll((actual_scroll as u16, 0))
-        .style(Style::default().bg(tailwind::SLATE.c800));
+        .style(Style::default().bg(theme.bg_panel));
 
     f.render_widget(paragraph, content_area);
 
     // Render sticky footer at the bottom
     let footer_line = Line::from(vec![
-        Span::styled("Press ", Style::default().fg(tailwind::SLATE.c400)),
+        Span::styled("Press ", Style::default().fg(theme.text_muted)),
         Span::styled(
             "x",
             Style::default()
-                .fg(tailwind::CYAN.c400)
+                .fg(theme.accent_primary)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled(" or ", Style::default().fg(tailwind::SLATE.c400)),
+        Span::styled(" or ", Style::default().fg(theme.text_muted)),
         Span::styled(
             "Esc",
             Style::default()
-                .fg(tailwind::CYAN.c400)
+                .fg(theme.accent_primary)
                 .add_modifier(Modifier::BOLD),
         ),
         Span::styled(
             " to close this help",
-            Style::default().fg(tailwind::SLATE.c400),
+            Style::default().fg(theme.text_muted),
         ),
     ]);
 
     let footer = Paragraph::new(footer_line)
-        .style(Style::default().bg(tailwind::SLATE.c800))
+        .style(Style::default().bg(theme.bg_panel))
         .alignment(ratatui::layout::Alignment::Center);
 
     f.render_widget(footer, footer_area);
