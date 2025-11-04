@@ -131,7 +131,14 @@ fn repos_reducer(
             let data = state.repo_data.entry(*repo_index).or_default();
             data.prs = prs.clone();
             data.loading_state = LoadingState::Loaded;
-            if data.table_state.selected().is_none() && !data.prs.is_empty() {
+
+            // Update table selection based on PR list
+            if data.prs.is_empty() {
+                // Clear selection and selected PRs when no PRs
+                data.table_state.select(None);
+                data.selected_prs.clear();
+            } else if data.table_state.selected().is_none() {
+                // Select first row if nothing selected
                 data.table_state.select(Some(0));
             }
 
