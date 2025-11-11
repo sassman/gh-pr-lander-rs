@@ -1,4 +1,7 @@
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 use ratatui::widgets::TableState;
 
 use crate::{
@@ -31,6 +34,8 @@ pub struct UiState {
     pub should_quit: bool,
     pub show_add_repo: bool,
     pub add_repo_form: AddRepoForm,
+    /// Shared state for event handler to know if add repo popup is open
+    pub show_add_repo_shared: Arc<Mutex<bool>>,
 }
 
 /// Form state for adding a new repository
@@ -104,6 +109,15 @@ pub struct RepoData {
     pub table_state: TableState,
     pub selected_prs: Vec<usize>,
     pub loading_state: LoadingState,
+    pub auto_merge_queue: Vec<AutoMergePR>,
+}
+
+/// Represents a PR in the auto-merge queue
+#[derive(Debug, Clone)]
+pub struct AutoMergePR {
+    pub pr_number: usize,
+    pub started_at: std::time::Instant,
+    pub check_count: usize,
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize, Eq, Clone, PartialEq)]
@@ -243,6 +257,7 @@ impl Default for UiState {
             should_quit: false,
             show_add_repo: false,
             add_repo_form: AddRepoForm::default(),
+            show_add_repo_shared: Arc::new(Mutex::new(false)),
         }
     }
 }

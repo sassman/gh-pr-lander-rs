@@ -49,9 +49,11 @@ pub enum Action {
     SetLoadingState(crate::state::LoadingState),
     SetTaskStatus(Option<crate::state::TaskStatus>),
     SetReposLoading(Vec<usize>), // Set multiple repos to loading state
+    TickSpinner, // Increment spinner animation frame
 
     // Background task completion notifications
     BootstrapComplete(Result<BootstrapResult, String>),
+    RepoLoadingStarted(usize), // Sent when we start fetching repo data
     RepoDataLoaded(usize, Result<Vec<crate::pr::Pr>, String>),
     RefreshComplete(Result<Vec<crate::pr::Pr>, String>),
     MergeStatusUpdated(usize, usize, crate::pr::MergeableStatus), // repo_index, pr_number, status
@@ -62,6 +64,11 @@ pub enum Action {
     PRMergedConfirmed(usize, usize, bool), // repo_index, pr_number, is_merged
     BuildLogsLoaded(Vec<crate::log::LogSection>, crate::log::PrContext),
     IDEOpenComplete(Result<(), String>),
+
+    // Auto-merge queue management
+    AddToAutoMergeQueue(usize, usize), // repo_index, pr_number
+    RemoveFromAutoMergeQueue(usize, usize), // repo_index, pr_number
+    AutoMergeStatusCheck(usize, usize), // repo_index, pr_number - periodic check
 
     Quit,
     None,

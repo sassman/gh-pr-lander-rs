@@ -35,6 +35,10 @@ fn ui_reducer(mut state: UiState, action: &Action) -> (UiState, Vec<Effect>) {
         Action::Quit => {
             state.should_quit = true;
         }
+        Action::TickSpinner => {
+            // Increment spinner frame for animation (0-9 cycle)
+            state.spinner_frame = (state.spinner_frame + 1) % 10;
+        }
         Action::ToggleShortcuts => {
             state.show_shortcuts = !state.show_shortcuts;
         }
@@ -123,9 +127,10 @@ fn ui_reducer(mut state: UiState, action: &Action) -> (UiState, Vec<Effect>) {
     (state, vec![])
 }
 
-/// Parse GitHub URL to extract org, repo, and branch
+/// Parse GitHub URL into (org, repo, branch)
 /// Supports formats:
 /// - https://github.com/org/repo
+/// - https://github.com/org/repo.git
 /// - https://github.com/org/repo/tree/branch
 /// - github.com/org/repo
 fn parse_github_url(url: &str) -> Option<(String, String, String)> {
@@ -143,7 +148,12 @@ fn parse_github_url(url: &str) -> Option<(String, String, String)> {
 
     if parts.len() >= 2 {
         let org = parts[0].to_string();
-        let repo = parts[1].to_string();
+        // Remove .git suffix if present
+        let mut repo = parts[1].to_string();
+        if repo.ends_with(".git") {
+            repo = repo.strip_suffix(".git").unwrap().to_string();
+        }
+
         let branch = if parts.len() >= 4 && parts[2] == "tree" {
             parts[3].to_string()
         } else {
@@ -211,6 +221,11 @@ fn repos_reducer(
         }
         Action::BootstrapComplete(Err(err)) => {
             state.bootstrap_state = BootstrapState::Error(err.clone());
+        }
+        Action::RepoLoadingStarted(repo_index) => {
+            // Mark repo as loading (request in flight)
+            let data = state.repo_data.entry(*repo_index).or_default();
+            data.loading_state = LoadingState::Loading;
         }
         Action::SelectRepoByIndex(index) => {
             if *index < state.recent_repos.len() {
@@ -434,17 +449,44 @@ fn repos_reducer(
             }
         }
         Action::MergeSelectedPrs => {
-            // Effect: Merge selected PRs
+            // Effect: Merge selected PRs or enable auto-merge if building
             if let Some(repo) = state.recent_repos.get(state.selected_repo).cloned() {
-                let prs_to_merge: Vec<_> = state.selected_prs.iter()
+                let selected_prs: Vec<_> = state.selected_prs.iter()
                     .filter_map(|&idx| state.prs.get(idx).cloned())
                     .collect();
 
-                if !prs_to_merge.is_empty() {
-                    effects.push(Effect::PerformMerge {
-                        repo,
-                        prs: prs_to_merge,
-                    });
+                if !selected_prs.is_empty() {
+                    // Separate PRs by status: ready to merge vs building
+                    let mut prs_to_merge = Vec::new();
+                    let mut prs_to_auto_merge = Vec::new();
+
+                    for pr in selected_prs {
+                        match pr.mergeable {
+                            crate::pr::MergeableStatus::BuildInProgress => {
+                                prs_to_auto_merge.push(pr);
+                            }
+                            _ => {
+                                prs_to_merge.push(pr);
+                            }
+                        }
+                    }
+
+                    // Merge ready PRs directly
+                    if !prs_to_merge.is_empty() {
+                        effects.push(Effect::PerformMerge {
+                            repo: repo.clone(),
+                            prs: prs_to_merge,
+                        });
+                    }
+
+                    // Enable auto-merge for building PRs
+                    for pr in prs_to_auto_merge {
+                        effects.push(Effect::EnableAutoMerge {
+                            repo_index: state.selected_repo,
+                            repo: repo.clone(),
+                            pr_number: pr.number,
+                        });
+                    }
                 }
             }
         }
@@ -542,6 +584,90 @@ fn repos_reducer(
                     state.state = data.table_state.clone();
                     state.selected_prs = data.selected_prs.clone();
                     state.loading_state = data.loading_state.clone();
+                }
+            }
+        }
+        Action::AddToAutoMergeQueue(repo_index, pr_number) => {
+            // Add PR to auto-merge queue
+            if let Some(data) = state.repo_data.get_mut(repo_index) {
+                // Check if already in queue
+                if !data.auto_merge_queue.iter().any(|pr| pr.pr_number == *pr_number) {
+                    data.auto_merge_queue.push(crate::state::AutoMergePR {
+                        pr_number: *pr_number,
+                        started_at: std::time::Instant::now(),
+                        check_count: 0,
+                    });
+                }
+            }
+        }
+        Action::RemoveFromAutoMergeQueue(repo_index, pr_number) => {
+            // Remove PR from auto-merge queue
+            if let Some(data) = state.repo_data.get_mut(repo_index) {
+                data.auto_merge_queue.retain(|pr| pr.pr_number != *pr_number);
+            }
+        }
+        Action::AutoMergeStatusCheck(repo_index, pr_number) => {
+            // Periodic status check for auto-merge PR
+            if let Some(data) = state.repo_data.get_mut(repo_index) {
+                if let Some(auto_pr) = data.auto_merge_queue.iter_mut().find(|pr| pr.pr_number == *pr_number) {
+                    auto_pr.check_count += 1;
+
+                    // Check if we've exceeded the time limit (20 minutes = 20 checks at 1 min intervals)
+                    if auto_pr.check_count >= 20 {
+                        // Remove from queue - timeout reached
+                        data.auto_merge_queue.retain(|pr| pr.pr_number != *pr_number);
+                        effects.push(Effect::DispatchAction(Action::SetTaskStatus(Some(
+                            crate::state::TaskStatus {
+                                message: format!("Auto-merge timeout for PR #{}", pr_number),
+                                status_type: crate::state::TaskStatusType::Error,
+                            }
+                        ))));
+                    } else {
+                        // Check PR status
+                        if let Some(repo) = state.recent_repos.get(*repo_index).cloned() {
+                            // Find the PR to check its status
+                            if let Some(pr) = data.prs.iter().find(|p| p.number == *pr_number) {
+                                match pr.mergeable {
+                                    crate::pr::MergeableStatus::Ready => {
+                                        // PR is ready - trigger merge
+                                        effects.push(Effect::PerformMerge {
+                                            repo: repo.clone(),
+                                            prs: vec![pr.clone()],
+                                        });
+                                        // Remove from queue
+                                        data.auto_merge_queue.retain(|p| p.pr_number != *pr_number);
+                                    }
+                                    crate::pr::MergeableStatus::BuildFailed => {
+                                        // Build failed - stop monitoring
+                                        data.auto_merge_queue.retain(|p| p.pr_number != *pr_number);
+                                        effects.push(Effect::DispatchAction(Action::SetTaskStatus(Some(
+                                            crate::state::TaskStatus {
+                                                message: format!("Auto-merge stopped: PR #{} build failed", pr_number),
+                                                status_type: crate::state::TaskStatusType::Error,
+                                            }
+                                        ))));
+                                    }
+                                    crate::pr::MergeableStatus::NeedsRebase => {
+                                        // Needs rebase - stop monitoring
+                                        data.auto_merge_queue.retain(|p| p.pr_number != *pr_number);
+                                        effects.push(Effect::DispatchAction(Action::SetTaskStatus(Some(
+                                            crate::state::TaskStatus {
+                                                message: format!("Auto-merge stopped: PR #{} needs rebase", pr_number),
+                                                status_type: crate::state::TaskStatusType::Error,
+                                            }
+                                        ))));
+                                    }
+                                    crate::pr::MergeableStatus::BuildInProgress => {
+                                        // Still building - schedule next check
+                                        // This will be handled by the background task
+                                    }
+                                    _ => {
+                                        // Unknown or conflicted - continue monitoring
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }

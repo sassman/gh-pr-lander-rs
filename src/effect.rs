@@ -101,6 +101,13 @@ pub enum Effect {
         pr_numbers: Vec<usize>,
     },
 
+    /// Enable auto-merge on PR and monitor until ready
+    EnableAutoMerge {
+        repo_index: usize,
+        repo: Repo,
+        pr_number: usize,
+    },
+
     /// Add a new repository
     AddRepository(Repo),
 
@@ -125,8 +132,12 @@ impl Effect {
         Effect::None
     }
 }
-pub async fn execute_effect(app: &mut App, effect: Effect) -> Result<()> {
+/// Execute an effect and return follow-up actions to dispatch
+/// This maintains clean architecture by avoiding direct action dispatching from effects
+pub async fn execute_effect(app: &mut App, effect: Effect) -> Result<Vec<Action>> {
     use crate::effect::Effect;
+
+    let mut follow_up_actions = Vec::new();
 
     match effect {
         Effect::None => {}
@@ -159,18 +170,18 @@ pub async fn execute_effect(app: &mut App, effect: Effect) -> Result<()> {
                     }
                     Err(e) => {
                         debug!("Failed to initialize octocrab: {}", e);
-                        let _ = app.action_tx.send(Action::BootstrapComplete(Err(format!(
+                        follow_up_actions.push(Action::BootstrapComplete(Err(format!(
                             "Failed to initialize GitHub client: {}",
                             e
                         ))));
-                        return Ok(());
+                        return Ok(follow_up_actions);
                     }
                 },
                 Err(_) => {
-                    let _ = app.action_tx.send(Action::BootstrapComplete(Err(
+                    follow_up_actions.push(Action::BootstrapComplete(Err(
                         "GITHUB_TOKEN environment variable not set. Please set it or create a .env file.".to_string()
                     )));
-                    return Ok(());
+                    return Ok(follow_up_actions);
                 }
             }
         }
@@ -180,10 +191,10 @@ pub async fn execute_effect(app: &mut App, effect: Effect) -> Result<()> {
             match loading_recent_repos() {
                 Ok(repos) => {
                     if repos.is_empty() {
-                        let _ = app.action_tx.send(Action::BootstrapComplete(Err(
+                        follow_up_actions.push(Action::BootstrapComplete(Err(
                             "No repositories configured. Add repositories to .recent-repositories.json".to_string()
                         )));
-                        return Ok(());
+                        return Ok(follow_up_actions);
                     }
 
                     // Restore session
@@ -197,17 +208,15 @@ pub async fn execute_effect(app: &mut App, effect: Effect) -> Result<()> {
                         0
                     };
 
-                    // Dispatch bootstrap complete
+                    // Return bootstrap complete action
                     let result = BootstrapResult {
                         repos,
                         selected_repo,
                     };
-                    let _ = app.action_tx.send(Action::BootstrapComplete(Ok(result)));
+                    follow_up_actions.push(Action::BootstrapComplete(Ok(result)));
                 }
                 Err(err) => {
-                    let _ = app
-                        .action_tx
-                        .send(Action::BootstrapComplete(Err(err.to_string())));
+                    follow_up_actions.push(Action::BootstrapComplete(Err(err.to_string())));
                 }
             }
         }
@@ -215,13 +224,13 @@ pub async fn execute_effect(app: &mut App, effect: Effect) -> Result<()> {
         Effect::LoadAllRepos { repos, filter } => {
             // Trigger background task to load all repos
             let num_repos = repos.len();
-            let _ = app.action_tx.send(Action::SetTaskStatus(Some(TaskStatus {
+            follow_up_actions.push(Action::SetTaskStatus(Some(TaskStatus {
                 message: format!("Loading PRs from {} repositories...", num_repos),
                 status_type: TaskStatusType::Running,
             })));
 
             let indices: Vec<usize> = (0..num_repos).collect();
-            let _ = app.action_tx.send(Action::SetReposLoading(indices));
+            follow_up_actions.push(Action::SetReposLoading(indices));
 
             let _ = app.task_tx.send(BackgroundTask::LoadAllRepos {
                 repos,
@@ -236,10 +245,8 @@ pub async fn execute_effect(app: &mut App, effect: Effect) -> Result<()> {
             filter,
         } => {
             // Trigger background task to load single repo
-            let _ = app
-                .action_tx
-                .send(Action::SetReposLoading(vec![repo_index]));
-            let _ = app.action_tx.send(Action::SetTaskStatus(Some(TaskStatus {
+            follow_up_actions.push(Action::SetReposLoading(vec![repo_index]));
+            follow_up_actions.push(Action::SetTaskStatus(Some(TaskStatus {
                 message: "Refreshing...".to_string(),
                 status_type: TaskStatusType::Running,
             })));
@@ -274,7 +281,7 @@ pub async fn execute_effect(app: &mut App, effect: Effect) -> Result<()> {
 
         Effect::PerformRebase { repo, prs } => {
             // Perform rebase operation
-            let _ = app.action_tx.send(Action::SetTaskStatus(Some(TaskStatus {
+            follow_up_actions.push(Action::SetTaskStatus(Some(TaskStatus {
                 message: format!("Rebasing {} PR(s)...", prs.len()),
                 status_type: TaskStatusType::Running,
             })));
@@ -290,7 +297,7 @@ pub async fn execute_effect(app: &mut App, effect: Effect) -> Result<()> {
 
         Effect::PerformMerge { repo, prs } => {
             // Perform merge operation
-            let _ = app.action_tx.send(Action::SetTaskStatus(Some(TaskStatus {
+            follow_up_actions.push(Action::SetTaskStatus(Some(TaskStatus {
                 message: format!("Merging {} PR(s)...", prs.len()),
                 status_type: TaskStatusType::Running,
             })));
@@ -323,7 +330,7 @@ pub async fn execute_effect(app: &mut App, effect: Effect) -> Result<()> {
             } else {
                 format!("Opening PR #{} in IDE...", pr_number)
             };
-            let _ = app.action_tx.send(Action::SetTaskStatus(Some(TaskStatus {
+            follow_up_actions.push(Action::SetTaskStatus(Some(TaskStatus {
                 message,
                 status_type: TaskStatusType::Running,
             })));
@@ -339,7 +346,7 @@ pub async fn execute_effect(app: &mut App, effect: Effect) -> Result<()> {
 
         Effect::LoadBuildLogs { repo, pr } => {
             // Load build logs
-            let _ = app.action_tx.send(Action::SetTaskStatus(Some(TaskStatus {
+            follow_up_actions.push(Action::SetTaskStatus(Some(TaskStatus {
                 message: "Loading build logs...".to_string(),
                 status_type: TaskStatusType::Running,
             })));
@@ -368,7 +375,7 @@ pub async fn execute_effect(app: &mut App, effect: Effect) -> Result<()> {
                 .collect();
 
             app.store.state_mut().merge_bot.bot.start(pr_data);
-            let _ = app.action_tx.send(Action::SetTaskStatus(Some(TaskStatus {
+            follow_up_actions.push(Action::SetTaskStatus(Some(TaskStatus {
                 message: format!("Merge bot started with {} PR(s)", prs.len()),
                 status_type: TaskStatusType::Success,
             })));
@@ -376,7 +383,7 @@ pub async fn execute_effect(app: &mut App, effect: Effect) -> Result<()> {
 
         Effect::RerunFailedJobs { repo, pr_numbers } => {
             // Rerun failed CI jobs for PRs
-            let _ = app.action_tx.send(Action::SetTaskStatus(Some(TaskStatus {
+            follow_up_actions.push(Action::SetTaskStatus(Some(TaskStatus {
                 message: format!("Rerunning failed CI jobs for {} PR(s)...", pr_numbers.len()),
                 status_type: TaskStatusType::Running,
             })));
@@ -384,6 +391,25 @@ pub async fn execute_effect(app: &mut App, effect: Effect) -> Result<()> {
             let _ = app.task_tx.send(BackgroundTask::RerunFailedJobs {
                 repo,
                 pr_numbers,
+                octocrab: app.octocrab()?,
+            });
+        }
+
+        Effect::EnableAutoMerge { repo_index, repo, pr_number } => {
+            // Add PR to auto-merge queue
+            follow_up_actions.push(Action::AddToAutoMergeQueue(repo_index, pr_number));
+
+            // Show status message
+            follow_up_actions.push(Action::SetTaskStatus(Some(TaskStatus {
+                message: format!("Enabling auto-merge for PR #{}...", pr_number),
+                status_type: TaskStatusType::Running,
+            })));
+
+            // Send background task to enable auto-merge on GitHub
+            let _ = app.task_tx.send(BackgroundTask::EnableAutoMerge {
+                repo_index,
+                repo,
+                pr_number,
                 octocrab: app.octocrab()?,
             });
         }
@@ -402,11 +428,11 @@ pub async fn execute_effect(app: &mut App, effect: Effect) -> Result<()> {
 
                 // Save to file
                 if let Err(e) = crate::store_recent_repos(&new_repos) {
-                    let _ = app.action_tx.send(Action::SetTaskStatus(Some(TaskStatus {
+                    follow_up_actions.push(Action::SetTaskStatus(Some(TaskStatus {
                         message: format!("Failed to save repository: {}", e),
                         status_type: TaskStatusType::Error,
                     })));
-                    return Ok(());
+                    return Ok(follow_up_actions);
                 }
 
                 // Update state by mutating the store directly
@@ -417,7 +443,7 @@ pub async fn execute_effect(app: &mut App, effect: Effect) -> Result<()> {
                 data.loading_state = LoadingState::Loading;
 
                 // Show success message
-                let _ = app.action_tx.send(Action::SetTaskStatus(Some(TaskStatus {
+                follow_up_actions.push(Action::SetTaskStatus(Some(TaskStatus {
                     message: format!("Added repository: {}/{}", repo.org, repo.repo),
                     status_type: TaskStatusType::Success,
                 })));
@@ -432,7 +458,7 @@ pub async fn execute_effect(app: &mut App, effect: Effect) -> Result<()> {
                 });
             } else {
                 // Repository already exists
-                let _ = app.action_tx.send(Action::SetTaskStatus(Some(TaskStatus {
+                follow_up_actions.push(Action::SetTaskStatus(Some(TaskStatus {
                     message: format!("Repository {}/{} already exists", repo.org, repo.repo),
                     status_type: TaskStatusType::Error,
                 })));
@@ -440,14 +466,15 @@ pub async fn execute_effect(app: &mut App, effect: Effect) -> Result<()> {
         }
 
         Effect::DispatchAction(action) => {
-            // Dispatch another action (for chaining)
-            let _ = app.action_tx.send(action);
+            // Return action for dispatching (for chaining)
+            follow_up_actions.push(action);
         }
 
         Effect::Batch(effects) => {
-            // Execute a batch of effects
+            // Execute a batch of effects and collect all follow-up actions
             for effect in effects {
-                Box::pin(execute_effect(app, effect)).await?;
+                let actions = Box::pin(execute_effect(app, effect)).await?;
+                follow_up_actions.extend(actions);
             }
         }
 
@@ -457,6 +484,6 @@ pub async fn execute_effect(app: &mut App, effect: Effect) -> Result<()> {
         }
     }
 
-    Ok(())
+    Ok(follow_up_actions)
 }
 

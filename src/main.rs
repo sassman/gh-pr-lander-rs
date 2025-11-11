@@ -11,21 +11,20 @@ use ratatui::{
     widgets::*,
 };
 use serde::{Deserialize, Serialize};
-use std::{env, fs::File, io::BufReader, path::PathBuf, sync::{Arc, Mutex}};
+use std::{fs::File, io::BufReader};
 use tokio::sync::mpsc;
 
 // Import debug from the log crate using :: prefix to disambiguate from our log module
 use ::log::debug;
 
 use crate::config::Config;
-use crate::effect::{execute_effect, Effect};
+use crate::effect::execute_effect;
 use crate::gh::{comment, merge};
-use crate::log::{LogSection, PrContext};
 use crate::pr::Pr;
-use crate::shortcuts::{Action, BootstrapResult};
+use crate::shortcuts::Action;
 use crate::state::*;
 use crate::store::Store;
-use crate::task::{start_task_worker, BackgroundTask};
+use crate::task::{BackgroundTask, TaskResult, start_task_worker};
 use crate::theme::Theme;
 
 mod config;
@@ -49,8 +48,6 @@ pub struct App {
     pub task_tx: mpsc::UnboundedSender<BackgroundTask>,
     // Lazy-initialized octocrab client (created after .env is loaded)
     pub octocrab: Option<Octocrab>,
-    // Shared state for event handler - indicates if add repo popup is open
-    pub show_add_repo_shared: Arc<Mutex<bool>>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Eq, Clone, PartialEq)]
@@ -77,8 +74,6 @@ fn shutdown() -> Result<()> {
     crossterm::terminal::disable_raw_mode()?;
     Ok(())
 }
-
-// Background task definitions moved to task.rs module
 
 async fn update(app: &mut App, msg: Action) -> Result<Action> {
     // When add repo popup is open, handle popup-specific actions
@@ -115,9 +110,23 @@ async fn update(app: &mut App, msg: Action) -> Result<Action> {
     // Pure Redux/Elm architecture: Dispatch action to reducers, get effects back
     let effects = app.store.dispatch(msg);
 
-    // Execute effects returned by reducers
+    // Execute effects returned by reducers and dispatch follow-up actions
     for effect in effects {
-        execute_effect(app, effect).await?;
+        let follow_up_actions = execute_effect(app, effect).await?;
+
+        // Dispatch all follow-up actions returned from the effect
+        for action in follow_up_actions {
+            // Recursively process each follow-up action
+            // This creates a chain: Action → Effects → Follow-up Actions → More Effects...
+            let nested_effects = app.store.dispatch(action);
+            for nested_effect in nested_effects {
+                let nested_actions = execute_effect(app, nested_effect).await?;
+                // Continue dispatching nested actions
+                for nested_action in nested_actions {
+                    let _ = app.action_tx.send(nested_action);
+                }
+            }
+        }
     }
 
     Ok(Action::None)
@@ -129,7 +138,7 @@ fn start_event_handler(
 ) -> tokio::task::JoinHandle<()> {
     let tick_rate = std::time::Duration::from_millis(250);
     // Clone the shared popup state flag for the event loop
-    let show_add_repo_shared = app.show_add_repo_shared.clone();
+    let show_add_repo_shared = app.store.state().ui.show_add_repo_shared.clone();
     tokio::spawn(async move {
         loop {
             let action = if crossterm::event::poll(tick_rate).unwrap() {
@@ -146,37 +155,74 @@ fn start_event_handler(
     })
 }
 
+/// Convert TaskResult to Action - the single place where task results become actions
+fn result_to_action(result: TaskResult) -> Action {
+    match result {
+        TaskResult::RepoLoadingStarted(idx) => Action::RepoLoadingStarted(idx),
+        TaskResult::RepoDataLoaded(idx, data) => Action::RepoDataLoaded(idx, data),
+        TaskResult::MergeStatusUpdated(idx, pr_num, status) => {
+            Action::MergeStatusUpdated(idx, pr_num, status)
+        }
+        TaskResult::RebaseStatusUpdated(idx, pr_num, needs_rebase) => {
+            Action::RebaseStatusUpdated(idx, pr_num, needs_rebase)
+        }
+        TaskResult::RebaseComplete(res) => Action::RebaseComplete(res),
+        TaskResult::MergeComplete(res) => Action::MergeComplete(res),
+        TaskResult::RerunJobsComplete(res) => Action::RerunJobsComplete(res),
+        TaskResult::BuildLogsLoaded(sections, ctx) => Action::BuildLogsLoaded(sections, ctx),
+        TaskResult::IDEOpenComplete(res) => Action::IDEOpenComplete(res),
+        TaskResult::PRMergedConfirmed(idx, pr_num, merged) => {
+            Action::PRMergedConfirmed(idx, pr_num, merged)
+        }
+        TaskResult::TaskStatusUpdate(status) => Action::SetTaskStatus(status),
+        TaskResult::AutoMergeStatusCheck(idx, pr_num) => Action::AutoMergeStatusCheck(idx, pr_num),
+        TaskResult::RemoveFromAutoMergeQueue(idx, pr_num) => {
+            Action::RemoveFromAutoMergeQueue(idx, pr_num)
+        }
+    }
+}
+
 async fn run() -> Result<()> {
     let mut t = Terminal::new(CrosstermBackend::new(std::io::stderr()))?;
 
     let (action_tx, mut action_rx) = mpsc::unbounded_channel();
     let (task_tx, task_rx) = mpsc::unbounded_channel();
+    let (result_tx, mut result_rx) = mpsc::unbounded_channel(); // New result channel
 
     let mut app = App::new(action_tx.clone(), task_tx);
 
     let event_task = start_event_handler(&app, app.action_tx.clone());
-    let worker_task = start_task_worker(task_rx, action_tx.clone());
+    let worker_task = start_task_worker(task_rx, result_tx);
 
     app.action_tx
         .send(Action::Bootstrap)
         .expect("Failed to send bootstrap action");
 
     loop {
-        // Increment spinner frame for animation
-        app.store.state_mut().ui.spinner_frame = (app.store.state().ui.spinner_frame + 1) % 10;
-
         // Sync the shared popup state for event handler
-        *app.show_add_repo_shared.lock().unwrap() = app.store.state().ui.show_add_repo;
+        *app.store.state().ui.show_add_repo_shared.lock().unwrap() =
+            app.store.state().ui.show_add_repo;
 
         t.draw(|f| {
             ui(f, &mut app);
         })?;
 
-        // Use timeout to ensure UI updates even without actions (for spinner and progress bar)
-        let action =
-            tokio::time::timeout(std::time::Duration::from_millis(100), action_rx.recv()).await;
+        // Use tokio::select! to handle both actions and task results
+        // Prioritize results over actions to show incremental progress
+        let maybe_action = tokio::time::timeout(std::time::Duration::from_millis(100), async {
+            tokio::select! {
+                biased;  // Check in order: results first, then actions
+                Some(result) = result_rx.recv() => {
+                    // Convert task result to action (prioritized for smooth progress updates)
+                    Some(result_to_action(result))
+                }
+                Some(action) = action_rx.recv() => Some(action),
+                else => None
+            }
+        })
+        .await;
 
-        match action {
+        match maybe_action {
             Ok(Some(action)) => {
                 if let Err(err) = update(&mut app, action).await {
                     app.store.state_mut().repos.loading_state =
@@ -187,7 +233,8 @@ async fn run() -> Result<()> {
             }
             Ok(None) => break, // Channel closed
             Err(_) => {
-                // Timeout - continue to redraw (for spinner animation and progress updates)
+                // Timeout - tick spinner animation (maintains clean architecture without blocking progress)
+                let _ = app.action_tx.send(Action::TickSpinner);
                 // Also step the merge bot if it's running
                 if app.store.state().merge_bot.bot.is_running() {
                     if let Some(repo) = app.repo().cloned() {
@@ -583,14 +630,30 @@ fn render_add_repo_popup(f: &mut Frame, area: Rect, form: &AddRepoForm, theme: &
         Span::styled(
             "Organization: ",
             Style::default()
-                .fg(if org_focused { theme.active_fg } else { theme.text_primary })
-                .add_modifier(if org_focused { Modifier::BOLD } else { Modifier::empty() }),
+                .fg(if org_focused {
+                    theme.active_fg
+                } else {
+                    theme.text_primary
+                })
+                .add_modifier(if org_focused {
+                    Modifier::BOLD
+                } else {
+                    Modifier::empty()
+                }),
         ),
         Span::styled(
             &form.org,
             Style::default()
-                .fg(if org_focused { theme.active_fg } else { theme.text_primary })
-                .bg(if org_focused { theme.active_bg } else { theme.bg_panel }),
+                .fg(if org_focused {
+                    theme.active_fg
+                } else {
+                    theme.text_primary
+                })
+                .bg(if org_focused {
+                    theme.active_bg
+                } else {
+                    theme.bg_panel
+                }),
         ),
     ]));
 
@@ -606,14 +669,30 @@ fn render_add_repo_popup(f: &mut Frame, area: Rect, form: &AddRepoForm, theme: &
         Span::styled(
             "Repository:   ",
             Style::default()
-                .fg(if repo_focused { theme.active_fg } else { theme.text_primary })
-                .add_modifier(if repo_focused { Modifier::BOLD } else { Modifier::empty() }),
+                .fg(if repo_focused {
+                    theme.active_fg
+                } else {
+                    theme.text_primary
+                })
+                .add_modifier(if repo_focused {
+                    Modifier::BOLD
+                } else {
+                    Modifier::empty()
+                }),
         ),
         Span::styled(
             &form.repo,
             Style::default()
-                .fg(if repo_focused { theme.active_fg } else { theme.text_primary })
-                .bg(if repo_focused { theme.active_bg } else { theme.bg_panel }),
+                .fg(if repo_focused {
+                    theme.active_fg
+                } else {
+                    theme.text_primary
+                })
+                .bg(if repo_focused {
+                    theme.active_bg
+                } else {
+                    theme.bg_panel
+                }),
         ),
     ]));
 
@@ -634,14 +713,30 @@ fn render_add_repo_popup(f: &mut Frame, area: Rect, form: &AddRepoForm, theme: &
         Span::styled(
             "Branch:       ",
             Style::default()
-                .fg(if branch_focused { theme.active_fg } else { theme.text_primary })
-                .add_modifier(if branch_focused { Modifier::BOLD } else { Modifier::empty() }),
+                .fg(if branch_focused {
+                    theme.active_fg
+                } else {
+                    theme.text_primary
+                })
+                .add_modifier(if branch_focused {
+                    Modifier::BOLD
+                } else {
+                    Modifier::empty()
+                }),
         ),
         Span::styled(
             branch_display,
             Style::default()
-                .fg(if branch_focused { theme.active_fg } else { theme.text_muted })
-                .bg(if branch_focused { theme.active_bg } else { theme.bg_panel }),
+                .fg(if branch_focused {
+                    theme.active_fg
+                } else {
+                    theme.text_muted
+                })
+                .bg(if branch_focused {
+                    theme.active_bg
+                } else {
+                    theme.bg_panel
+                }),
         ),
     ]));
 
@@ -650,11 +745,26 @@ fn render_add_repo_popup(f: &mut Frame, area: Rect, form: &AddRepoForm, theme: &
 
     // Footer with shortcuts
     text_lines.push(Line::from(vec![
-        Span::styled("Tab", Style::default().fg(theme.accent_primary).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            "Tab",
+            Style::default()
+                .fg(theme.accent_primary)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::styled(" navigate  ", Style::default().fg(theme.text_muted)),
-        Span::styled("Enter", Style::default().fg(theme.accent_primary).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            "Enter",
+            Style::default()
+                .fg(theme.accent_primary)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::styled(" add  ", Style::default().fg(theme.text_muted)),
-        Span::styled("Esc", Style::default().fg(theme.accent_primary).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            "Esc",
+            Style::default()
+                .fg(theme.accent_primary)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::styled(" cancel", Style::default().fg(theme.text_muted)),
     ]));
 
@@ -890,25 +1000,31 @@ fn render_bootstrap_screen(f: &mut Frame, app: &App) {
         BootstrapState::LoadingRepositories => ("Loading repositories...", 25, false),
         BootstrapState::RestoringSession => ("Restoring session...", 50, false),
         BootstrapState::LoadingPRs => {
-            // Calculate progress based on loaded repos
+            // Calculate progress with half-credit for loading repos
             let total_repos = app.store.state().repos.recent_repos.len().max(1);
-            let loaded_repos = app
+
+            let (loading_count, loaded_count) = app
                 .store
                 .state()
                 .repos
                 .repo_data
                 .values()
-                .filter(|d| {
-                    matches!(
-                        d.loading_state,
-                        LoadingState::Loaded | LoadingState::Error(_)
-                    )
-                })
-                .count();
-            let progress = 50 + ((loaded_repos * 50) / total_repos);
+                .fold((0, 0), |(loading, loaded), d| {
+                    match d.loading_state {
+                        LoadingState::Loading => (loading + 1, loaded),
+                        LoadingState::Loaded | LoadingState::Error(_) => (loading, loaded + 1),
+                        _ => (loading, loaded),
+                    }
+                });
+
+            // Progress: loaded repos count as 1.0, loading repos count as 0.5
+            // For 5 repos: start loading #1 = 10%, #1 done = 20%, start #2 = 30%, etc.
+            let progress = ((loaded_count * 100) + (loading_count * 50)) / total_repos;
+
             (
                 &format!(
-                    "Loading pull requests from\n{} repositories...",
+                    "Loading pull requests...\n[{}/{}] repositories",
+                    loaded_count,
                     total_repos
                 )[..],
                 progress,
@@ -1020,7 +1136,6 @@ impl App {
             action_tx,
             task_tx,
             octocrab: None, // Initialized lazily during bootstrap after .env is loaded
-            show_add_repo_shared: Arc::new(Mutex::new(false)),
         }
     }
 

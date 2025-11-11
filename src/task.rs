@@ -3,14 +3,57 @@
 use crate::{
     gh::{comment, merge},
     log::{LogSection, PrContext},
-    pr::Pr,
-    shortcuts::Action,
-    state::Repo,
+    pr::{Pr, MergeableStatus},
+    state::{Repo, TaskStatus},
     PrFilter,
 };
 use octocrab::Octocrab;
 use std::path::PathBuf;
 use tokio::sync::mpsc;
+
+/// Results from background task execution
+/// These are sent back to the main loop and converted to Actions
+#[derive(Debug)]
+pub enum TaskResult {
+    /// Repository loading started (repo_index) - sent before fetch begins
+    RepoLoadingStarted(usize),
+
+    /// Repository data loaded (repo_index, result)
+    RepoDataLoaded(usize, Result<Vec<Pr>, String>),
+
+    /// Merge status updated for a PR
+    MergeStatusUpdated(usize, usize, MergeableStatus), // repo_index, pr_number, status
+
+    /// Rebase status updated for a PR
+    RebaseStatusUpdated(usize, usize, bool), // repo_index, pr_number, needs_rebase
+
+    /// Rebase operation completed
+    RebaseComplete(Result<(), String>),
+
+    /// Merge operation completed
+    MergeComplete(Result<(), String>),
+
+    /// Rerun failed jobs operation completed
+    RerunJobsComplete(Result<(), String>),
+
+    /// Build logs loaded
+    BuildLogsLoaded(Vec<LogSection>, PrContext),
+
+    /// IDE open operation completed
+    IDEOpenComplete(Result<(), String>),
+
+    /// PR merge status confirmed (for merge bot polling)
+    PRMergedConfirmed(usize, usize, bool), // repo_index, pr_number, is_merged
+
+    /// Task status update
+    TaskStatusUpdate(Option<TaskStatus>),
+
+    /// Auto-merge status check needed
+    AutoMergeStatusCheck(usize, usize), // repo_index, pr_number
+
+    /// Remove PR from auto-merge queue
+    RemoveFromAutoMergeQueue(usize, usize), // repo_index, pr_number
+}
 
 /// Background tasks that can be executed asynchronously
 #[derive(Debug)]
@@ -70,13 +113,20 @@ pub enum BackgroundTask {
         octocrab: Octocrab,
         is_checking_ci: bool, // If true, use longer sleep (15s) for CI checks
     },
+    /// Enable auto-merge on GitHub and monitor PR until ready
+    EnableAutoMerge {
+        repo_index: usize,
+        repo: Repo,
+        pr_number: usize,
+        octocrab: Octocrab,
+    },
 }
 
 
 /// Background task worker that processes heavy operations without blocking UI
 pub fn start_task_worker(
     mut task_rx: mpsc::UnboundedReceiver<BackgroundTask>,
-    action_tx: mpsc::UnboundedSender<Action>,
+    result_tx: mpsc::UnboundedSender<TaskResult>,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         while let Some(task) = task_rx.recv().await {
@@ -89,6 +139,9 @@ pub fn start_task_worker(
                     // Spawn parallel tasks for each repo
                     let mut tasks = Vec::new();
                     for (index, repo) in repos.iter().enumerate() {
+                        // Signal that we're starting to load this repo (shows half progress)
+                        let _ = result_tx.send(TaskResult::RepoLoadingStarted(index));
+
                         let octocrab = octocrab.clone();
                         let repo = repo.clone();
                         let filter = filter.clone();
@@ -100,12 +153,18 @@ pub fn start_task_worker(
                             (index, result)
                         });
                         tasks.push(task);
+
+                        // Small delay between starting each request to show incremental progress
+                        tokio::time::sleep(tokio::time::Duration::from_millis(30)).await;
                     }
 
-                    // Collect results and send back to UI thread
+                    // Collect results and send back to main loop
+                    // Add small delays between results to allow UI to update incrementally
                     for task in tasks {
                         if let Ok((index, result)) = task.await {
-                            let _ = action_tx.send(Action::RepoDataLoaded(index, result));
+                            let _ = result_tx.send(TaskResult::RepoDataLoaded(index, result));
+                            // Small delay to allow UI to redraw and show progress
+                            tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
                         }
                     }
                 }
@@ -118,7 +177,7 @@ pub fn start_task_worker(
                     let result = crate::fetch_github_data(&octocrab, &repo, &filter)
                         .await
                         .map_err(|e| e.to_string());
-                    let _ = action_tx.send(Action::RepoDataLoaded(repo_index, result));
+                    let _ = result_tx.send(TaskResult::RepoDataLoaded(repo_index, result));
                 }
                 BackgroundTask::CheckMergeStatus {
                     repo_index,
@@ -131,7 +190,7 @@ pub fn start_task_worker(
                     for pr_number in pr_numbers {
                         let octocrab = octocrab.clone();
                         let repo = repo.clone();
-                        let action_tx = action_tx.clone();
+                        let result_tx = result_tx.clone();
 
                         let task = tokio::spawn(async move {
                             use crate::pr::MergeableStatus;
@@ -266,10 +325,10 @@ pub fn start_task_worker(
                                         }
                                     };
 
-                                    let _ = action_tx.send(Action::MergeStatusUpdated(
+                                    let _ = result_tx.send(TaskResult::MergeStatusUpdated(
                                         repo_index, pr_number, status,
                                     ));
-                                    let _ = action_tx.send(Action::RebaseStatusUpdated(
+                                    let _ = result_tx.send(TaskResult::RebaseStatusUpdated(
                                         repo_index,
                                         pr_number,
                                         needs_rebase,
@@ -331,7 +390,7 @@ pub fn start_task_worker(
                     } else {
                         Err("Some rebases failed".to_string())
                     };
-                    let _ = action_tx.send(Action::RebaseComplete(result));
+                    let _ = result_tx.send(TaskResult::RebaseComplete(result));
                 }
                 BackgroundTask::Merge {
                     repo,
@@ -352,7 +411,7 @@ pub fn start_task_worker(
                     } else {
                         Err("Some merges failed".to_string())
                     };
-                    let _ = action_tx.send(Action::MergeComplete(result));
+                    let _ = result_tx.send(TaskResult::MergeComplete(result));
                 }
                 BackgroundTask::RerunFailedJobs {
                     repo,
@@ -433,7 +492,7 @@ pub fn start_task_worker(
                     } else {
                         Err("Some jobs failed to rerun".to_string())
                     };
-                    let _ = action_tx.send(Action::RerunJobsComplete(result));
+                    let _ = result_tx.send(TaskResult::RerunJobsComplete(result));
                 }
                 BackgroundTask::FetchBuildLogs {
                     repo,
@@ -450,7 +509,7 @@ pub fn start_task_worker(
                     {
                         Ok(pr) => pr,
                         Err(_) => {
-                            let _ = action_tx.send(Action::BuildLogsLoaded(vec![], pr_context));
+                            let _ = result_tx.send(TaskResult::BuildLogsLoaded(vec![], pr_context));
                             return;
                         }
                     };
@@ -472,7 +531,7 @@ pub fn start_task_worker(
                         match octocrab.get(&url, None::<&()>).await {
                             Ok(runs) => runs,
                             Err(_) => {
-                                let _ = action_tx.send(Action::BuildLogsLoaded(vec![], pr_context));
+                                let _ = result_tx.send(TaskResult::BuildLogsLoaded(vec![], pr_context));
                                 return;
                             }
                         };
@@ -675,7 +734,7 @@ pub fn start_task_worker(
                         });
                     }
 
-                    let _ = action_tx.send(Action::BuildLogsLoaded(log_sections, pr_context));
+                    let _ = result_tx.send(TaskResult::BuildLogsLoaded(log_sections, pr_context));
                 }
 
                 BackgroundTask::OpenPRInIDE {
@@ -688,7 +747,7 @@ pub fn start_task_worker(
 
                     // Create temp directory if it doesn't exist
                     if let Err(err) = std::fs::create_dir_all(&temp_dir) {
-                        let _ = action_tx.send(Action::IDEOpenComplete(Err(format!(
+                        let _ = result_tx.send(TaskResult::IDEOpenComplete(Err(format!(
                             "Failed to create temp directory: {}",
                             err
                         ))));
@@ -706,7 +765,7 @@ pub fn start_task_worker(
                     // Remove existing directory if present
                     if pr_dir.exists() {
                         if let Err(err) = std::fs::remove_dir_all(&pr_dir) {
-                            let _ = action_tx.send(Action::IDEOpenComplete(Err(format!(
+                            let _ = result_tx.send(TaskResult::IDEOpenComplete(Err(format!(
                                 "Failed to remove existing directory: {}",
                                 err
                             ))));
@@ -725,7 +784,7 @@ pub fn start_task_worker(
                         .output();
 
                     if let Err(err) = clone_output {
-                        let _ = action_tx.send(Action::IDEOpenComplete(Err(format!(
+                        let _ = result_tx.send(TaskResult::IDEOpenComplete(Err(format!(
                             "Failed to run gh repo clone: {}",
                             err
                         ))));
@@ -735,7 +794,7 @@ pub fn start_task_worker(
                     let clone_output = clone_output.unwrap();
                     if !clone_output.status.success() {
                         let stderr = String::from_utf8_lossy(&clone_output.stderr);
-                        let _ = action_tx.send(Action::IDEOpenComplete(Err(format!(
+                        let _ = result_tx.send(TaskResult::IDEOpenComplete(Err(format!(
                             "gh repo clone failed: {}",
                             stderr
                         ))));
@@ -751,7 +810,7 @@ pub fn start_task_worker(
                             .output();
 
                         if let Err(err) = checkout_output {
-                            let _ = action_tx.send(Action::IDEOpenComplete(Err(format!(
+                            let _ = result_tx.send(TaskResult::IDEOpenComplete(Err(format!(
                                 "Failed to run git checkout main: {}",
                                 err
                             ))));
@@ -761,7 +820,7 @@ pub fn start_task_worker(
                         let checkout_output = checkout_output.unwrap();
                         if !checkout_output.status.success() {
                             let stderr = String::from_utf8_lossy(&checkout_output.stderr);
-                            let _ = action_tx.send(Action::IDEOpenComplete(Err(format!(
+                            let _ = result_tx.send(TaskResult::IDEOpenComplete(Err(format!(
                                 "git checkout main failed: {}",
                                 stderr
                             ))));
@@ -775,7 +834,7 @@ pub fn start_task_worker(
                             .output();
 
                         if let Err(err) = pull_output {
-                            let _ = action_tx.send(Action::IDEOpenComplete(Err(format!(
+                            let _ = result_tx.send(TaskResult::IDEOpenComplete(Err(format!(
                                 "Failed to run git pull: {}",
                                 err
                             ))));
@@ -785,7 +844,7 @@ pub fn start_task_worker(
                         let pull_output = pull_output.unwrap();
                         if !pull_output.status.success() {
                             let stderr = String::from_utf8_lossy(&pull_output.stderr);
-                            let _ = action_tx.send(Action::IDEOpenComplete(Err(format!(
+                            let _ = result_tx.send(TaskResult::IDEOpenComplete(Err(format!(
                                 "git pull failed: {}",
                                 stderr
                             ))));
@@ -799,7 +858,7 @@ pub fn start_task_worker(
                             .output();
 
                         if let Err(err) = checkout_output {
-                            let _ = action_tx.send(Action::IDEOpenComplete(Err(format!(
+                            let _ = result_tx.send(TaskResult::IDEOpenComplete(Err(format!(
                                 "Failed to run gh pr checkout: {}",
                                 err
                             ))));
@@ -809,7 +868,7 @@ pub fn start_task_worker(
                         let checkout_output = checkout_output.unwrap();
                         if !checkout_output.status.success() {
                             let stderr = String::from_utf8_lossy(&checkout_output.stderr);
-                            let _ = action_tx.send(Action::IDEOpenComplete(Err(format!(
+                            let _ = result_tx.send(TaskResult::IDEOpenComplete(Err(format!(
                                 "gh pr checkout failed: {}",
                                 stderr
                             ))));
@@ -825,7 +884,7 @@ pub fn start_task_worker(
                         .output();
 
                     if let Err(err) = set_url_output {
-                        let _ = action_tx.send(Action::IDEOpenComplete(Err(format!(
+                        let _ = result_tx.send(TaskResult::IDEOpenComplete(Err(format!(
                             "Failed to set SSH origin URL: {}",
                             err
                         ))));
@@ -835,7 +894,7 @@ pub fn start_task_worker(
                     let set_url_output = set_url_output.unwrap();
                     if !set_url_output.status.success() {
                         let stderr = String::from_utf8_lossy(&set_url_output.stderr);
-                        let _ = action_tx.send(Action::IDEOpenComplete(Err(format!(
+                        let _ = result_tx.send(TaskResult::IDEOpenComplete(Err(format!(
                             "Failed to set SSH origin URL: {}",
                             stderr
                         ))));
@@ -847,10 +906,10 @@ pub fn start_task_worker(
 
                     match ide_output {
                         Ok(_) => {
-                            let _ = action_tx.send(Action::IDEOpenComplete(Ok(())));
+                            let _ = result_tx.send(TaskResult::IDEOpenComplete(Ok(())));
                         }
                         Err(err) => {
-                            let _ = action_tx.send(Action::IDEOpenComplete(Err(format!(
+                            let _ = result_tx.send(TaskResult::IDEOpenComplete(Err(format!(
                                 "Failed to open IDE '{}': {}",
                                 ide_command, err
                             ))));
@@ -991,13 +1050,13 @@ pub fn start_task_worker(
                                     }
                                 };
 
-                                let _ = action_tx.send(Action::MergeStatusUpdated(
+                                let _ = result_tx.send(TaskResult::MergeStatusUpdated(
                                     repo_index, pr_number, status,
                                 ));
                             } else {
                                 // When checking merge confirmation, just check if PR is merged
                                 let is_merged = pr_detail.merged_at.is_some();
-                                let _ = action_tx.send(Action::PRMergedConfirmed(
+                                let _ = result_tx.send(TaskResult::PRMergedConfirmed(
                                     repo_index, pr_number, is_merged,
                                 ));
                             }
@@ -1005,20 +1064,200 @@ pub fn start_task_worker(
                         Err(_) => {
                             if is_checking_ci {
                                 // Can't fetch PR, send unknown status
-                                let _ = action_tx.send(Action::MergeStatusUpdated(
+                                let _ = result_tx.send(TaskResult::MergeStatusUpdated(
                                     repo_index,
                                     pr_number,
                                     crate::pr::MergeableStatus::Unknown,
                                 ));
                             } else {
                                 // Can't fetch PR, assume not merged yet
-                                let _ = action_tx
-                                    .send(Action::PRMergedConfirmed(repo_index, pr_number, false));
+                                let _ = result_tx
+                                    .send(TaskResult::PRMergedConfirmed(repo_index, pr_number, false));
                             }
+                        }
+                    }
+                }
+                BackgroundTask::EnableAutoMerge {
+                    repo_index,
+                    repo,
+                    pr_number,
+                    octocrab,
+                } => {
+                    // Enable auto-merge on GitHub using GraphQL API
+                    let result = enable_github_auto_merge(&octocrab, &repo, pr_number).await;
+
+                    match result {
+                        Ok(_) => {
+                            // Success - schedule periodic status checks
+                            let _ = result_tx.send(TaskResult::TaskStatusUpdate(Some(
+                                crate::state::TaskStatus {
+                                    message: format!("Auto-merge enabled for PR #{}, monitoring...", pr_number),
+                                    status_type: crate::state::TaskStatusType::Success,
+                                }
+                            )));
+
+                            // Spawn a task to periodically check PR status
+                            let result_tx_clone = result_tx.clone();
+                            let repo_clone = repo.clone();
+                            let octocrab_clone = octocrab.clone();
+                            tokio::spawn(async move {
+                                for _ in 0..20 {
+                                    // Wait 1 minute between checks
+                                    tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
+
+                                    // Send status check result
+                                    let _ = result_tx_clone.send(TaskResult::AutoMergeStatusCheck(repo_index, pr_number));
+
+                                    // Check merge status to update PR state
+                                    if let Ok(pr_detail) = octocrab_clone
+                                        .pulls(&repo_clone.org, &repo_clone.repo)
+                                        .get(pr_number as u64)
+                                        .await
+                                    {
+                                        use crate::pr::MergeableStatus;
+
+                                        // Determine mergeable status
+                                        let mergeable_status = if pr_detail.merged_at.is_some() {
+                                            // PR has been merged - stop monitoring
+                                            let _ = result_tx_clone.send(TaskResult::RemoveFromAutoMergeQueue(repo_index, pr_number));
+                                            let _ = result_tx_clone.send(TaskResult::TaskStatusUpdate(Some(
+                                                crate::state::TaskStatus {
+                                                    message: format!("PR #{} successfully merged!", pr_number),
+                                                    status_type: crate::state::TaskStatusType::Success,
+                                                }
+                                            )));
+                                            break;
+                                        } else {
+                                            // Check CI status
+                                            match get_pr_ci_status(&octocrab_clone, &repo_clone, &pr_detail.head.sha).await {
+                                                Ok((_, build_status)) => {
+                                                    match build_status.as_str() {
+                                                        "success" | "neutral" | "skipped" => MergeableStatus::Ready,
+                                                        "failure" | "cancelled" | "timed_out" | "action_required" => MergeableStatus::BuildFailed,
+                                                        _ => MergeableStatus::BuildInProgress,
+                                                    }
+                                                }
+                                                Err(_) => MergeableStatus::Unknown,
+                                            }
+                                        };
+
+                                        // Update PR status
+                                        let _ = result_tx_clone.send(TaskResult::MergeStatusUpdated(
+                                            repo_index,
+                                            pr_number,
+                                            mergeable_status,
+                                        ));
+                                    }
+                                }
+                            });
+                        }
+                        Err(e) => {
+                            // Failed to enable auto-merge
+                            let _ = result_tx.send(TaskResult::RemoveFromAutoMergeQueue(repo_index, pr_number));
+                            let _ = result_tx.send(TaskResult::TaskStatusUpdate(Some(
+                                crate::state::TaskStatus {
+                                    message: format!("Failed to enable auto-merge for PR #{}: {}", pr_number, e),
+                                    status_type: crate::state::TaskStatusType::Error,
+                                }
+                            )));
                         }
                     }
                 }
             }
         }
     })
+}
+
+/// Enable auto-merge on GitHub using GraphQL API
+async fn enable_github_auto_merge(
+    octocrab: &Octocrab,
+    repo: &Repo,
+    pr_number: usize,
+) -> anyhow::Result<()> {
+    // First, get the PR's node_id (needed for GraphQL)
+    let pr = octocrab
+        .pulls(&repo.org, &repo.repo)
+        .get(pr_number as u64)
+        .await?;
+
+    let node_id = pr.node_id
+        .ok_or_else(|| anyhow::anyhow!("PR does not have a node_id"))?;
+
+    // GraphQL mutation to enable auto-merge
+    let query = format!(
+        r#"mutation {{
+            enablePullRequestAutoMerge(input: {{
+                pullRequestId: "{}",
+                mergeMethod: SQUASH
+            }}) {{
+                pullRequest {{
+                    autoMergeRequest {{
+                        enabledAt
+                    }}
+                }}
+            }}
+        }}"#,
+        node_id
+    );
+
+    // Execute GraphQL query
+    let response: serde_json::Value = octocrab
+        .graphql(&query)
+        .await?;
+
+    // Check for errors in response
+    if let Some(errors) = response.get("errors") {
+        return Err(anyhow::anyhow!("GraphQL error: {}", errors));
+    }
+
+    Ok(())
+}
+
+/// Get PR CI status by checking commit status
+async fn get_pr_ci_status(
+    octocrab: &Octocrab,
+    repo: &Repo,
+    head_sha: &str,
+) -> anyhow::Result<(String, String)> {
+    // Check commit status via check-runs API
+    let check_runs_url = format!(
+        "/repos/{}/{}/commits/{}/check-runs",
+        repo.org, repo.repo, head_sha
+    );
+
+    let response: serde_json::Value = octocrab.get(&check_runs_url, None::<&()>).await?;
+
+    let empty_vec = vec![];
+    let check_runs = response["check_runs"].as_array().unwrap_or(&empty_vec);
+
+    // Determine overall status
+    let mut has_failure = false;
+    let mut has_pending = false;
+    let mut has_success = false;
+
+    for check in check_runs {
+        if let Some(conclusion) = check["conclusion"].as_str() {
+            match conclusion {
+                "success" | "neutral" | "skipped" => has_success = true,
+                "failure" | "cancelled" | "timed_out" | "action_required" => has_failure = true,
+                _ => has_pending = true,
+            }
+        } else if let Some(status) = check["status"].as_str() {
+            if status == "in_progress" || status == "queued" {
+                has_pending = true;
+            }
+        }
+    }
+
+    let overall_status = if has_failure {
+        ("completed".to_string(), "failure".to_string())
+    } else if has_pending {
+        ("in_progress".to_string(), "pending".to_string())
+    } else if has_success {
+        ("completed".to_string(), "success".to_string())
+    } else {
+        ("unknown".to_string(), "unknown".to_string())
+    };
+
+    Ok(overall_status)
 }
