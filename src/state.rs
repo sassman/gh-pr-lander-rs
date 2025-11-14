@@ -24,6 +24,13 @@ pub struct AppState {
     pub theme: Theme,
 }
 
+/// Pending key press for two-key combinations
+#[derive(Debug, Clone)]
+pub struct PendingKeyPress {
+    pub key: char,
+    pub timestamp: std::time::Instant,
+}
+
 /// UI-specific state (shortcuts panel, spinner, quit flag)
 #[derive(Debug, Clone)]
 pub struct UiState {
@@ -36,6 +43,9 @@ pub struct UiState {
     pub add_repo_form: AddRepoForm,
     /// Shared state for event handler to know if add repo popup is open
     pub show_add_repo_shared: Arc<Mutex<bool>>,
+    /// Pending key press for two-key combinations (3 second timeout)
+    /// Shared with event handler for checking multi-key shortcuts
+    pub pending_key: Arc<Mutex<Option<PendingKeyPress>>>,
 }
 
 /// Form state for adding a new repository
@@ -258,6 +268,7 @@ impl Default for UiState {
             show_add_repo: false,
             add_repo_form: AddRepoForm::default(),
             show_add_repo_shared: Arc::new(Mutex::new(false)),
+            pending_key: Arc::new(Mutex::new(None)),
         }
     }
 }

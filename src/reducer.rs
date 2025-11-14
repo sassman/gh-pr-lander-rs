@@ -85,13 +85,17 @@ fn ui_reducer(mut state: UiState, action: &Action) -> (UiState, Vec<Effect>) {
                 AddRepoField::Branch => state.add_repo_form.branch.push(*ch),
             }
         }
-        Action::AddRepoFormBackspace => {
-            match state.add_repo_form.focused_field {
-                AddRepoField::Org => { state.add_repo_form.org.pop(); }
-                AddRepoField::Repo => { state.add_repo_form.repo.pop(); }
-                AddRepoField::Branch => { state.add_repo_form.branch.pop(); }
+        Action::AddRepoFormBackspace => match state.add_repo_form.focused_field {
+            AddRepoField::Org => {
+                state.add_repo_form.org.pop();
             }
-        }
+            AddRepoField::Repo => {
+                state.add_repo_form.repo.pop();
+            }
+            AddRepoField::Branch => {
+                state.add_repo_form.branch.pop();
+            }
+        },
         Action::AddRepoFormNextField => {
             state.add_repo_form.focused_field = match state.add_repo_form.focused_field {
                 AddRepoField::Org => AddRepoField::Repo,
@@ -141,7 +145,9 @@ fn parse_github_url(url: &str) -> Option<(String, String, String)> {
     let url = url.strip_prefix("http://").unwrap_or(url);
 
     // Remove github.com prefix
-    let url = url.strip_prefix("github.com/").or_else(|| url.strip_prefix("www.github.com/"))?;
+    let url = url
+        .strip_prefix("github.com/")
+        .or_else(|| url.strip_prefix("www.github.com/"))?;
 
     // Split by '/'
     let parts: Vec<&str> = url.split('/').collect();
@@ -227,6 +233,67 @@ fn repos_reducer(
             let data = state.repo_data.entry(*repo_index).or_default();
             data.loading_state = LoadingState::Loading;
         }
+        Action::DeleteCurrentRepo => {
+            // Delete the currently selected repository
+            if !state.recent_repos.is_empty() {
+                let selected_idx = state.selected_repo;
+
+                // Remove the repo from the list
+                state.recent_repos.remove(selected_idx);
+
+                // Remove its data
+                state.repo_data.remove(&selected_idx);
+
+                // Rebuild repo_data with updated indices
+                let mut new_repo_data = std::collections::HashMap::new();
+                for (old_idx, data) in state.repo_data.iter() {
+                    let new_idx = if *old_idx > selected_idx {
+                        old_idx - 1
+                    } else {
+                        *old_idx
+                    };
+                    new_repo_data.insert(new_idx, data.clone());
+                }
+                state.repo_data = new_repo_data;
+
+                // Adjust selected repo index
+                if state.recent_repos.is_empty() {
+                    state.selected_repo = 0;
+                    state.prs.clear();
+                    state.loading_state = LoadingState::Idle;
+                    state.state.select(None);
+                } else if selected_idx >= state.recent_repos.len() {
+                    // Was last repo, select the new last one
+                    state.selected_repo = state.recent_repos.len() - 1;
+                    // Sync legacy fields with new selection
+                    if let Some(data) = state.repo_data.get(&state.selected_repo) {
+                        state.prs = data.prs.clone();
+                        state.state = data.table_state.clone();
+                        state.selected_prs = data.selected_prs.clone();
+                        state.loading_state = data.loading_state.clone();
+                    }
+                } else {
+                    // Sync legacy fields with current selection
+                    if let Some(data) = state.repo_data.get(&state.selected_repo) {
+                        state.prs = data.prs.clone();
+                        state.state = data.table_state.clone();
+                        state.selected_prs = data.selected_prs.clone();
+                        state.loading_state = data.loading_state.clone();
+                    }
+                }
+
+                // Effect: Save updated repository list to file
+                effects.push(Effect::SaveRepositories(state.recent_repos.clone()));
+
+                // Show status message
+                effects.push(Effect::DispatchAction(Action::SetTaskStatus(Some(
+                    crate::state::TaskStatus {
+                        message: "Repository deleted".to_string(),
+                        status_type: crate::state::TaskStatusType::Success,
+                    }
+                ))));
+            }
+        }
         Action::SelectRepoByIndex(index) => {
             if *index < state.recent_repos.len() {
                 state.selected_repo = *index;
@@ -283,9 +350,7 @@ fn repos_reducer(
             // Effect: Dispatch bootstrap completion
             if all_loaded && state.bootstrap_state == BootstrapState::LoadingPRs {
                 effects.push(Effect::batch(vec![
-                    Effect::DispatchAction(Action::SetBootstrapState(
-                        BootstrapState::Completed,
-                    )),
+                    Effect::DispatchAction(Action::SetBootstrapState(BootstrapState::Completed)),
                     Effect::DispatchAction(Action::SetTaskStatus(Some(TaskStatus {
                         message: "All repositories loaded successfully".to_string(),
                         status_type: TaskStatusType::Success,
@@ -408,10 +473,18 @@ fn repos_reducer(
             if let Some(repo) = state.recent_repos.get(state.selected_repo).cloned() {
                 let prs_to_rebase: Vec<_> = if state.selected_prs.is_empty() {
                     // Auto-rebase: find first PR that needs rebase
-                    state.prs.iter().filter(|pr| pr.needs_rebase).take(1).cloned().collect()
+                    state
+                        .prs
+                        .iter()
+                        .filter(|pr| pr.needs_rebase)
+                        .take(1)
+                        .cloned()
+                        .collect()
                 } else {
                     // Rebase selected PRs
-                    state.selected_prs.iter()
+                    state
+                        .selected_prs
+                        .iter()
                         .filter_map(|&idx| state.prs.get(idx).cloned())
                         .collect()
                 };
@@ -429,29 +502,32 @@ fn repos_reducer(
             if let Some(repo) = state.recent_repos.get(state.selected_repo).cloned() {
                 let pr_numbers: Vec<usize> = if state.selected_prs.is_empty() {
                     // Rerun for current PR only
-                    state.state.selected()
+                    state
+                        .state
+                        .selected()
                         .and_then(|idx| state.prs.get(idx))
                         .map(|pr| vec![pr.number])
                         .unwrap_or_default()
                 } else {
                     // Rerun for all selected PRs
-                    state.selected_prs.iter()
+                    state
+                        .selected_prs
+                        .iter()
                         .filter_map(|&idx| state.prs.get(idx).map(|pr| pr.number))
                         .collect()
                 };
 
                 if !pr_numbers.is_empty() {
-                    effects.push(Effect::RerunFailedJobs {
-                        repo,
-                        pr_numbers,
-                    });
+                    effects.push(Effect::RerunFailedJobs { repo, pr_numbers });
                 }
             }
         }
         Action::MergeSelectedPrs => {
             // Effect: Merge selected PRs or enable auto-merge if building
             if let Some(repo) = state.recent_repos.get(state.selected_repo).cloned() {
-                let selected_prs: Vec<_> = state.selected_prs.iter()
+                let selected_prs: Vec<_> = state
+                    .selected_prs
+                    .iter()
                     .filter_map(|&idx| state.prs.get(idx).cloned())
                     .collect();
 
@@ -493,7 +569,9 @@ fn repos_reducer(
         Action::StartMergeBot => {
             // Effect: Start merge bot with selected PRs
             if let Some(repo) = state.recent_repos.get(state.selected_repo).cloned() {
-                let prs_to_process: Vec<_> = state.selected_prs.iter()
+                let prs_to_process: Vec<_> = state
+                    .selected_prs
+                    .iter()
                     .filter_map(|&idx| state.prs.get(idx).cloned())
                     .collect();
 
@@ -510,18 +588,27 @@ fn repos_reducer(
             if let Some(repo) = state.recent_repos.get(state.selected_repo) {
                 // If multiple PRs selected, open all of them
                 let prs_to_open: Vec<usize> = if !state.selected_prs.is_empty() {
-                    state.selected_prs.iter()
+                    state
+                        .selected_prs
+                        .iter()
                         .filter_map(|&idx| state.prs.get(idx).map(|pr| pr.number))
                         .collect()
                 } else if let Some(selected_idx) = state.state.selected() {
                     // Open just the current PR
-                    state.prs.get(selected_idx).map(|pr| vec![pr.number]).unwrap_or_default()
+                    state
+                        .prs
+                        .get(selected_idx)
+                        .map(|pr| vec![pr.number])
+                        .unwrap_or_default()
                 } else {
                     vec![]
                 };
 
                 for pr_number in prs_to_open {
-                    let url = format!("https://github.com/{}/{}/pull/{}", repo.org, repo.repo, pr_number);
+                    let url = format!(
+                        "https://github.com/{}/{}/pull/{}",
+                        repo.org, repo.repo, pr_number
+                    );
                     effects.push(Effect::OpenInBrowser { url });
                 }
             }
@@ -550,10 +637,7 @@ fn repos_reducer(
                 } else {
                     // No PR selected (empty list) - open main branch
                     // Use pr_number = 0 as a special marker for main branch
-                    effects.push(Effect::OpenInIDE {
-                        repo,
-                        pr_number: 0,
-                    });
+                    effects.push(Effect::OpenInIDE { repo, pr_number: 0 });
                 }
             }
         }
@@ -591,7 +675,11 @@ fn repos_reducer(
             // Add PR to auto-merge queue
             if let Some(data) = state.repo_data.get_mut(repo_index) {
                 // Check if already in queue
-                if !data.auto_merge_queue.iter().any(|pr| pr.pr_number == *pr_number) {
+                if !data
+                    .auto_merge_queue
+                    .iter()
+                    .any(|pr| pr.pr_number == *pr_number)
+                {
                     data.auto_merge_queue.push(crate::state::AutoMergePR {
                         pr_number: *pr_number,
                         started_at: std::time::Instant::now(),
@@ -603,24 +691,30 @@ fn repos_reducer(
         Action::RemoveFromAutoMergeQueue(repo_index, pr_number) => {
             // Remove PR from auto-merge queue
             if let Some(data) = state.repo_data.get_mut(repo_index) {
-                data.auto_merge_queue.retain(|pr| pr.pr_number != *pr_number);
+                data.auto_merge_queue
+                    .retain(|pr| pr.pr_number != *pr_number);
             }
         }
         Action::AutoMergeStatusCheck(repo_index, pr_number) => {
             // Periodic status check for auto-merge PR
             if let Some(data) = state.repo_data.get_mut(repo_index) {
-                if let Some(auto_pr) = data.auto_merge_queue.iter_mut().find(|pr| pr.pr_number == *pr_number) {
+                if let Some(auto_pr) = data
+                    .auto_merge_queue
+                    .iter_mut()
+                    .find(|pr| pr.pr_number == *pr_number)
+                {
                     auto_pr.check_count += 1;
 
                     // Check if we've exceeded the time limit (20 minutes = 20 checks at 1 min intervals)
                     if auto_pr.check_count >= 20 {
                         // Remove from queue - timeout reached
-                        data.auto_merge_queue.retain(|pr| pr.pr_number != *pr_number);
+                        data.auto_merge_queue
+                            .retain(|pr| pr.pr_number != *pr_number);
                         effects.push(Effect::DispatchAction(Action::SetTaskStatus(Some(
                             crate::state::TaskStatus {
                                 message: format!("Auto-merge timeout for PR #{}", pr_number),
                                 status_type: crate::state::TaskStatusType::Error,
-                            }
+                            },
                         ))));
                     } else {
                         // Check PR status
@@ -640,22 +734,28 @@ fn repos_reducer(
                                     crate::pr::MergeableStatus::BuildFailed => {
                                         // Build failed - stop monitoring
                                         data.auto_merge_queue.retain(|p| p.pr_number != *pr_number);
-                                        effects.push(Effect::DispatchAction(Action::SetTaskStatus(Some(
-                                            crate::state::TaskStatus {
-                                                message: format!("Auto-merge stopped: PR #{} build failed", pr_number),
+                                        effects.push(Effect::DispatchAction(
+                                            Action::SetTaskStatus(Some(crate::state::TaskStatus {
+                                                message: format!(
+                                                    "Auto-merge stopped: PR #{} build failed",
+                                                    pr_number
+                                                ),
                                                 status_type: crate::state::TaskStatusType::Error,
-                                            }
-                                        ))));
+                                            })),
+                                        ));
                                     }
                                     crate::pr::MergeableStatus::NeedsRebase => {
                                         // Needs rebase - stop monitoring
                                         data.auto_merge_queue.retain(|p| p.pr_number != *pr_number);
-                                        effects.push(Effect::DispatchAction(Action::SetTaskStatus(Some(
-                                            crate::state::TaskStatus {
-                                                message: format!("Auto-merge stopped: PR #{} needs rebase", pr_number),
+                                        effects.push(Effect::DispatchAction(
+                                            Action::SetTaskStatus(Some(crate::state::TaskStatus {
+                                                message: format!(
+                                                    "Auto-merge stopped: PR #{} needs rebase",
+                                                    pr_number
+                                                ),
                                                 status_type: crate::state::TaskStatusType::Error,
-                                            }
-                                        ))));
+                                            })),
+                                        ));
                                     }
                                     crate::pr::MergeableStatus::BuildInProgress => {
                                         // Still building - schedule next check

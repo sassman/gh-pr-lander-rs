@@ -139,11 +139,14 @@ fn start_event_handler(
     let tick_rate = std::time::Duration::from_millis(250);
     // Clone the shared popup state flag for the event loop
     let show_add_repo_shared = app.store.state().ui.show_add_repo_shared.clone();
+    // Clone the pending key state for two-key combinations
+    let pending_key_shared = app.store.state().ui.pending_key.clone();
+
     tokio::spawn(async move {
         loop {
             let action = if crossterm::event::poll(tick_rate).unwrap() {
                 let show_add_repo = *show_add_repo_shared.lock().unwrap();
-                handle_events(show_add_repo).unwrap_or(Action::None)
+                handle_events(show_add_repo, &pending_key_shared).unwrap_or(Action::None)
             } else {
                 Action::None
             };
@@ -1586,14 +1589,23 @@ pub async fn fetch_github_data<'a>(
     Ok(prs)
 }
 
-fn handle_events(show_add_repo: bool) -> Result<Action> {
+fn handle_events(
+    show_add_repo: bool,
+    pending_key_shared: &std::sync::Arc<std::sync::Mutex<Option<crate::state::PendingKeyPress>>>,
+) -> Result<Action> {
     Ok(match event::read()? {
-        Event::Key(key) if key.kind == KeyEventKind::Press => handle_key_event(key, show_add_repo),
+        Event::Key(key) if key.kind == KeyEventKind::Press => {
+            handle_key_event(key, show_add_repo, pending_key_shared)
+        }
         _ => Action::None,
     })
 }
 
-fn handle_key_event(key: KeyEvent, show_add_repo: bool) -> Action {
+fn handle_key_event(
+    key: KeyEvent,
+    show_add_repo: bool,
+    pending_key_shared: &std::sync::Arc<std::sync::Mutex<Option<crate::state::PendingKeyPress>>>,
+) -> Action {
     // Handle add repo popup keys first if popup is open
     if show_add_repo {
         match key.code {
@@ -1608,8 +1620,26 @@ fn handle_key_event(key: KeyEvent, show_add_repo: bool) -> Action {
         }
     }
 
-    // Use the shortcuts module to find the action for this key
-    crate::shortcuts::find_action_for_key(&key)
+    // Use the shortcuts module to find the action for this key (with two-key support)
+    let pending_guard = pending_key_shared.lock().unwrap();
+    let (action, should_clear, new_pending_char) =
+        crate::shortcuts::find_action_for_key_with_pending(&key, pending_guard.as_ref());
+
+    // Update pending key state
+    drop(pending_guard);
+    let mut pending_guard = pending_key_shared.lock().unwrap();
+    if should_clear {
+        *pending_guard = None;
+    }
+    if let Some(pending_char) = new_pending_char {
+        *pending_guard = Some(crate::state::PendingKeyPress {
+            key: pending_char,
+            timestamp: std::time::Instant::now(),
+        });
+    }
+    drop(pending_guard);
+
+    action
 }
 
 /// loading recent repositories from a local config file, that is just json file

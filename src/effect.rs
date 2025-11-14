@@ -1,18 +1,16 @@
 /// Effect system for Redux architecture
 /// Reducers return (State, Vec<Effect>) where Effects describe side effects to perform
 /// The update() function executes these effects
-
 // Import debug from the log crate using :: prefix
 use ::log::debug;
 
 use crate::{
-    loading_recent_repos, load_persisted_state,
+    App, load_persisted_state, loading_recent_repos,
     log::PrContext,
     pr::Pr,
     shortcuts::{Action, BootstrapResult},
     state::{LoadingState, Repo, TaskStatus, TaskStatusType},
     task::BackgroundTask,
-    App,
 };
 use anyhow::Result;
 use octocrab::Octocrab;
@@ -61,45 +59,25 @@ pub enum Effect {
     },
 
     /// Perform rebase operation
-    PerformRebase {
-        repo: Repo,
-        prs: Vec<Pr>,
-    },
+    PerformRebase { repo: Repo, prs: Vec<Pr> },
 
     /// Perform merge operation
-    PerformMerge {
-        repo: Repo,
-        prs: Vec<Pr>,
-    },
+    PerformMerge { repo: Repo, prs: Vec<Pr> },
 
     /// Open PR in browser
-    OpenInBrowser {
-        url: String,
-    },
+    OpenInBrowser { url: String },
 
     /// Open in IDE
-    OpenInIDE {
-        repo: Repo,
-        pr_number: usize,
-    },
+    OpenInIDE { repo: Repo, pr_number: usize },
 
     /// Load build logs
-    LoadBuildLogs {
-        repo: Repo,
-        pr: Pr,
-    },
+    LoadBuildLogs { repo: Repo, pr: Pr },
 
     /// Start merge bot
-    StartMergeBot {
-        repo: Repo,
-        prs: Vec<Pr>,
-    },
+    StartMergeBot { repo: Repo, prs: Vec<Pr> },
 
     /// Rerun failed CI jobs for PRs
-    RerunFailedJobs {
-        repo: Repo,
-        pr_numbers: Vec<usize>,
-    },
+    RerunFailedJobs { repo: Repo, pr_numbers: Vec<usize> },
 
     /// Enable auto-merge on PR and monitor until ready
     EnableAutoMerge {
@@ -110,6 +88,9 @@ pub enum Effect {
 
     /// Add a new repository
     AddRepository(Repo),
+
+    /// Save repositories to disk
+    SaveRepositories(Vec<Repo>),
 
     /// Dispatch another action (for chaining)
     DispatchAction(crate::shortcuts::Action),
@@ -395,7 +376,11 @@ pub async fn execute_effect(app: &mut App, effect: Effect) -> Result<Vec<Action>
             });
         }
 
-        Effect::EnableAutoMerge { repo_index, repo, pr_number } => {
+        Effect::EnableAutoMerge {
+            repo_index,
+            repo,
+            pr_number,
+        } => {
             // Add PR to auto-merge queue
             follow_up_actions.push(Action::AddToAutoMergeQueue(repo_index, pr_number));
 
@@ -416,9 +401,13 @@ pub async fn execute_effect(app: &mut App, effect: Effect) -> Result<Vec<Action>
 
         Effect::AddRepository(repo) => {
             // Check if repository already exists
-            let repo_exists = app.store.state().repos.recent_repos.iter().any(|r| {
-                r.org == repo.org && r.repo == repo.repo && r.branch == repo.branch
-            });
+            let repo_exists = app
+                .store
+                .state()
+                .repos
+                .recent_repos
+                .iter()
+                .any(|r| r.org == repo.org && r.repo == repo.repo && r.branch == repo.branch);
 
             if !repo_exists {
                 // Add to repos list in state
@@ -439,7 +428,13 @@ pub async fn execute_effect(app: &mut App, effect: Effect) -> Result<Vec<Action>
                 app.store.state_mut().repos.recent_repos = new_repos;
 
                 // Initialize repo data for the new repo
-                let data = app.store.state_mut().repos.repo_data.entry(repo_index).or_default();
+                let data = app
+                    .store
+                    .state_mut()
+                    .repos
+                    .repo_data
+                    .entry(repo_index)
+                    .or_default();
                 data.loading_state = LoadingState::Loading;
 
                 // Show success message
@@ -460,6 +455,16 @@ pub async fn execute_effect(app: &mut App, effect: Effect) -> Result<Vec<Action>
                 // Repository already exists
                 follow_up_actions.push(Action::SetTaskStatus(Some(TaskStatus {
                     message: format!("Repository {}/{} already exists", repo.org, repo.repo),
+                    status_type: TaskStatusType::Error,
+                })));
+            }
+        }
+
+        Effect::SaveRepositories(repos) => {
+            // Save repositories to disk
+            if let Err(e) = crate::store_recent_repos(&repos) {
+                follow_up_actions.push(Action::SetTaskStatus(Some(TaskStatus {
+                    message: format!("Failed to save repositories: {}", e),
                     status_type: TaskStatusType::Error,
                 })));
             }
@@ -486,4 +491,3 @@ pub async fn execute_effect(app: &mut App, effect: Effect) -> Result<Vec<Action>
 
     Ok(follow_up_actions)
 }
-
