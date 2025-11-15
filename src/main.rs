@@ -1260,8 +1260,6 @@ pub async fn fetch_github_data<'a>(
             .list()
             .state(params::State::Open)
             .head(&repo.branch)
-            .sort(params::pulls::Sort::Updated)
-            .direction(params::Direction::Ascending)
             .per_page(PER_PAGE)
             .page(page_num)
             .send()
@@ -1289,6 +1287,9 @@ pub async fn fetch_github_data<'a>(
 
         page_num += 1;
     }
+
+    // Sort by PR number (descending) for stable, predictable ordering
+    prs.sort_by(|a, b| b.number.cmp(&a.number));
 
     Ok(prs)
 }
