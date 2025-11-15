@@ -377,6 +377,15 @@ fn repos_reducer(
         }
         Action::CycleFilter => {
             state.filter = state.filter.next();
+
+            // Reload current repository with new filter
+            if let Some(repo) = state.recent_repos.get(state.selected_repo).cloned() {
+                effects.push(Effect::LoadSingleRepo {
+                    repo_index: state.selected_repo,
+                    repo,
+                    filter: state.filter.clone(),
+                });
+            }
         }
         Action::NavigateToNextPr => {
             let i = match state.state.selected() {
@@ -447,6 +456,25 @@ fn repos_reducer(
             if *repo_index == state.selected_repo {
                 if let Some(pr) = state.prs.iter_mut().find(|p| p.number == *pr_number) {
                     pr.mergeable = *status;
+                }
+            }
+
+            // If status is BuildInProgress, start monitoring the build
+            if *status == crate::pr::MergeableStatus::BuildInProgress {
+                if let Some(repo) = state.recent_repos.get(*repo_index).cloned() {
+                    // First dispatch action to update state immediately
+                    effects.push(Effect::DispatchAction(Action::StartOperationMonitor(
+                        *repo_index,
+                        *pr_number,
+                        crate::state::OperationType::Rebase,
+                    )));
+                    // Then start background monitoring
+                    effects.push(Effect::StartOperationMonitoring {
+                        repo_index: *repo_index,
+                        repo,
+                        pr_number: *pr_number,
+                        operation: crate::state::OperationType::Rebase,
+                    });
                 }
             }
         }
