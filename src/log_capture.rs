@@ -38,10 +38,18 @@ impl DebugConsoleLogger {
             .filter_level(log::LevelFilter::Error)
             .build();
 
-        // Create separate filter for console buffer (respects RUST_LOG, defaults to Debug)
-        let console_filter = env_logger::Builder::from_default_env()
-            .filter_level(log::LevelFilter::Debug)
-            .build();
+        // Create separate filter for console buffer
+        // Default: Only show logs from this crate (pr_bulk_review_tui=debug)
+        // Override with RUST_LOG env var if set
+        let console_filter = if std::env::var("RUST_LOG").is_ok() {
+            // User set RUST_LOG, respect it
+            env_logger::Builder::from_default_env().build()
+        } else {
+            // No RUST_LOG set, default to this crate only at Debug level
+            env_logger::Builder::new()
+                .filter_module("pr_bulk_review_tui", log::LevelFilter::Debug)
+                .build()
+        };
 
         Self { logs, env_logger, console_filter }
     }
@@ -93,12 +101,17 @@ impl Log for DebugConsoleLogger {
 /// This should be called once at application startup before any logging occurs.
 /// Returns the log buffer that can be shared with the UI.
 ///
+/// # Default Behavior
+///
+/// By default, the debug console shows **only logs from this crate** (pr_bulk_review_tui)
+/// at Debug level. This filters out noise from dependencies like octocrab, tokio, ratatui, etc.
+///
 /// # Filtering with RUST_LOG
 ///
-/// The debug console respects RUST_LOG for filtering what gets captured:
+/// You can override the default filtering with RUST_LOG:
 ///
-/// - No RUST_LOG: Shows all Debug+ logs from all modules
-/// - `RUST_LOG=pr_bulk_review_tui=debug`: Only logs from this crate (filters out dependencies)
+/// - No RUST_LOG (default): Only logs from this crate at Debug+ level
+/// - `RUST_LOG=debug`: All Debug+ logs from all modules (including dependencies)
 /// - `RUST_LOG=pr_bulk_review_tui::task=debug`: Only logs from the task module
 /// - `RUST_LOG=info`: Only Info+ logs from all modules
 ///
