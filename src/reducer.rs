@@ -26,6 +26,10 @@ pub fn reduce(mut state: AppState, action: &Action) -> (AppState, Vec<Effect>) {
     state.task = task_state;
     effects.extend(task_effects);
 
+    let (debug_console_state, debug_console_effects) = debug_console_reducer(state.debug_console, action);
+    state.debug_console = debug_console_state;
+    effects.extend(debug_console_effects);
+
     (state, effects)
 }
 
@@ -1181,6 +1185,41 @@ fn task_reducer(mut state: TaskState, action: &Action) -> (TaskState, Vec<Effect
                     status_type: TaskStatusType::Error,
                 },
             });
+        }
+        _ => {}
+    }
+
+    (state, vec![])
+}
+
+/// Debug console state reducer - handles debug console actions
+fn debug_console_reducer(mut state: DebugConsoleState, action: &Action) -> (DebugConsoleState, Vec<Effect>) {
+    match action {
+        Action::ToggleDebugConsole => {
+            state.is_open = !state.is_open;
+            // Reset scroll when opening
+            if state.is_open {
+                state.scroll_offset = 0;
+            }
+        }
+        Action::ScrollDebugConsoleUp => {
+            state.scroll_offset = state.scroll_offset.saturating_sub(1);
+            // Disable auto-scroll when manually scrolling
+            state.auto_scroll = false;
+        }
+        Action::ScrollDebugConsoleDown => {
+            state.scroll_offset = state.scroll_offset.saturating_add(1);
+            // Disable auto-scroll when manually scrolling
+            state.auto_scroll = false;
+        }
+        Action::ToggleDebugAutoScroll => {
+            state.auto_scroll = !state.auto_scroll;
+        }
+        Action::ClearDebugLogs => {
+            if let Ok(mut logs) = state.logs.lock() {
+                logs.clear();
+            }
+            state.scroll_offset = 0;
         }
         _ => {}
     }

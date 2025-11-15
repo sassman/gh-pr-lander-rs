@@ -20,6 +20,7 @@ pub struct AppState {
     pub log_panel: LogPanelState,
     pub merge_bot: MergeBotState,
     pub task: TaskState,
+    pub debug_console: DebugConsoleState,
     pub config: Config,
     pub theme: Theme,
 }
@@ -96,6 +97,16 @@ pub struct MergeBotState {
 #[derive(Debug, Clone)]
 pub struct TaskState {
     pub status: Option<TaskStatus>,
+}
+
+/// Debug console state (Quake-style drop-down console)
+#[derive(Debug, Clone)]
+pub struct DebugConsoleState {
+    pub is_open: bool,
+    pub scroll_offset: usize,
+    pub auto_scroll: bool, // Follow new logs as they arrive
+    pub height_percent: u16, // Height as percentage of screen (30-70)
+    pub logs: crate::log_capture::LogBuffer,
 }
 
 // Re-export types from main.rs that are part of state
@@ -286,6 +297,7 @@ impl Default for AppState {
             log_panel: LogPanelState::default(),
             merge_bot: MergeBotState::default(),
             task: TaskState::default(),
+            debug_console: DebugConsoleState::default(),
             config: Config::default(),
             theme: Theme::default(),
         }
@@ -341,5 +353,17 @@ impl Default for MergeBotState {
 impl Default for TaskState {
     fn default() -> Self {
         Self { status: None }
+    }
+}
+
+impl Default for DebugConsoleState {
+    fn default() -> Self {
+        Self {
+            is_open: false,
+            scroll_offset: 0,
+            auto_scroll: true,
+            height_percent: 50, // 50% of screen height
+            logs: crate::log_capture::DebugConsoleLogger::create_buffer(),
+        }
     }
 }

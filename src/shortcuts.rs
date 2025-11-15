@@ -82,6 +82,13 @@ pub enum Action {
     OperationMonitorCheck(usize, usize),  // repo_index, pr_number - periodic check
     RemoveFromOperationMonitor(usize, usize), // repo_index, pr_number
 
+    // Debug console (Quake-style drop-down)
+    ToggleDebugConsole,
+    ScrollDebugConsoleUp,
+    ScrollDebugConsoleDown,
+    ToggleDebugAutoScroll,
+    ClearDebugLogs,
+
     Quit,
     None,
 }
@@ -350,6 +357,43 @@ pub fn get_shortcuts() -> Vec<ShortcutCategory> {
                     action: Action::CloseLogPanel,
                     matcher: ShortcutMatcher::SingleKey(|key| {
                         matches!(key.code, KeyCode::Char('x') | KeyCode::Esc)
+                    }),
+                },
+            ],
+        },
+        ShortcutCategory {
+            name: "Debug",
+            shortcuts: vec![
+                Shortcut {
+                    key_display: "` or ~",
+                    description: "Toggle debug console",
+                    action: Action::ToggleDebugConsole,
+                    matcher: ShortcutMatcher::SingleKey(|key| {
+                        matches!(key.code, KeyCode::Char('`') | KeyCode::Char('~'))
+                    }),
+                },
+                Shortcut {
+                    key_display: "j/k (when console open)",
+                    description: "Scroll debug console",
+                    action: Action::ScrollDebugConsoleDown, // Represents both
+                    matcher: ShortcutMatcher::SingleKey(|key| {
+                        matches!(key.code, KeyCode::Char('j') | KeyCode::Char('k'))
+                    }),
+                },
+                Shortcut {
+                    key_display: "a (when console open)",
+                    description: "Toggle auto-scroll",
+                    action: Action::ToggleDebugAutoScroll,
+                    matcher: ShortcutMatcher::SingleKey(|key| {
+                        matches!(key.code, KeyCode::Char('a'))
+                    }),
+                },
+                Shortcut {
+                    key_display: "c (when console open)",
+                    description: "Clear debug logs",
+                    action: Action::ClearDebugLogs,
+                    matcher: ShortcutMatcher::SingleKey(|key| {
+                        matches!(key.code, KeyCode::Char('c'))
                     }),
                 },
             ],
