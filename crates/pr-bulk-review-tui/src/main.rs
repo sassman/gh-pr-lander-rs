@@ -570,7 +570,9 @@ fn ui(f: &mut Frame, app: &mut App) {
 
     // Render log panel LAST if it's open - covers only the table area
     if let Some(ref panel) = app.store.state().log_panel.panel {
-        crate::log::render_log_panel_card(f, panel, &app.store.state().theme, chunks[1]);
+        let viewport_height = crate::log::render_log_panel_card(f, panel, &app.store.state().theme, chunks[1]);
+        // Update viewport height for page down scrolling
+        app.store.dispatch(Action::UpdateLogPanelViewport(viewport_height));
     }
 
     // Render shortcuts panel on top of everything if visible
@@ -596,7 +598,9 @@ fn ui(f: &mut Frame, app: &mut App) {
 
     // Render debug console (Quake-style drop-down) if visible
     if app.store.state().debug_console.is_open {
-        render_debug_console(f, f.area(), app);
+        let viewport_height = render_debug_console(f, f.area(), app);
+        // Update viewport height for page down scrolling
+        app.store.dispatch(Action::UpdateDebugConsoleViewport(viewport_height));
     }
 }
 
@@ -1156,7 +1160,8 @@ fn render_bootstrap_screen(f: &mut Frame, app: &App) {
 }
 
 /// Render the debug console as a Quake-style drop-down panel
-fn render_debug_console(f: &mut Frame, area: Rect, app: &App) {
+/// Returns the visible viewport height for page down scrolling
+fn render_debug_console(f: &mut Frame, area: Rect, app: &App) -> usize {
     use ratatui::widgets::{Clear, List, ListItem};
 
     let console_state = &app.store.state().debug_console;
@@ -1242,6 +1247,8 @@ fn render_debug_console(f: &mut Frame, area: Rect, app: &App) {
         );
 
     f.render_widget(logs_list, console_area);
+
+    visible_height
 }
 
 #[tokio::main]
@@ -1429,6 +1436,10 @@ fn handle_key_event(
             KeyCode::Char('k') | KeyCode::Up => {
                 return Action::ScrollLogPanelUp;
             }
+            // Page down (space)
+            KeyCode::Char(' ') => {
+                return Action::PageLogPanelDown;
+            }
             // Horizontal scrolling (h/l or left/right)
             KeyCode::Char('h') | KeyCode::Left => {
                 return Action::ScrollLogPanelLeft;
@@ -1464,6 +1475,10 @@ fn handle_key_event(
             }
             KeyCode::Char('k') | KeyCode::Up => {
                 return Action::ScrollDebugConsoleUp;
+            }
+            // Page down (space)
+            KeyCode::Char(' ') => {
+                return Action::PageDebugConsoleDown;
             }
             // Toggle auto-scroll
             KeyCode::Char('a') => {

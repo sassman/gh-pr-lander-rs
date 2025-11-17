@@ -49,6 +49,8 @@ pub struct LogPanel {
     pub horizontal_scroll: usize,
     pub pr_context: PrContext,
     pub show_timestamps: bool,
+    /// Viewport height (updated during rendering for page down)
+    pub viewport_height: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -162,7 +164,8 @@ pub fn extract_error_context(log_text: &str, _step_name: &str) -> Vec<String> {
 
 /// Render the log panel as a card overlay with PR context header
 /// Takes the available area (excluding top tabs and bottom panels)
-pub fn render_log_panel_card(f: &mut Frame, panel: &LogPanel, theme: &crate::theme::Theme, available_area: Rect) {
+/// Returns the calculated viewport height for page down scrolling
+pub fn render_log_panel_card(f: &mut Frame, panel: &LogPanel, theme: &crate::theme::Theme, available_area: Rect) -> usize {
     // Use Clear widget to completely clear the underlying content
     f.render_widget(Clear, available_area);
 
@@ -218,13 +221,14 @@ pub fn render_log_panel_card(f: &mut Frame, panel: &LogPanel, theme: &crate::the
 
     f.render_widget(pr_header, card_chunks[0]);
 
-    // Render log content in the remaining area
-    render_log_panel_content(f, panel, card_chunks[1], theme);
+    // Render log content in the remaining area and return viewport height
+    render_log_panel_content(f, panel, card_chunks[1], theme)
 }
 
 /// Render the log panel showing build failure logs using a Table widget
 /// OPTIMIZED: Only renders visible lines (viewport-based rendering)
-fn render_log_panel_content(f: &mut Frame, panel: &LogPanel, area: Rect, theme: &crate::theme::Theme) {
+/// Returns the visible viewport height for page down scrolling
+fn render_log_panel_content(f: &mut Frame, panel: &LogPanel, area: Rect, theme: &crate::theme::Theme) -> usize {
     let visible_height = area.height.saturating_sub(2) as usize; // -2 for borders
 
     // Calculate viewport (only render visible lines)
@@ -410,6 +414,8 @@ fn render_log_panel_content(f: &mut Frame, panel: &LogPanel, area: Rect, theme: 
         );
 
     f.render_widget(table, area);
+
+    visible_height
 }
 
 /// Convert parser ANSI color to ratatui Color
@@ -634,6 +640,7 @@ pub fn create_log_panel_from_sections(
         horizontal_scroll: 0,
         pr_context,
         show_timestamps: false,
+        viewport_height: 20, // Default, updated during rendering
     }
 }
 

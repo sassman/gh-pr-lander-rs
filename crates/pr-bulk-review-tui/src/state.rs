@@ -109,6 +109,7 @@ pub struct DebugConsoleState {
     pub auto_scroll: bool, // Follow new logs as they arrive
     pub height_percent: u16, // Height as percentage of screen (30-70)
     pub logs: crate::log_capture::LogBuffer,
+    pub viewport_height: usize, // Updated during rendering for page down
 }
 
 // Re-export types from main.rs that are part of state
@@ -369,6 +370,7 @@ impl Default for DebugConsoleState {
             auto_scroll: true,
             height_percent: 50, // 50% of screen height
             logs: crate::log_capture::DebugConsoleLogger::create_buffer(),
+            viewport_height: 20, // Default, updated during rendering
         }
     }
 }

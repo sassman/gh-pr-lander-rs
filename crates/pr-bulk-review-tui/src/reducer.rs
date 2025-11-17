@@ -1090,6 +1090,13 @@ fn log_panel_reducer(mut state: LogPanelState, action: &Action) -> (LogPanelStat
                 panel.scroll_offset = panel.scroll_offset.saturating_add(1);
             }
         }
+        Action::PageLogPanelDown => {
+            if let Some(ref mut panel) = state.panel {
+                // Page down by viewport_height - 1 (keep one line of context)
+                let page_size = panel.viewport_height.saturating_sub(1).max(1);
+                panel.scroll_offset = panel.scroll_offset.saturating_add(page_size);
+            }
+        }
         Action::ScrollLogPanelLeft => {
             if let Some(ref mut panel) = state.panel {
                 // Scroll left by 5 characters for better UX
@@ -1115,6 +1122,11 @@ fn log_panel_reducer(mut state: LogPanelState, action: &Action) -> (LogPanelStat
         Action::ToggleTimestamps => {
             if let Some(ref mut panel) = state.panel {
                 panel.show_timestamps = !panel.show_timestamps;
+            }
+        }
+        Action::UpdateLogPanelViewport(height) => {
+            if let Some(ref mut panel) = state.panel {
+                panel.viewport_height = *height;
             }
         }
         _ => {}
@@ -1256,6 +1268,13 @@ fn debug_console_reducer(mut state: DebugConsoleState, action: &Action) -> (Debu
             // Disable auto-scroll when manually scrolling
             state.auto_scroll = false;
         }
+        Action::PageDebugConsoleDown => {
+            // Page down by viewport_height - 1 (keep one line of context)
+            let page_size = state.viewport_height.saturating_sub(1).max(1);
+            state.scroll_offset = state.scroll_offset.saturating_add(page_size);
+            // Disable auto-scroll when manually scrolling
+            state.auto_scroll = false;
+        }
         Action::ToggleDebugAutoScroll => {
             state.auto_scroll = !state.auto_scroll;
         }
@@ -1264,6 +1283,9 @@ fn debug_console_reducer(mut state: DebugConsoleState, action: &Action) -> (Debu
                 logs.clear();
             }
             state.scroll_offset = 0;
+        }
+        Action::UpdateDebugConsoleViewport(height) => {
+            state.viewport_height = *height;
         }
         _ => {}
     }

@@ -30,6 +30,7 @@ pub enum Action {
     CloseLogPanel,
     ScrollLogPanelUp,
     ScrollLogPanelDown,
+    PageLogPanelDown,
     ScrollLogPanelLeft,
     ScrollLogPanelRight,
     NextLogSection,
@@ -87,8 +88,13 @@ pub enum Action {
     ToggleDebugConsole,
     ScrollDebugConsoleUp,
     ScrollDebugConsoleDown,
+    PageDebugConsoleDown,
     ToggleDebugAutoScroll,
     ClearDebugLogs,
+
+    // Viewport height updates (for page down scrolling)
+    UpdateLogPanelViewport(usize),
+    UpdateDebugConsoleViewport(usize),
 
     Quit,
     None,
