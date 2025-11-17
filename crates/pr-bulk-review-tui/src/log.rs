@@ -428,6 +428,49 @@ fn build_tree_row(panel: &LogPanel, path: &[usize], theme: &crate::theme::Theme)
 
             Line::from(format!("{}│  ├─ {} {}{}{}", indent, icon, status_icon, step.name, error_info))
         }
+        4 => {
+            // Log line (leaf node - no icon)
+            let workflow = &panel.workflows[path[0]];
+            let job = &workflow.jobs[path[1]];
+            let step = &job.steps[path[2]];
+            let line = &step.lines[path[3]];
+
+            // Build styled line content with proper indentation
+            let base_style = Style::default().fg(theme.text_primary).bg(theme.bg_panel);
+
+            // Check if this is an error line
+            let is_error = if let Some(ref cmd) = line.command {
+                matches!(cmd, gh_actions_log_parser::WorkflowCommand::Error { .. })
+            } else {
+                line.display_content.to_lowercase().contains("error:")
+            };
+
+            // Apply error styling if needed
+            let line_style = if is_error {
+                Style::default().fg(theme.status_error).add_modifier(Modifier::BOLD).bg(theme.bg_panel)
+            } else {
+                base_style
+            };
+
+            // Use styled segments from parser if available
+            let content = if !line.styled_segments.is_empty() {
+                styled_segments_to_line(&line.styled_segments, line_style, panel.horizontal_scroll)
+            } else {
+                // Fallback to plain text
+                let text = if panel.horizontal_scroll > 0 {
+                    line.display_content.chars().skip(panel.horizontal_scroll).collect::<String>()
+                } else {
+                    line.display_content.clone()
+                };
+                Line::from(Span::styled(text, line_style))
+            };
+
+            // Add tree indentation prefix
+            let prefix = format!("{}│     ", indent);
+            let mut spans = vec![Span::styled(prefix, Style::default().fg(theme.text_muted).bg(theme.bg_panel))];
+            spans.extend(content.spans);
+            Line::from(spans)
+        }
         _ => Line::from(""),
     }
 }
@@ -811,8 +854,15 @@ impl LogPanel {
                     result.push(vec![w_idx, j_idx]);
 
                     if self.is_expanded(&[w_idx, j_idx]) {
-                        for (s_idx, _step) in job.steps.iter().enumerate() {
+                        for (s_idx, step) in job.steps.iter().enumerate() {
                             result.push(vec![w_idx, j_idx, s_idx]);
+
+                            // If step is expanded, add all log lines
+                            if self.is_expanded(&[w_idx, j_idx, s_idx]) {
+                                for (l_idx, _line) in step.lines.iter().enumerate() {
+                                    result.push(vec![w_idx, j_idx, s_idx, l_idx]);
+                                }
+                            }
                         }
                     }
                 }
