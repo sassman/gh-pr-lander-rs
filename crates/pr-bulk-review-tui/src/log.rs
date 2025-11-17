@@ -2,6 +2,7 @@ use ratatui::{
     prelude::*,
     widgets::*,
 };
+use gh_actions_log_parser::{AnsiStyle, Color as ParserColor, NamedColor, StyledSegment};
 
 /// Represents a single line in the log with metadata
 #[derive(Debug, Clone)]
@@ -250,52 +251,101 @@ fn render_log_panel_content(f: &mut Frame, panel: &LogPanel, area: Rect, theme: 
             let actual_line_idx = start_line + viewport_idx;
             let is_current_error = Some(actual_line_idx) == current_error_line;
 
-            // Apply horizontal scrolling to content
-            // Add error marker for error section start lines
-            let visible_content = if panel.horizontal_scroll > 0 {
-                let content = if log_line.is_error_start {
-                    format!("▶ {}", log_line.content)
-                } else {
-                    log_line.content.clone()
-                };
-                content.chars()
-                    .skip(panel.horizontal_scroll)
-                    .collect::<String>()
-            } else if log_line.is_error_start {
-                format!("▶ {}", log_line.content)
-            } else {
-                log_line.content.clone()
+            // Group marker prefix based on nesting level
+            let group_marker = match log_line.group_level {
+                0 => "",
+                _ => {
+                    // Check if this is a group command line
+                    if let Some(ref cmd) = log_line.command {
+                        use gh_actions_log_parser::WorkflowCommand;
+                        match cmd {
+                            WorkflowCommand::GroupStart { .. } => "┏ ",
+                            WorkflowCommand::GroupEnd => "┗ ",
+                            _ => "┃ ",
+                        }
+                    } else {
+                        "┃ "
+                    }
+                }
             };
 
-            // Determine style based on line metadata
-            let mut style = if log_line.is_header {
+            // Error marker for error section starts
+            let error_marker = if log_line.is_error_start { "▶ " } else { "" };
+
+            // Combine markers
+            let prefix = format!("{}{}", group_marker, error_marker);
+
+            // Determine base style based on line metadata
+            let base_style = if log_line.is_header {
                 // Section headers - bright cyan
                 Style::default()
                     .fg(theme.accent_primary)
                     .add_modifier(Modifier::BOLD)
+                    .bg(theme.bg_panel)
             } else if log_line.is_error_start {
-                // Error section start (line with "error:") - bright red with bold
+                // Error section start - bright red with bold
                 Style::default()
                     .fg(theme.status_error)
                     .add_modifier(Modifier::BOLD)
+                    .bg(theme.bg_panel)
             } else if log_line.is_error {
-                // Error section continuation lines - red (no bold)
-                Style::default().fg(theme.status_error)
+                // Error section continuation - red
+                Style::default()
+                    .fg(theme.status_error)
+                    .bg(theme.bg_panel)
             } else if log_line.is_warning {
                 // Warnings - yellow
-                Style::default().fg(theme.status_warning)
+                Style::default()
+                    .fg(theme.status_warning)
+                    .bg(theme.bg_panel)
             } else {
                 // Normal lines - light slate
-                Style::default().fg(theme.text_primary)
+                Style::default()
+                    .fg(theme.text_primary)
+                    .bg(theme.bg_panel)
             };
 
-            // Highlight current error with background
-            if is_current_error {
-                style = style.add_modifier(Modifier::REVERSED);
-            }
+            // Build the line content with styling
+            let line_content = if !log_line.styled_segments.is_empty() {
+                // Use styled segments from parser (ANSI colors preserved)
+                let mut line = styled_segments_to_line(&log_line.styled_segments, base_style, panel.horizontal_scroll);
 
-            // Add background color to prevent bleed-through
-            style = style.bg(theme.bg_panel);
+                // Prepend markers if needed
+                if !prefix.is_empty() {
+                    let marker_style = if log_line.group_level > 0 {
+                        Style::default().fg(theme.accent_primary).bg(theme.bg_panel)
+                    } else {
+                        base_style
+                    };
+                    let mut spans = vec![Span::styled(prefix.clone(), marker_style)];
+                    spans.extend(line.spans);
+                    line = Line::from(spans);
+                }
+
+                // Apply current error highlighting
+                if is_current_error {
+                    line = line.style(Style::default().add_modifier(Modifier::REVERSED));
+                }
+
+                line
+            } else {
+                // Fallback: use plain content with base styling
+                let visible_content = if panel.horizontal_scroll > 0 {
+                    let full_content = format!("{}{}", prefix, log_line.content);
+                    full_content.chars()
+                        .skip(panel.horizontal_scroll)
+                        .collect::<String>()
+                } else {
+                    format!("{}{}", prefix, log_line.content)
+                };
+
+                let mut style = base_style;
+                if is_current_error {
+                    style = style.add_modifier(Modifier::REVERSED);
+                }
+
+                Line::from(Span::styled(visible_content, style))
+            };
 
             // Create cells based on timestamp visibility
             if panel.show_timestamps {
@@ -305,11 +355,11 @@ fn render_log_panel_content(f: &mut Frame, panel: &LogPanel, area: Rect, theme: 
                             .fg(theme.text_muted)
                             .bg(theme.bg_panel)
                     ),
-                    Cell::from(visible_content).style(style),
+                    Cell::from(line_content),
                 ])
             } else {
                 // When timestamps hidden, use single column
-                Row::new(vec![Cell::from(visible_content).style(style)])
+                Row::new(vec![Cell::from(line_content)])
             }
         })
         .collect();
@@ -360,6 +410,100 @@ fn render_log_panel_content(f: &mut Frame, panel: &LogPanel, area: Rect, theme: 
         );
 
     f.render_widget(table, area);
+}
+
+/// Convert parser ANSI color to ratatui Color
+fn convert_color(color: &ParserColor) -> Color {
+    match color {
+        ParserColor::Rgb(r, g, b) => Color::Rgb(*r, *g, *b),
+        ParserColor::Palette256(idx) => Color::Indexed(*idx),
+        ParserColor::Named(named) => match named {
+            NamedColor::Black => Color::Black,
+            NamedColor::Red => Color::Red,
+            NamedColor::Green => Color::Green,
+            NamedColor::Yellow => Color::Yellow,
+            NamedColor::Blue => Color::Blue,
+            NamedColor::Magenta => Color::Magenta,
+            NamedColor::Cyan => Color::Cyan,
+            NamedColor::White => Color::White,
+            NamedColor::BrightBlack => Color::DarkGray,
+            NamedColor::BrightRed => Color::LightRed,
+            NamedColor::BrightGreen => Color::LightGreen,
+            NamedColor::BrightYellow => Color::LightYellow,
+            NamedColor::BrightBlue => Color::LightBlue,
+            NamedColor::BrightMagenta => Color::LightMagenta,
+            NamedColor::BrightCyan => Color::LightCyan,
+            NamedColor::BrightWhite => Color::Gray,
+        },
+    }
+}
+
+/// Convert parser ANSI style to ratatui Style
+fn convert_style(ansi_style: &AnsiStyle, base_style: Style) -> Style {
+    let mut style = base_style;
+
+    if let Some(fg) = &ansi_style.fg_color {
+        style = style.fg(convert_color(fg));
+    }
+
+    if let Some(bg) = &ansi_style.bg_color {
+        style = style.bg(convert_color(bg));
+    }
+
+    if ansi_style.bold {
+        style = style.add_modifier(Modifier::BOLD);
+    }
+
+    if ansi_style.italic {
+        style = style.add_modifier(Modifier::ITALIC);
+    }
+
+    if ansi_style.underline {
+        style = style.add_modifier(Modifier::UNDERLINED);
+    }
+
+    if ansi_style.reversed {
+        style = style.add_modifier(Modifier::REVERSED);
+    }
+
+    if ansi_style.strikethrough {
+        style = style.add_modifier(Modifier::CROSSED_OUT);
+    }
+
+    style
+}
+
+/// Convert styled segments to ratatui Line with proper styling
+fn styled_segments_to_line(segments: &[StyledSegment], base_style: Style, h_scroll: usize) -> Line<'static> {
+    if segments.is_empty() {
+        return Line::from("");
+    }
+
+    let mut spans = Vec::new();
+    let mut char_count = 0;
+
+    for segment in segments {
+        let text_len = segment.text.chars().count();
+
+        // Apply horizontal scrolling
+        if char_count + text_len <= h_scroll {
+            // This segment is completely before the scroll offset
+            char_count += text_len;
+            continue;
+        }
+
+        let skip_chars = h_scroll.saturating_sub(char_count);
+
+        let visible_text: String = segment.text.chars().skip(skip_chars).collect();
+        if !visible_text.is_empty() {
+            let style = convert_style(&segment.style, base_style);
+            spans.push(Span::styled(visible_text, style));
+        }
+
+        char_count += text_len;
+    }
+
+    Line::from(spans)
 }
 
 /// Extract timestamp from log line if present

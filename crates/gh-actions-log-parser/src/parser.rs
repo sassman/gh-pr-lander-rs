@@ -11,13 +11,13 @@ use zip::ZipArchive;
 #[derive(Error, Debug)]
 pub enum ParseError {
     #[error("Failed to read ZIP archive: {0}")]
-    ZipError(#[from] zip::result::ZipError),
+    Zip(#[from] zip::result::ZipError),
 
     #[error("Failed to read file from ZIP: {0}")]
-    IoError(#[from] std::io::Error),
+    Io(#[from] std::io::Error),
 
     #[error("Invalid UTF-8 in log content")]
-    Utf8Error(#[from] std::string::FromUtf8Error),
+    Utf8(#[from] std::string::FromUtf8Error),
 }
 
 /// Parse workflow logs from a ZIP file

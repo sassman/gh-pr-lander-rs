@@ -47,17 +47,13 @@ pub fn parse_ansi_line(text: &str) -> Vec<StyledSegment> {
 fn apply_ansi_sequence(style: &mut AnsiStyle, sequence: &AnsiSequence) {
     use ansi_parser::AnsiSequence::*;
 
-    match sequence {
-        // Reset all styling
-        SetGraphicsMode(modes) => {
-            for mode in modes {
-                apply_graphics_mode(style, *mode);
-            }
+    // Only SetGraphicsMode affects text styling
+    if let SetGraphicsMode(modes) = sequence {
+        for mode in modes {
+            apply_graphics_mode(style, *mode);
         }
-
-        // Cursor and other sequences don't affect text styling
-        _ => {}
     }
+    // Cursor and other sequences don't affect text styling
 }
 
 /// Apply a single SGR (Select Graphic Rendition) parameter
