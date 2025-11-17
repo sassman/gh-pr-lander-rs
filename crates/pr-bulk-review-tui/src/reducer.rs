@@ -332,6 +332,7 @@ fn repos_reducer(
             // Sync legacy fields if this is the selected repo
             if *repo_index == state.selected_repo {
                 state.prs = prs.clone();
+                state.state = data.table_state.clone();
                 state.loading_state = LoadingState::Loaded;
             }
 
