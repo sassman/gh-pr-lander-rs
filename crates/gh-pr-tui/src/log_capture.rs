@@ -38,7 +38,7 @@ impl DebugConsoleLogger {
             .build();
 
         // Create separate filter for console buffer
-        // Default: Only show logs from this crate (pr_bulk_review_tui=debug)
+        // Default: Only show logs from this crate (gh_pr_tui=debug)
         // Override with RUST_LOG env var if set
         let console_filter = if std::env::var("RUST_LOG").is_ok() {
             // User set RUST_LOG, respect it
@@ -46,7 +46,7 @@ impl DebugConsoleLogger {
         } else {
             // No RUST_LOG set, default to this crate only at Debug level
             env_logger::Builder::new()
-                .filter_module("pr_bulk_review_tui", log::LevelFilter::Debug)
+                .filter_module("gh_pr_tui", log::LevelFilter::Debug)
                 .build()
         };
 
@@ -102,7 +102,7 @@ impl Log for DebugConsoleLogger {
 ///
 /// # Default Behavior
 ///
-/// By default, the debug console shows **only logs from this crate** (pr_bulk_review_tui)
+/// By default, the debug console shows **only logs from this crate** (gh_pr_tui)
 /// at Debug level. This filters out noise from dependencies like octocrab, tokio, ratatui, etc.
 ///
 /// # Filtering with RUST_LOG
@@ -111,10 +111,10 @@ impl Log for DebugConsoleLogger {
 ///
 /// - No RUST_LOG (default): Only logs from this crate at Debug+ level
 /// - `RUST_LOG=debug`: All Debug+ logs from all modules (including dependencies)
-/// - `RUST_LOG=pr_bulk_review_tui::task=debug`: Only logs from the task module
+/// - `RUST_LOG=gh_pr_tui::task=debug`: Only logs from the task module
 /// - `RUST_LOG=info`: Only Info+ logs from all modules
 ///
-/// Note: Crate name uses underscores (pr_bulk_review_tui), not hyphens!
+/// Note: Crate name uses underscores (gh_pr_tui), not hyphens!
 ///
 /// Terminal output is always Error-level only (keeps terminal clean).
 pub fn init_logger() -> LogBuffer {

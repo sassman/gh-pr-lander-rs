@@ -1,6 +1,6 @@
 # Architecture Documentation
 
-This folder contains architectural analysis and design documents for the pr-bulk-review-tui project.
+This folder contains architectural analysis and design documents for the gh-pr-tui project.
 
 ## Documents Overview
 

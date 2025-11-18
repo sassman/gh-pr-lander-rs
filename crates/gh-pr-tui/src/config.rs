@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::{env, path::PathBuf};
 
-/// Application configuration loaded from pr-bulk-review.toml
+/// Application configuration loaded from gh-pr-tui.toml
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Config {
     #[serde(default = "default_ide_command")]
@@ -17,7 +17,7 @@ fn default_ide_command() -> String {
 }
 
 fn default_temp_dir() -> String {
-    env::temp_dir().join("pr-bulk-review").to_string_lossy().to_string()
+    env::temp_dir().join("gh-pr-tui").to_string_lossy().to_string()
 }
 
 fn default_approval_message() -> String {
@@ -37,7 +37,7 @@ impl Default for Config {
 impl Config {
     /// Load config from CWD first, then home directory, or use defaults
     pub fn load() -> Self {
-        const CONFIG_FILE: &str = "pr-bulk-review.toml";
+        const CONFIG_FILE: &str = "gh-pr-tui.toml";
 
         // Try current directory first
         if let Ok(content) = std::fs::read_to_string(CONFIG_FILE)
