@@ -1033,6 +1033,8 @@ fn render_command_palette(f: &mut Frame, area: Rect, app: &App) {
         };
 
         // Build result lines
+        let available_width = chunks[1].width as usize;
+
         let result_lines: Vec<Line> = palette
             .filtered_commands
             .iter()
@@ -1044,7 +1046,7 @@ fn render_command_palette(f: &mut Frame, area: Rect, app: &App) {
 
                 let mut spans = Vec::new();
 
-                // Selection indicator
+                // Selection indicator (2 chars)
                 if is_selected {
                     spans.push(Span::styled(
                         "> ",
@@ -1056,7 +1058,7 @@ fn render_command_palette(f: &mut Frame, area: Rect, app: &App) {
                     spans.push(Span::raw("  "));
                 }
 
-                // Shortcut hint (if available)
+                // Shortcut hint (13 chars: 12 for hint + 1 space)
                 if let Some(ref hint) = cmd.shortcut_hint {
                     let hint_text = format!("{:12} ", hint);
                     spans.push(Span::styled(
@@ -1071,9 +1073,15 @@ fn render_command_palette(f: &mut Frame, area: Rect, app: &App) {
                     spans.push(Span::raw("             "));
                 }
 
-                // Title (no trailing space, we'll calculate padding)
-                let title_text = if cmd.title.len() > 30 {
-                    format!("{}...", &cmd.title[..27])
+                // Calculate available width for title
+                // Total width - indicator(2) - shortcut(13) - category(len+2 for brackets) - padding(3)
+                let category_text = format!("[{}]", cmd.category);
+                let fixed_width = 2 + 13 + category_text.len() + 3;
+                let max_title_width = available_width.saturating_sub(fixed_width);
+
+                // Truncate title if needed
+                let title_text = if cmd.title.len() > max_title_width && max_title_width > 3 {
+                    format!("{}...", &cmd.title[..max_title_width.saturating_sub(3)])
                 } else {
                     cmd.title.clone()
                 };
@@ -1099,11 +1107,7 @@ fn render_command_palette(f: &mut Frame, area: Rect, app: &App) {
                 ));
 
                 // Calculate padding to right-align category
-                // Available width: chunks[1].width
-                // Used: 2 (indicator) + 13 (shortcut) + title_len + category_len + 2 (brackets)
-                let category_text = format!("[{}]", cmd.category);
                 let used_width = 2 + 13 + title_text.len() + category_text.len();
-                let available_width = chunks[1].width as usize;
                 let padding = if available_width > used_width {
                     available_width.saturating_sub(used_width)
                 } else {
