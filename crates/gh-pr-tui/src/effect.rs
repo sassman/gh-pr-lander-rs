@@ -6,9 +6,9 @@ use ::log::debug;
 
 use crate::{
     App, load_persisted_state, loading_recent_repos,
+    actions::{Action, BootstrapResult},
     log::PrContext,
     pr::Pr,
-    shortcuts::{Action, BootstrapResult},
     state::{LoadingState, Repo, TaskStatus, TaskStatusType},
     task::BackgroundTask,
 };
@@ -129,7 +129,7 @@ pub enum Effect {
     SaveRepositories(Vec<Repo>),
 
     /// Dispatch another action (for chaining)
-    DispatchAction(crate::shortcuts::Action),
+    DispatchAction(crate::actions::Action),
 
     /// Batch multiple effects
     Batch(Vec<Effect>),

@@ -21,15 +21,16 @@ use tokio::sync::mpsc;
 // Import debug from the log crate using :: prefix to disambiguate from our log module
 use ::log::debug;
 
+use crate::actions::Action;
 use crate::config::Config;
 use crate::effect::execute_effect;
 use crate::pr::Pr;
-use crate::shortcuts::Action;
 use crate::state::*;
 use crate::store::Store;
 use crate::task::{BackgroundTask, TaskResult, start_task_worker};
 use crate::theme::Theme;
 
+mod actions;
 mod config;
 mod effect;
 mod gh;

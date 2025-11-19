@@ -1,7 +1,7 @@
 use crate::{
+    actions::Action,
     effect::Effect,
     reducer::reduce,
-    shortcuts::Action,
     state::AppState,
 };
 

@@ -1,4 +1,4 @@
-use crate::{effect::Effect, shortcuts::Action, state::*};
+use crate::{actions::Action, effect::Effect, state::*};
 use log::{error, info};
 
 /// Root reducer that delegates to sub-reducers based on action type
