@@ -1753,6 +1753,17 @@ pub async fn fetch_github_data(
     Ok(prs)
 }
 
+/// Context for key event handling
+struct KeyEventContext<'a> {
+    show_add_repo: bool,
+    show_close_pr: bool,
+    show_command_palette: bool,
+    log_panel_open: bool,
+    job_list_focused: bool,
+    debug_console_open: bool,
+    pending_key_shared: &'a std::sync::Arc<std::sync::Mutex<Option<crate::state::PendingKeyPress>>>,
+}
+
 fn handle_events(
     show_add_repo: bool,
     show_close_pr: bool,
@@ -1762,38 +1773,30 @@ fn handle_events(
     debug_console_open: bool,
     pending_key_shared: &std::sync::Arc<std::sync::Mutex<Option<crate::state::PendingKeyPress>>>,
 ) -> Result<Action> {
+    let ctx = KeyEventContext {
+        show_add_repo,
+        show_close_pr,
+        show_command_palette,
+        log_panel_open,
+        job_list_focused,
+        debug_console_open,
+        pending_key_shared,
+    };
+
     Ok(match event::read()? {
-        Event::Key(key) if key.kind == KeyEventKind::Press => handle_key_event(
-            key,
-            show_add_repo,
-            show_close_pr,
-            show_command_palette,
-            log_panel_open,
-            job_list_focused,
-            debug_console_open,
-            pending_key_shared,
-        ),
+        Event::Key(key) if key.kind == KeyEventKind::Press => handle_key_event(key, &ctx),
         _ => Action::None,
     })
 }
 
-fn handle_key_event(
-    key: KeyEvent,
-    show_add_repo: bool,
-    show_close_pr: bool,
-    show_command_palette: bool,
-    log_panel_open: bool,
-    job_list_focused: bool,
-    debug_console_open: bool,
-    pending_key_shared: &std::sync::Arc<std::sync::Mutex<Option<crate::state::PendingKeyPress>>>,
-) -> Action {
+fn handle_key_event(key: KeyEvent, ctx: &KeyEventContext) -> Action {
     // Ctrl+P: Open command palette (check first before any popup handling)
     if matches!(key.code, KeyCode::Char('p')) && key.modifiers.contains(KeyModifiers::CONTROL) {
         return Action::ShowCommandPalette;
     }
 
     // Handle command palette keys if open (highest priority - before other popups)
-    if show_command_palette {
+    if ctx.show_command_palette {
         match key.code {
             KeyCode::Esc => return Action::HideCommandPalette,
             KeyCode::Enter => return Action::CommandPaletteExecute,
@@ -1813,7 +1816,7 @@ fn handle_key_event(
     }
 
     // Handle close PR popup keys first if popup is open
-    if show_close_pr {
+    if ctx.show_close_pr {
         match key.code {
             // Close popup: Esc, x, q
             KeyCode::Esc => return Action::HideClosePrPopup,
@@ -1836,7 +1839,7 @@ fn handle_key_event(
     }
 
     // Handle add repo popup keys if popup is open
-    if show_add_repo {
+    if ctx.show_add_repo {
         match key.code {
             KeyCode::Esc => return Action::HideAddRepoPopup,
             KeyCode::Enter => return Action::AddRepoFormSubmit,
@@ -1850,7 +1853,7 @@ fn handle_key_event(
     }
 
     // Handle log panel keys if panel is open (before general shortcuts)
-    if log_panel_open {
+    if ctx.log_panel_open {
         match key.code {
             // Close panel (x or Esc)
             KeyCode::Char('x') | KeyCode::Esc => {
@@ -1858,7 +1861,7 @@ fn handle_key_event(
             }
             // Tab: Switch focus between job list and log viewer
             KeyCode::Tab => {
-                return if job_list_focused {
+                return if ctx.job_list_focused {
                     Action::FocusLogViewer
                 } else {
                     Action::FocusJobList
@@ -1905,14 +1908,14 @@ fn handle_key_event(
 
     // Handle double-Esc to clear PR selection (before other Esc handling)
     // This needs to happen before popup/panel-specific Esc handling
-    if !show_add_repo
-        && !show_close_pr
-        && !log_panel_open
-        && !debug_console_open
+    if !ctx.show_add_repo
+        && !ctx.show_close_pr
+        && !ctx.log_panel_open
+        && !ctx.debug_console_open
         && key.code == KeyCode::Esc
     {
         // Check if there's a pending Esc key (represented as '\x1b')
-        let pending_guard = pending_key_shared.lock().unwrap();
+        let pending_guard = ctx.pending_key_shared.lock().unwrap();
         let has_pending_esc = pending_guard
             .as_ref()
             .filter(|p| p.key == '\x1b' && p.timestamp.elapsed().as_secs() < 3)
@@ -1921,13 +1924,13 @@ fn handle_key_event(
 
         if has_pending_esc {
             // Second Esc press - clear selection
-            let mut pending_guard = pending_key_shared.lock().unwrap();
+            let mut pending_guard = ctx.pending_key_shared.lock().unwrap();
             *pending_guard = None;
             drop(pending_guard);
             return Action::ClearPrSelection;
         } else {
             // First Esc press - set as pending
-            let mut pending_guard = pending_key_shared.lock().unwrap();
+            let mut pending_guard = ctx.pending_key_shared.lock().unwrap();
             *pending_guard = Some(crate::state::PendingKeyPress {
                 key: '\x1b', // Use escape character to represent Esc
                 timestamp: std::time::Instant::now(),
@@ -1938,7 +1941,7 @@ fn handle_key_event(
     }
 
     // Handle debug console keys if console is open (before general shortcuts)
-    if debug_console_open {
+    if ctx.debug_console_open {
         match key.code {
             // Toggle console (backtick/tilde or Esc to close)
             KeyCode::Char('`') | KeyCode::Char('~') | KeyCode::Esc => {
@@ -1970,13 +1973,13 @@ fn handle_key_event(
     }
 
     // Use the shortcuts module to find the action for this key (with two-key support)
-    let pending_guard = pending_key_shared.lock().unwrap();
+    let pending_guard = ctx.pending_key_shared.lock().unwrap();
     let (action, should_clear, new_pending_char) =
         crate::shortcuts::find_action_for_key_with_pending(&key, pending_guard.as_ref());
 
     // Update pending key state
     drop(pending_guard);
-    let mut pending_guard = pending_key_shared.lock().unwrap();
+    let mut pending_guard = ctx.pending_key_shared.lock().unwrap();
     if should_clear {
         *pending_guard = None;
     }
