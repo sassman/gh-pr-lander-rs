@@ -159,11 +159,13 @@ fn start_event_handler(
     app: &App,
     tx: mpsc::UnboundedSender<Action>,
     show_close_pr_sync: Arc<Mutex<bool>>,
+    show_command_palette_sync: Arc<Mutex<bool>>,
 ) -> (tokio::task::JoinHandle<()>, Arc<Mutex<bool>>) {
     let tick_rate = std::time::Duration::from_millis(250);
     // Clone the shared popup state flags for the event loop
     let show_add_repo_shared = app.store.state().ui.show_add_repo_shared.clone();
     let show_close_pr_shared = show_close_pr_sync;
+    let show_command_palette_shared = show_command_palette_sync;
     // Clone the pending key state for two-key combinations
     let pending_key_shared = app.store.state().ui.pending_key.clone();
     // Clone the shared log panel state for the event loop
@@ -176,17 +178,20 @@ fn start_event_handler(
     let debug_console_open = debug_console_open_shared.clone();
 
     let close_pr_shared_for_loop = show_close_pr_shared.clone();
+    let command_palette_shared_for_loop = show_command_palette_shared.clone();
     let handle = tokio::spawn(async move {
         loop {
             let action = if crossterm::event::poll(tick_rate).unwrap() {
                 let show_add_repo = *show_add_repo_shared.lock().unwrap();
                 let show_close_pr = *close_pr_shared_for_loop.lock().unwrap();
+                let show_command_palette = *command_palette_shared_for_loop.lock().unwrap();
                 let log_panel_open_val = *log_panel_open.lock().unwrap();
                 let job_list_focused_val = *job_list_focused.lock().unwrap();
                 let console_open = *debug_console_open.lock().unwrap();
                 handle_events(
                     show_add_repo,
                     show_close_pr,
+                    show_command_palette,
                     log_panel_open_val,
                     job_list_focused_val,
                     console_open,
@@ -256,8 +261,14 @@ async fn run_with_log_buffer(log_buffer: log_capture::LogBuffer) -> Result<()> {
 
     // Create shared state for close PR popup (synced in main loop)
     let show_close_pr_shared = Arc::new(Mutex::new(false));
-    let (event_task, debug_console_shared) =
-        start_event_handler(&app, app.action_tx.clone(), show_close_pr_shared.clone());
+    // Create shared state for command palette (synced in main loop)
+    let show_command_palette_shared = Arc::new(Mutex::new(false));
+    let (event_task, debug_console_shared) = start_event_handler(
+        &app,
+        app.action_tx.clone(),
+        show_close_pr_shared.clone(),
+        show_command_palette_shared.clone(),
+    );
     let worker_task = start_task_worker(task_rx, result_tx);
 
     app.action_tx
@@ -270,6 +281,8 @@ async fn run_with_log_buffer(log_buffer: log_capture::LogBuffer) -> Result<()> {
             app.store.state().ui.show_add_repo;
         // Sync close PR popup visibility to shared state
         *show_close_pr_shared.lock().unwrap() = app.store.state().ui.close_pr_state.is_some();
+        // Sync command palette visibility to shared state
+        *show_command_palette_shared.lock().unwrap() = app.store.state().ui.command_palette.is_some();
 
         // Sync the shared debug console state for event handler
         *debug_console_shared.lock().unwrap() = app.store.state().debug_console.is_open;
@@ -582,6 +595,11 @@ fn ui(f: &mut Frame, app: &mut App) {
             &close_pr_state.comment,
             &app.store.state().theme,
         );
+    }
+
+    // Render command palette on top of everything (highest priority popup)
+    if app.store.state().ui.command_palette.is_some() {
+        render_command_palette(f, f.area(), app);
     }
 
     // Render debug console (Quake-style drop-down) if visible
@@ -905,6 +923,224 @@ fn render_close_pr_popup(f: &mut Frame, area: Rect, comment: &str, theme: &Theme
         .style(Style::default().bg(theme.bg_panel));
 
     f.render_widget(paragraph, inner);
+}
+
+/// Render the command palette popup
+fn render_command_palette(f: &mut Frame, area: Rect, app: &App) {
+    use ratatui::widgets::{Clear, Wrap};
+
+    let palette = match &app.store.state().ui.command_palette {
+        Some(p) => p,
+        None => return,
+    };
+
+    let theme = &app.store.state().theme;
+
+    // Calculate centered area (70% width, 60% height)
+    let popup_width = (area.width * 70 / 100).min(100);
+    let popup_height = (area.height * 60 / 100).min(30);
+    let popup_x = (area.width.saturating_sub(popup_width)) / 2;
+    let popup_y = (area.height.saturating_sub(popup_height)) / 2;
+
+    let popup_area = Rect {
+        x: area.x + popup_x,
+        y: area.y + popup_y,
+        width: popup_width,
+        height: popup_height,
+    };
+
+    // Clear the area and render background
+    f.render_widget(Clear, popup_area);
+    f.render_widget(
+        Block::default().style(Style::default().bg(theme.bg_panel)),
+        popup_area,
+    );
+
+    // Render border and title
+    let title = format!(
+        " Command Palette ({} commands) ",
+        palette.filtered_commands.len()
+    );
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(title)
+        .title_style(
+            Style::default()
+                .fg(theme.accent_primary)
+                .add_modifier(Modifier::BOLD),
+        )
+        .border_style(
+            Style::default()
+                .fg(theme.accent_primary)
+                .add_modifier(Modifier::BOLD),
+        )
+        .style(Style::default().bg(theme.bg_panel));
+
+    f.render_widget(block, popup_area);
+
+    // Calculate inner area
+    let inner = popup_area.inner(Margin {
+        horizontal: 2,
+        vertical: 1,
+    });
+
+    // Split into input area, results area, and footer
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3), // Input box
+            Constraint::Min(5),    // Results list
+            Constraint::Length(1), // Footer
+        ])
+        .split(inner);
+
+    // Render input box
+    let input_text = format!("> {}", palette.input);
+    let input_paragraph = Paragraph::new(input_text)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(theme.accent_primary))
+                .style(Style::default().bg(theme.bg_secondary)),
+        )
+        .style(
+            Style::default()
+                .fg(theme.text_primary)
+                .bg(theme.bg_secondary),
+        );
+    f.render_widget(input_paragraph, chunks[0]);
+
+    // Render results list
+    if palette.filtered_commands.is_empty() {
+        // No results
+        let no_results = Paragraph::new("No matching commands")
+            .style(Style::default().fg(theme.text_muted))
+            .alignment(ratatui::layout::Alignment::Center);
+        f.render_widget(no_results, chunks[1]);
+    } else {
+        // Calculate visible range
+        let visible_height = chunks[1].height as usize;
+        let total_items = palette.filtered_commands.len();
+        let selected = palette.selected_index;
+
+        // Ensure selected item is visible (scroll if needed)
+        let scroll_offset = if selected < visible_height / 2 {
+            0
+        } else if selected >= total_items.saturating_sub(visible_height / 2) {
+            total_items.saturating_sub(visible_height)
+        } else {
+            selected.saturating_sub(visible_height / 2)
+        };
+
+        // Build result lines
+        let result_lines: Vec<Line> = palette
+            .filtered_commands
+            .iter()
+            .enumerate()
+            .skip(scroll_offset)
+            .take(visible_height)
+            .map(|(i, (cmd, _score))| {
+                let is_selected = i == selected;
+
+                let mut spans = Vec::new();
+
+                // Selection indicator
+                if is_selected {
+                    spans.push(Span::styled(
+                        "> ",
+                        Style::default()
+                            .fg(theme.accent_primary)
+                            .add_modifier(Modifier::BOLD),
+                    ));
+                } else {
+                    spans.push(Span::raw("  "));
+                }
+
+                // Shortcut hint (if available)
+                if let Some(ref hint) = cmd.shortcut_hint {
+                    let hint_text = format!("{:12} ", hint);
+                    spans.push(Span::styled(
+                        hint_text,
+                        Style::default().fg(if is_selected {
+                            theme.accent_primary
+                        } else {
+                            theme.text_muted
+                        }),
+                    ));
+                } else {
+                    spans.push(Span::raw("             "));
+                }
+
+                // Title
+                spans.push(Span::styled(
+                    format!("{:30} ", cmd.title),
+                    Style::default()
+                        .fg(if is_selected {
+                            theme.selected_fg
+                        } else {
+                            theme.text_primary
+                        })
+                        .bg(if is_selected {
+                            theme.selected_bg
+                        } else {
+                            Color::Reset
+                        })
+                        .add_modifier(if is_selected {
+                            Modifier::BOLD
+                        } else {
+                            Modifier::empty()
+                        }),
+                ));
+
+                // Category
+                spans.push(Span::styled(
+                    format!("[{}]", cmd.category),
+                    Style::default().fg(if is_selected {
+                        theme.text_secondary
+                    } else {
+                        theme.text_muted
+                    }),
+                ));
+
+                Line::from(spans)
+            })
+            .collect();
+
+        let results_paragraph = Paragraph::new(result_lines)
+            .wrap(Wrap { trim: false })
+            .style(Style::default().bg(theme.bg_panel));
+        f.render_widget(results_paragraph, chunks[1]);
+    }
+
+    // Render footer with keyboard hints
+    let footer_line = Line::from(vec![
+        Span::styled(
+            "Enter",
+            Style::default()
+                .fg(theme.accent_primary)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(" execute  ", Style::default().fg(theme.text_muted)),
+        Span::styled(
+            "j/k",
+            Style::default()
+                .fg(theme.accent_primary)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(" navigate  ", Style::default().fg(theme.text_muted)),
+        Span::styled(
+            "Esc",
+            Style::default()
+                .fg(theme.accent_primary)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(" close", Style::default().fg(theme.text_muted)),
+    ]);
+
+    let footer = Paragraph::new(footer_line)
+        .style(Style::default().fg(theme.text_secondary))
+        .alignment(ratatui::layout::Alignment::Center);
+    f.render_widget(footer, chunks[2]);
 }
 
 /// Render the bottom action panel with context-sensitive shortcuts
@@ -1465,6 +1701,7 @@ pub async fn fetch_github_data(
 fn handle_events(
     show_add_repo: bool,
     show_close_pr: bool,
+    show_command_palette: bool,
     log_panel_open: bool,
     job_list_focused: bool,
     debug_console_open: bool,
@@ -1475,6 +1712,7 @@ fn handle_events(
             key,
             show_add_repo,
             show_close_pr,
+            show_command_palette,
             log_panel_open,
             job_list_focused,
             debug_console_open,
@@ -1488,11 +1726,37 @@ fn handle_key_event(
     key: KeyEvent,
     show_add_repo: bool,
     show_close_pr: bool,
+    show_command_palette: bool,
     log_panel_open: bool,
     job_list_focused: bool,
     debug_console_open: bool,
     pending_key_shared: &std::sync::Arc<std::sync::Mutex<Option<crate::state::PendingKeyPress>>>,
 ) -> Action {
+    // Ctrl+P: Open command palette (check first before any popup handling)
+    if matches!(key.code, KeyCode::Char('p')) && key.modifiers.contains(KeyModifiers::CONTROL) {
+        return Action::ShowCommandPalette;
+    }
+
+    // Handle command palette keys if open (highest priority - before other popups)
+    if show_command_palette {
+        match key.code {
+            KeyCode::Esc => return Action::HideCommandPalette,
+            KeyCode::Enter => return Action::CommandPaletteExecute,
+            KeyCode::Down | KeyCode::Char('j') if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                return Action::CommandPaletteSelectNext;
+            }
+            KeyCode::Up | KeyCode::Char('k') if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                return Action::CommandPaletteSelectPrev;
+            }
+            KeyCode::Backspace => return Action::CommandPaletteBackspace,
+            KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                return Action::CommandPaletteInput(c);
+            }
+            // Ignore other keys (function keys, etc.)
+            _ => return Action::None,
+        }
+    }
+
     // Handle close PR popup keys first if popup is open
     if show_close_pr {
         match key.code {

@@ -341,6 +341,15 @@ pub fn get_shortcuts() -> Vec<ShortcutCategory> {
             name: "General",
             shortcuts: vec![
                 Shortcut {
+                    key_display: "Ctrl+P",
+                    description: "Open command palette",
+                    action: Action::ShowCommandPalette,
+                    matcher: ShortcutMatcher::SingleKey(|key| {
+                        matches!(key.code, KeyCode::Char('p'))
+                            && key.modifiers.contains(KeyModifiers::CONTROL)
+                    }),
+                },
+                Shortcut {
                     key_display: "?",
                     description: "Toggle this help (you are here!)",
                     action: Action::ToggleShortcuts,
