@@ -22,6 +22,36 @@ Also note that every feature is a subject of change as I continue to use and ref
 - **Session Persistence** - Resume exactly where you left off
 - **Redux Architecture** - Predictable state management with pure reducers
 
+## Screenshots
+
+### Main PR List View
+![PR List with multiple repositories](screenshots/Screenshot%202025-11-19%20at%2016.31.40.png)
+*Multi-repository tabs, PR selection, build status indicators, and quick action buttons*
+
+### Smart PR Filtering
+![Filtered PR list](screenshots/Screenshot%202025-11-19%20at%2016.34.23.png)
+*Filter PRs by type (feat/fix/chore) with instant results*
+
+### Hierarchical Build Log Viewer
+![Build logs tree view](screenshots/Screenshot%202025-11-19%20at%2016.32.24.png)
+*Expandable workflow → job → step → log line tree structure*
+
+### Error Navigation with ANSI Colors
+![Build errors with syntax highlighting](screenshots/Screenshot%202025-11-19%20at%2016.32.47.png)
+*Smart error jumping with preserved ANSI colors from build tools*
+
+### Timestamp Toggle
+![Build logs with timestamps](screenshots/Screenshot%202025-11-19%20at%2016.33.02.png)
+*Toggle timestamps on/off for cleaner log viewing*
+
+### Keyboard Shortcuts Help
+![Shortcuts help panel](screenshots/Screenshot%202025-11-19%20at%2016.33.21.png)
+*Comprehensive keyboard shortcut reference (press `?`)*
+
+### Debug Console
+![Quake-style debug console](screenshots/Screenshot%202025-11-19%20at%2016.33.42.png)
+*Drop-down debug console for monitoring background operations*
+
 ## Installation
 
 ```bash
