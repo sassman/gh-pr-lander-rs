@@ -305,7 +305,9 @@ fn ui_reducer(mut state: UiState, action: &Action) -> (UiState, Vec<Effect>) {
                 palette.filtered_commands = results.clone();
                 // Clamp selected_index to valid range
                 if !palette.filtered_commands.is_empty() {
-                    palette.selected_index = palette.selected_index.min(palette.filtered_commands.len() - 1);
+                    palette.selected_index = palette
+                        .selected_index
+                        .min(palette.filtered_commands.len() - 1);
                 } else {
                     palette.selected_index = 0;
                 }
@@ -319,10 +321,10 @@ fn ui_reducer(mut state: UiState, action: &Action) -> (UiState, Vec<Effect>) {
 
 /// Parse GitHub URL into (org, repo, branch)
 /// Supports formats:
-/// - https://github.com/org/repo
-/// - https://github.com/org/repo.git
-/// - https://github.com/org/repo/tree/branch
-/// - github.com/org/repo
+/// - `https://github.com/org/repo`
+/// - `https://github.com/org/repo.git`
+/// - `https://github.com/org/repo/tree/branch`
+/// - `github.com/org/repo`
 fn parse_github_url(url: &str) -> Option<(String, String, String)> {
     let url = url.trim();
 
