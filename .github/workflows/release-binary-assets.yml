@@ -1,0 +1,84 @@
+name: Release Binary Assets
+on:
+  release:
+    types:
+      - published
+  workflow_dispatch:
+
+jobs:
+  release:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+            cross: true
+            binName: gh-pr-tui
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-latest
+            cross: true
+            binName: gh-pr-tui
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            cross: false
+            binName: gh-pr-tui
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            cross: false
+            binName: gh-pr-tui.exe
+          - target: x86_64-pc-windows-gnu
+            os: windows-latest
+            cross: false
+            binName: gh-pr-tui.exe
+    steps:
+      - uses: actions/checkout@v4
+      - name: setup | rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        if: ${{ matrix.cross == true }}
+        with:
+          tool: cross
+      - name: build with cross
+        if: ${{ matrix.cross == true }}
+        shell: bash
+        run: cross build --locked --release --target ${{ matrix.target }}
+      - name: smoke test
+        if: ${{ matrix.cross == true }}
+        shell: bash
+        run: |
+          cross run --locked --release --target ${{ matrix.target }} -- --help
+      - name: build with cargo
+        if: ${{ matrix.cross != true }}
+        shell: bash
+        run: cargo build --locked --release --target ${{ matrix.target }}
+      - name: smoke test with cargo
+        if: ${{ matrix.cross != true }}
+        shell: bash
+        run: |
+          cargo run --locked --release --target ${{ matrix.target }} -- --help
+      - name: Create Archive
+        id: archive
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          filename="gh-pr-tui-$TAG-$TARGET.tar.gz"
+          tar -czvf "$filename" README.md LICENSE -C "target/$TARGET/release" "${{ matrix.binName }}"
+          echo "filename=$filename" >> $GITHUB_OUTPUT
+      - name: Upload Archive
+        uses: ncipollo/release-action@v1.8.7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          allowUpdates: true
+          artifactErrorsFailBuild: true
+          artifacts: ${{ steps.archive.outputs.filename }}
+          artifactContentType: application/octet-stream
+          omitBodyDuringUpdate: true
+          omitNameDuringUpdate: true
+          omitPrereleaseDuringUpdate: true

@@ -1,0 +1,18 @@
+name: Build
+on:
+  push:
+    branches: ["*"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+  workflow_call:
+
+jobs:
+  build:
+    uses: sassman/.github/.github/workflows/build.yml@main
+
+  coverage:
+    name: code coverage
+    uses: sassman/.github/.github/workflows/coverage.yml@main
+    secrets:
+      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
