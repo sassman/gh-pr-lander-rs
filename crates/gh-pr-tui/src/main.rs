@@ -405,8 +405,11 @@ fn ui(f: &mut Frame, app: &mut App) {
     // Table always takes full width
     let table_area = chunks[1];
 
-    // Render tabs and PR table
-    crate::views::pull_requests::render_pr_table_and_tabs(f, table_area, chunks[0], app);
+    // Render repository tabs
+    crate::views::repositories::render_repository_tabs(f, chunks[0], app);
+
+    // Render PR table
+    crate::views::pull_requests::render_pr_table(f, table_area, app);
 
     // Render context-sensitive action panel at the bottom
     crate::views::pull_requests::render_action_panel(f, app, chunks[2]);
@@ -436,7 +439,7 @@ fn ui(f: &mut Frame, app: &mut App) {
 
     // Render add repo popup on top of everything if visible
     if app.store.state().ui.show_add_repo {
-        crate::views::pull_requests::render_add_repo_popup(
+        crate::views::repositories::render_add_repo_popup(
             f,
             chunks[1],
             &app.store.state().ui.add_repo_form,
