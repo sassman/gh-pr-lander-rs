@@ -455,7 +455,7 @@ pub async fn execute_effect(app: &mut App, effect: Effect) -> Result<Vec<Action>
             let _ = std::process::Command::new("xdg-open").arg(&url).spawn();
             #[cfg(target_os = "windows")]
             let _ = std::process::Command::new("cmd")
-                .args(&["/C", "start", &url])
+                .args(["/C", "start", &url])
                 .spawn();
         }
 
