@@ -355,7 +355,7 @@ mod tests {
 
     #[test]
     fn test_cache_ttl() {
-        let cache_file = PathBuf::from(".cache/test-ttl.json");
+        let cache_file = std::env::temp_dir().join("gh-pr-tui-test-ttl.json");
         let mut cache = ApiCache {
             cache_file,
             ttl_seconds: 2, // 2 second TTL for test
@@ -401,7 +401,7 @@ mod tests {
 
     #[test]
     fn test_cache_invalidate_pattern() {
-        let cache_file = PathBuf::from(".cache/test-pattern.json");
+        let cache_file = std::env::temp_dir().join("gh-pr-tui-test-pattern.json");
         let mut cache = ApiCache {
             cache_file,
             ttl_seconds: 20 * 60,
@@ -435,7 +435,7 @@ mod tests {
 
     #[test]
     fn test_cache_touch() {
-        let cache_file = PathBuf::from(".cache/test-touch.json");
+        let cache_file = std::env::temp_dir().join("gh-pr-tui-test-touch.json");
         let mut cache = ApiCache {
             cache_file,
             ttl_seconds: 2,
@@ -466,7 +466,7 @@ mod tests {
 
     #[test]
     fn test_cache_stats() {
-        let cache_file = PathBuf::from(".cache/test-stats.json");
+        let cache_file = std::env::temp_dir().join("gh-pr-tui-test-stats.json");
         let mut cache = ApiCache {
             cache_file,
             ttl_seconds: 1,
