@@ -1,3 +1,4 @@
+pub mod build_log;
 pub mod command_palette;
 pub mod debug_console;
 pub mod help;

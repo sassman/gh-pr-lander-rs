@@ -1541,7 +1541,7 @@ fn log_panel_reducer(mut state: LogPanelState, action: &Action) -> (LogPanelStat
     match action {
         Action::BuildLogsLoaded(jobs, pr_context) => {
             // Create master-detail log panel from job logs
-            state.panel = Some(crate::log::create_log_panel_from_jobs(
+            state.panel = Some(crate::views::build_log::create_log_panel_from_jobs(
                 jobs.clone(),
                 pr_context.clone(),
             ));

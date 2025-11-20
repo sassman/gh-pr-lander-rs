@@ -417,8 +417,12 @@ fn ui(f: &mut Frame, app: &mut App) {
 
     // Render log panel LAST if it's open - covers only the table area
     if let Some(ref panel) = app.store.state().log_panel.panel {
-        let viewport_height =
-            crate::log::render_log_panel_card(f, panel, &app.store.state().theme, chunks[1]);
+        let viewport_height = crate::views::build_log::render_log_panel_card(
+            f,
+            panel,
+            &app.store.state().theme,
+            chunks[1],
+        );
         // Update viewport height for page down scrolling
         app.store
             .dispatch(Action::UpdateLogPanelViewport(viewport_height));
