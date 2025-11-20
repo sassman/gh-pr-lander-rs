@@ -18,6 +18,8 @@ pub enum Action {
     NavigateToNextPr,
     NavigateToPreviousPr,
     ClearPrSelection,
+    SelectAllPrs,
+    DeselectAllPrs,
     MergeSelectedPrs,
     ApprovePrs,
     StartMergeBot,

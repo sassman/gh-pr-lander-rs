@@ -36,7 +36,7 @@ pub struct ShortcutCommandProvider;
 
 impl CommandProvider<Action, AppState> for ShortcutCommandProvider {
     fn commands(&self, state: &AppState) -> Vec<CommandItem<Action>> {
-        get_all_shortcuts_flat()
+        let mut commands: Vec<CommandItem<Action>> = get_all_shortcuts_flat()
             .into_iter()
             .filter_map(|shortcut| {
                 // Skip shortcuts that aren't available in current context
@@ -63,7 +63,39 @@ impl CommandProvider<Action, AppState> for ShortcutCommandProvider {
                     action: shortcut.action.clone(),
                 })
             })
-            .collect()
+            .collect();
+
+        // Add non-shortcut commands that are only available via command palette
+        let has_prs = state
+            .repos
+            .repo_data
+            .get(&state.repos.selected_repo)
+            .map(|d| !d.prs.is_empty())
+            .unwrap_or(false);
+
+        if has_prs {
+            // Select All PRs command
+            commands.push(CommandItem {
+                title: "Select all PRs".to_string(),
+                description: "Select all pull requests in current repository".to_string(),
+                category: "PR Actions".to_string(),
+                shortcut_hint: None,
+                context: None,
+                action: Action::SelectAllPrs,
+            });
+
+            // Deselect All PRs command
+            commands.push(CommandItem {
+                title: "Deselect all PRs".to_string(),
+                description: "Deselect all pull requests in current repository".to_string(),
+                category: "PR Actions".to_string(),
+                shortcut_hint: None,
+                context: None,
+                action: Action::DeselectAllPrs,
+            });
+        }
+
+        commands
     }
 
     fn name(&self) -> &str {

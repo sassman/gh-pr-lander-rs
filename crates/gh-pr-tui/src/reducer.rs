@@ -870,6 +870,22 @@ fn repos_reducer(
                 data.selected_pr_numbers.clear();
             }
         }
+        Action::SelectAllPrs => {
+            // Select all PRs for the current repo
+            if let Some(data) = state.repo_data.get_mut(&state.selected_repo) {
+                data.selected_pr_numbers = data
+                    .prs
+                    .iter()
+                    .map(|pr| crate::state::PrNumber::from_pr(pr))
+                    .collect();
+            }
+        }
+        Action::DeselectAllPrs => {
+            // Deselect all PRs for the current repo (same as ClearPrSelection)
+            if let Some(data) = state.repo_data.get_mut(&state.selected_repo) {
+                data.selected_pr_numbers.clear();
+            }
+        }
         Action::MergeStatusUpdated(repo_index, pr_number, status) => {
             // Update PR status in repo_data
             if let Some(data) = state.repo_data.get_mut(repo_index)
