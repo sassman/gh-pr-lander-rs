@@ -254,6 +254,7 @@ pub async fn execute_effect(app: &mut App, effect: Effect) -> Result<Vec<Action>
                 repos,
                 filter,
                 octocrab: app.octocrab()?,
+                cache: app.cache.clone(),
             });
         }
 
@@ -274,6 +275,7 @@ pub async fn execute_effect(app: &mut App, effect: Effect) -> Result<Vec<Action>
                 repo,
                 filter,
                 octocrab: app.octocrab()?,
+                cache: app.cache.clone(),
             });
         }
 
@@ -297,6 +299,7 @@ pub async fn execute_effect(app: &mut App, effect: Effect) -> Result<Vec<Action>
                         repo,
                         filter,
                         octocrab: app.octocrab()?,
+                        cache: app.cache.clone(),
                     }),
                     delay_ms,
                 });
@@ -646,6 +649,7 @@ pub async fn execute_effect(app: &mut App, effect: Effect) -> Result<Vec<Action>
                     repo: repo.clone(),
                     filter,
                     octocrab: app.octocrab()?,
+                    cache: app.cache.clone(),
                 });
             } else {
                 // Repository already exists

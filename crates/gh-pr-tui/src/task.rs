@@ -83,12 +83,14 @@ pub enum BackgroundTask {
         repos: Vec<(usize, Repo)>, // (repo_index, repo) pairs
         filter: PrFilter,
         octocrab: Octocrab,
+        cache: std::sync::Arc<std::sync::Mutex<crate::cache::ApiCache>>,
     },
     LoadSingleRepo {
         repo_index: usize,
         repo: Repo,
         filter: PrFilter,
         octocrab: Octocrab,
+        cache: std::sync::Arc<std::sync::Mutex<crate::cache::ApiCache>>,
     },
     CheckMergeStatus {
         repo_index: usize,
@@ -192,6 +194,7 @@ async fn process_task(task: BackgroundTask, result_tx: &mut mpsc::UnboundedSende
             repos,
             filter,
             octocrab,
+            cache,
         } => {
             // Spawn parallel tasks for each repo
             let mut tasks = Vec::new();
@@ -203,9 +206,10 @@ async fn process_task(task: BackgroundTask, result_tx: &mut mpsc::UnboundedSende
                 let repo = repo.clone();
                 let filter = filter.clone();
                 let index = *repo_index;
+                let cache = cache.clone();
 
                 let task = tokio::spawn(async move {
-                    let result = crate::fetch_github_data(&octocrab, &repo, &filter)
+                    let result = crate::fetch_github_data_cached(&octocrab, &repo, &filter, &cache, false)
                         .await
                         .map_err(|e| e.to_string());
                     (index, result)
@@ -240,12 +244,13 @@ async fn process_task(task: BackgroundTask, result_tx: &mut mpsc::UnboundedSende
             repo,
             filter,
             octocrab,
+            cache,
         } => {
             debug!(
                 "Loading repo {}/{} (index: {})...",
                 repo.org, repo.repo, repo_index
             );
-            let result = crate::fetch_github_data(&octocrab, &repo, &filter)
+            let result = crate::fetch_github_data_cached(&octocrab, &repo, &filter, &cache, false)
                 .await
                 .map_err(|e| e.to_string());
 
