@@ -1,6 +1,5 @@
 use chrono::{DateTime, Utc};
 use octocrab::Octocrab;
-use ratatui::widgets::Row;
 
 use crate::Repo;
 
@@ -90,65 +89,5 @@ impl Pr {
     }
 }
 
-impl MergeableStatus {
-    pub fn icon(&self) -> &str {
-        match self {
-            MergeableStatus::Unknown => "?",
-            MergeableStatus::BuildInProgress => "⋯",
-            MergeableStatus::Ready => "✓",
-            MergeableStatus::NeedsRebase => "↻",
-            MergeableStatus::BuildFailed => "✗",
-            MergeableStatus::Conflicted => "✗",
-            MergeableStatus::Blocked => "⊗",
-            MergeableStatus::Rebasing => "⟳",
-            MergeableStatus::Merging => "⇒",
-        }
-    }
-
-    pub fn color(&self) -> ratatui::style::Color {
-        use ratatui::style::Color;
-        match self {
-            MergeableStatus::Unknown => Color::DarkGray,
-            MergeableStatus::BuildInProgress => Color::Yellow,
-            MergeableStatus::Ready => Color::Green,
-            MergeableStatus::NeedsRebase => Color::Yellow,
-            MergeableStatus::BuildFailed => Color::Red,
-            MergeableStatus::Conflicted => Color::Red,
-            MergeableStatus::Blocked => Color::Red,
-            MergeableStatus::Rebasing => Color::Cyan,
-            MergeableStatus::Merging => Color::Cyan,
-        }
-    }
-
-    pub fn label(&self) -> &str {
-        match self {
-            MergeableStatus::Unknown => "Unknown",
-            MergeableStatus::BuildInProgress => "Building",
-            MergeableStatus::Ready => "Ready",
-            MergeableStatus::NeedsRebase => "Needs Rebase",
-            MergeableStatus::BuildFailed => "Build Failed",
-            MergeableStatus::Conflicted => "Conflicted",
-            MergeableStatus::Blocked => "Blocked",
-            MergeableStatus::Rebasing => "Rebasing...",
-            MergeableStatus::Merging => "Merging...",
-        }
-    }
-}
-
-impl From<&Pr> for Row<'static> {
-    fn from(val: &Pr) -> Self {
-        use ratatui::style::Style;
-        use ratatui::widgets::Cell;
-
-        // Show status with icon and label (e.g., "✓ Ready", "✗ Build Failed")
-        let status_text = format!("{} {}", val.mergeable.icon(), val.mergeable.label());
-
-        Row::new(vec![
-            Cell::from(val.number.to_string()),
-            Cell::from(val.title.clone()),
-            Cell::from(val.author.clone()),
-            Cell::from(val.no_comments.to_string()),
-            Cell::from(status_text).style(Style::default().fg(val.mergeable.color())),
-        ])
-    }
-}
+// Presentation logic moved to view_models/pr_table.rs
+// This keeps the domain model clean and follows MVVM pattern

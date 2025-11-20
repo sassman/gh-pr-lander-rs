@@ -106,11 +106,13 @@ pub fn reduce(mut state: AppState, action: &Action) -> (AppState, Vec<Effect>) {
     state.ui = ui_state;
     effects.extend(ui_effects);
 
-    let (repos_state, repos_effects) = repos_reducer(state.repos, action, &state.config);
+    let (repos_state, repos_effects) =
+        repos_reducer(state.repos, action, &state.config, &state.theme);
     state.repos = repos_state;
     effects.extend(repos_effects);
 
-    let (log_panel_state, log_panel_effects) = log_panel_reducer(state.log_panel, action, &state.theme);
+    let (log_panel_state, log_panel_effects) =
+        log_panel_reducer(state.log_panel, action, &state.theme);
     state.log_panel = log_panel_state;
     effects.extend(log_panel_effects);
 
@@ -383,6 +385,7 @@ fn repos_reducer(
     mut state: ReposState,
     action: &Action,
     config: &crate::config::Config,
+    theme: &crate::theme::Theme,
 ) -> (ReposState, Vec<Effect>) {
     let mut effects = vec![];
 
@@ -547,6 +550,9 @@ fn repos_reducer(
                     state.state = data.table_state.clone();
                     state.loading_state = data.loading_state.clone();
                 }
+
+                // Recompute view model for new repo
+                recompute_pr_table_view_model(&mut state, theme);
             }
         }
         Action::RepoDataLoaded(repo_index, Ok(prs)) => {
@@ -701,6 +707,11 @@ fn repos_reducer(
                     }))),
                 ]));
             }
+
+            // Recompute view model after PR data loaded
+            if *repo_index == state.selected_repo {
+                recompute_pr_table_view_model(&mut state, theme);
+            }
         }
         Action::RepoDataLoaded(repo_index, Err(err)) => {
             let data = state.repo_data.entry(*repo_index).or_default();
@@ -825,6 +836,8 @@ fn repos_reducer(
                     bypass_cache: false, // Filter is client-side, can use cached data
                 });
             }
+
+            // Note: View model will be recomputed when RepoDataLoaded action fires
         }
         Action::NavigateToNextPr => {
             let i = match state.state.selected() {
@@ -843,6 +856,9 @@ fn repos_reducer(
             if let Some(data) = state.repo_data.get_mut(&state.selected_repo) {
                 data.table_state.select(Some(i));
             }
+
+            // Recompute view model (cursor position changed)
+            recompute_pr_table_view_model(&mut state, theme);
         }
         Action::NavigateToPreviousPr => {
             let i = match state.state.selected() {
@@ -861,6 +877,9 @@ fn repos_reducer(
             if let Some(data) = state.repo_data.get_mut(&state.selected_repo) {
                 data.table_state.select(Some(i));
             }
+
+            // Recompute view model (cursor position changed)
+            recompute_pr_table_view_model(&mut state, theme);
         }
         Action::TogglePrSelection => {
             if let Some(selected) = state.state.selected()
@@ -877,7 +896,11 @@ fn repos_reducer(
                     }
                 }
 
+                // Recompute view model (selection changed)
+                recompute_pr_table_view_model(&mut state, theme);
+
                 // Automatically advance to next PR if not on the last row
+                // Note: NavigateToNextPr will trigger another recompute, but that's OK
                 if selected < state.prs.len().saturating_sub(1) {
                     effects.push(Effect::DispatchAction(Action::NavigateToNextPr));
                 }
@@ -888,6 +911,9 @@ fn repos_reducer(
             if let Some(data) = state.repo_data.get_mut(&state.selected_repo) {
                 data.selected_pr_numbers.clear();
             }
+
+            // Recompute view model (selection changed)
+            recompute_pr_table_view_model(&mut state, theme);
         }
         Action::SelectAllPrs => {
             // Select all PRs for the current repo
@@ -898,12 +924,18 @@ fn repos_reducer(
                     .map(crate::state::PrNumber::from_pr)
                     .collect();
             }
+
+            // Recompute view model (selection changed)
+            recompute_pr_table_view_model(&mut state, theme);
         }
         Action::DeselectAllPrs => {
             // Deselect all PRs for the current repo (same as ClearPrSelection)
             if let Some(data) = state.repo_data.get_mut(&state.selected_repo) {
                 data.selected_pr_numbers.clear();
             }
+
+            // Recompute view model (selection changed)
+            recompute_pr_table_view_model(&mut state, theme);
         }
         Action::MergeStatusUpdated(repo_index, pr_number, status) => {
             // Update PR status in repo_data
@@ -918,6 +950,11 @@ fn repos_reducer(
                 && let Some(pr) = state.prs.iter_mut().find(|p| p.number == *pr_number)
             {
                 pr.mergeable = *status;
+            }
+
+            // Recompute view model if this is the selected repo (status changed)
+            if *repo_index == state.selected_repo {
+                recompute_pr_table_view_model(&mut state, theme);
             }
 
             // If status is BuildInProgress, start monitoring the build
@@ -1340,6 +1377,9 @@ fn repos_reducer(
                     state.state = data.table_state.clone();
                     state.loading_state = data.loading_state.clone();
                 }
+
+                // Recompute view model for new repo
+                recompute_pr_table_view_model(&mut state, theme);
             }
         }
         Action::SelectPreviousRepo => {
@@ -1356,6 +1396,9 @@ fn repos_reducer(
                     state.state = data.table_state.clone();
                     state.loading_state = data.loading_state.clone();
                 }
+
+                // Recompute view model for new repo
+                recompute_pr_table_view_model(&mut state, theme);
             }
         }
         Action::StartOperationMonitor(repo_index, pr_number, operation) => {
@@ -1684,11 +1727,27 @@ fn log_panel_reducer(
 /// Helper function to recompute view model from panel
 fn recompute_view_model(state: &mut LogPanelState, theme: &crate::theme::Theme) {
     if let Some(ref panel) = state.panel {
-        state.view_model = Some(crate::view_models::log_panel::LogPanelViewModel::from_log_panel(
-            panel, theme,
-        ));
+        state.view_model =
+            Some(crate::view_models::log_panel::LogPanelViewModel::from_log_panel(panel, theme));
     } else {
         state.view_model = None;
+    }
+}
+
+/// Helper function to recompute PR table view model
+fn recompute_pr_table_view_model(state: &mut ReposState, theme: &crate::theme::Theme) {
+    if let Some(selected_repo) = state.recent_repos.get(state.selected_repo) {
+        let repo_data = state.repo_data.entry(state.selected_repo).or_default();
+        let cursor_index = repo_data.table_state.selected();
+
+        repo_data.pr_table_view_model = Some(
+            crate::view_models::pr_table::PrTableViewModel::from_repo_data(
+                repo_data,
+                selected_repo,
+                cursor_index,
+                theme,
+            ),
+        );
     }
 }
 

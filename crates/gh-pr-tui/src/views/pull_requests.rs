@@ -6,122 +6,102 @@ use ratatui::{
 };
 
 use crate::App;
-use crate::state::{LoadingState, PrNumber};
 use crate::theme::Theme;
 
 /// Render the PR table for the currently selected repository
+/// Pure presentation - uses pre-computed view model from state
 pub fn render_pr_table(f: &mut Frame, area: Rect, app: &mut App) {
-    // Get the selected repo (should always exist if we have repos)
-    let Some(selected_repo) = app.repo() else {
-        f.render_widget(
-            Paragraph::new("Error: Invalid repository selection").centered(),
-            area,
-        );
+    let theme = &app.store.state().theme;
+
+    // Get view model from state
+    let view_model = app
+        .store
+        .state()
+        .repos
+        .repo_data
+        .get(&app.store.state().repos.selected_repo)
+        .and_then(|rd| rd.pr_table_view_model.as_ref());
+
+    let Some(vm) = view_model else {
+        // No view model yet (e.g., during loading)
+        f.render_widget(Paragraph::new("Loading...").centered(), area);
         return;
     };
 
-    // Get the current repo data
-    let repo_data = app.get_current_repo_data();
-
-    // Format the loading state with refresh hint
-    let status_text = match &repo_data.loading_state {
-        LoadingState::Idle => "Idle [Ctrl+r to refresh]".to_string(),
-        LoadingState::Loading => "Loading...".to_string(),
-        LoadingState::Loaded => "Loaded [Ctrl+r to refresh]".to_string(),
-        LoadingState::Error(err) => {
-            // Truncate error if too long
-            let err_short = if err.len() > 30 {
-                format!("{}...", &err[..30])
-            } else {
-                err.clone()
-            };
-            format!("Error: {} [Ctrl+r to retry]", err_short)
-        }
-    };
-    let loading_state = Line::from(status_text).right_aligned();
+    // Build block with header and status (from view model)
+    let status_line = Line::from(vm.header.status_text.clone())
+        .style(Style::default().fg(vm.header.status_color))
+        .right_aligned();
 
     let block = Block::default()
-        .title(format!(
-            "GitHub PRs: {}/{}@{}",
-            &selected_repo.org, &selected_repo.repo, &selected_repo.branch
-        ))
-        .title(loading_state)
+        .title(vm.header.title.clone())
+        .title(status_line)
         .borders(Borders::ALL);
 
+    // Build header row
     let header_style = Style::default()
-        .fg(app.store.state().repos.colors.header_fg)
-        .bg(app.store.state().repos.colors.header_bg);
+        .fg(theme.table_header_fg)
+        .bg(theme.table_header_bg);
 
     let header_cells = ["#PR", "Description", "Author", "#Comments", "Status"]
         .iter()
         .map(|h| Cell::from(*h).style(header_style));
 
     let header = Row::new(header_cells)
-        .style(Style::default().bg(app.store.state().theme.table_header_bg))
+        .style(Style::default().bg(theme.table_header_bg))
         .height(1);
 
-    // Active/focused row style - use theme colors instead of REVERSED modifier
-    // to avoid text becoming invisible when row is both selected and focused
-    let selected_row_style = Style::default()
-        .bg(app.store.state().theme.active_bg)
-        .fg(app.store.state().theme.active_fg);
+    // Active/focused row style
+    let selected_row_style = Style::default().bg(theme.active_bg).fg(theme.active_fg);
 
-    // Check if we should show a message instead of PRs
-    if repo_data.prs.is_empty() {
-        let message = match &repo_data.loading_state {
-            LoadingState::Loading => "Loading pull requests...",
-            LoadingState::Error(_err) => "Error loading data. Press Ctrl+r to retry.",
-            _ => "No pull requests found matching filter",
+    // Check if empty
+    if vm.rows.is_empty() {
+        let message = if vm.header.status_text.contains("Loading") {
+            "Loading pull requests..."
+        } else if vm.header.status_text.contains("Error") {
+            "Error loading data. Press Ctrl+r to retry."
+        } else {
+            "No pull requests found matching filter"
         };
 
         let paragraph = Paragraph::new(message)
             .block(block)
-            .style(Style::default().fg(app.store.state().repos.colors.row_fg))
+            .style(Style::default().fg(theme.text_muted))
             .alignment(ratatui::layout::Alignment::Center);
 
         f.render_widget(paragraph, area);
-    } else {
-        let rows = repo_data.prs.iter().enumerate().map(|(i, item)| {
-            let color = match i % 2 {
-                0 => app.store.state().repos.colors.normal_row_color,
-                _ => app.store.state().repos.colors.alt_row_color,
-            };
-            // Use theme color for selected rows (Space key)
-            // Now using type-safe PR numbers for stable selection across filtering/reloading
-            let color = if repo_data
-                .selected_pr_numbers
-                .contains(&PrNumber::from_pr(item))
-            {
-                app.store.state().theme.selected_bg
-            } else {
-                color
-            };
-            let row: Row = item.into();
-            row.style(
-                Style::new()
-                    .fg(app.store.state().repos.colors.row_fg)
-                    .bg(color),
-            )
-            .height(1)
-        });
-
-        let widths = [
-            Constraint::Percentage(8),  // #PR
-            Constraint::Percentage(50), // Description
-            Constraint::Percentage(15), // Author
-            Constraint::Percentage(10), // #Comments
-            Constraint::Percentage(17), // Status (wider to show "✗ Build Failed" etc.)
-        ];
-
-        let table = Table::new(rows, widths)
-            .header(header)
-            .block(block)
-            .row_highlight_style(selected_row_style);
-
-        // Get mutable reference to the current repo's table state
-        let table_state = &mut app.get_current_repo_data_mut().table_state;
-        f.render_stateful_widget(table, area, table_state);
+        return;
     }
+
+    // Build rows - simple iteration over pre-computed view models!
+    let rows = vm.rows.iter().map(|row_vm| {
+        Row::new(vec![
+            Cell::from(row_vm.pr_number.clone()),
+            Cell::from(row_vm.title.clone()),
+            Cell::from(row_vm.author.clone()),
+            Cell::from(row_vm.comments.clone()),
+            Cell::from(row_vm.status_text.clone()).style(Style::default().fg(row_vm.status_color)),
+        ])
+        .style(Style::default().fg(row_vm.fg_color).bg(row_vm.bg_color))
+        .height(1)
+    });
+
+    let widths = [
+        Constraint::Percentage(8),  // #PR
+        Constraint::Percentage(50), // Description
+        Constraint::Percentage(15), // Author
+        Constraint::Percentage(10), // #Comments
+        Constraint::Percentage(17), // Status
+    ];
+
+    let table = Table::new(rows, widths)
+        .header(header)
+        .block(block)
+        .row_highlight_style(selected_row_style);
+
+    // Get mutable reference to the current repo's table state
+    let table_state = &mut app.get_current_repo_data_mut().table_state;
+    f.render_stateful_widget(table, area, table_state);
 }
 
 /// Render the close PR popup as a centered floating window

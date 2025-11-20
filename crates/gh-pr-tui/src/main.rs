@@ -629,7 +629,10 @@ pub async fn fetch_github_data_cached(
 ) -> Result<Vec<Pr>> {
     // Skip cache if disabled entirely (environment variable)
     if !ApiCache::is_enabled() {
-        debug!("Cache disabled, fetching fresh data for {}/{}", repo.org, repo.repo);
+        debug!(
+            "Cache disabled, fetching fresh data for {}/{}",
+            repo.org, repo.repo
+        );
         return fetch_github_data(octocrab, repo, filter).await;
     }
 
@@ -713,11 +716,7 @@ pub async fn fetch_github_data_cached(
     }
 
     // Cache miss, invalid, or bypassed - fetch fresh data
-    let reason = if bypass_cache {
-        "bypass"
-    } else {
-        "miss"
-    };
+    let reason = if bypass_cache { "bypass" } else { "miss" };
     debug!(
         "Cache {} for {}/{}, fetching from API",
         reason, repo.org, repo.repo

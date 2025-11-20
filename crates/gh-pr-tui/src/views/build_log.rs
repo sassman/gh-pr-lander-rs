@@ -74,7 +74,12 @@ fn render_pr_header(f: &mut Frame, view_model: &LogPanelViewModel, theme: &Theme
 }
 
 /// Render the tree view - simple iteration over pre-computed rows
-fn render_log_tree(f: &mut Frame, view_model: &LogPanelViewModel, theme: &Theme, area: Rect) -> usize {
+fn render_log_tree(
+    f: &mut Frame,
+    view_model: &LogPanelViewModel,
+    theme: &Theme,
+    area: Rect,
+) -> usize {
     let visible_height = area.height.saturating_sub(2) as usize;
 
     if view_model.rows.is_empty() {

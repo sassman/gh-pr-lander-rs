@@ -18,12 +18,12 @@ pub struct LogPanelViewModel {
 
 #[derive(Debug, Clone)]
 pub struct PrHeaderViewModel {
-    pub number_text: String,  // "#123"
-    pub title: String,         // "Fix: broken tests"
-    pub author_text: String,   // "by sassman"
-    pub number_color: Color,   // theme.status_info
-    pub title_color: Color,    // theme.text_primary
-    pub author_color: Color,   // theme.text_muted
+    pub number_text: String, // "#123"
+    pub title: String,       // "Fix: broken tests"
+    pub author_text: String, // "by sassman"
+    pub number_color: Color, // theme.status_info
+    pub title_color: Color,  // theme.text_primary
+    pub author_color: Color, // theme.text_muted
 }
 
 #[derive(Debug, Clone)]
@@ -48,8 +48,8 @@ pub struct TreeRowViewModel {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RowStyle {
     Normal,
-    Error,   // Red text for errors
-    Success, // Green for success
+    Error,    // Red text for errors
+    Success,  // Green for success
     Selected, // Highlighted background
 }
 

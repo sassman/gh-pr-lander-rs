@@ -204,6 +204,9 @@ pub struct RepoData {
     pub loading_state: LoadingState,
     pub auto_merge_queue: Vec<AutoMergePR>,
     pub operation_monitor_queue: Vec<OperationMonitor>,
+
+    /// Cached view model (recomputed when PR data changes)
+    pub pr_table_view_model: Option<crate::view_models::pr_table::PrTableViewModel>,
 }
 
 /// Represents a PR in the auto-merge queue
