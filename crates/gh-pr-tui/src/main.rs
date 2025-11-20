@@ -414,8 +414,8 @@ fn ui(f: &mut Frame, app: &mut App) {
     // Render context-sensitive action panel at the bottom
     crate::views::pull_requests::render_action_panel(f, app, chunks[2]);
 
-    // Render status line at the very bottom
-    render_status_line(f, app, chunks[3]);
+    // Render status bar at the very bottom
+    crate::views::status_bar::render_status_bar(f, app, chunks[3]);
 
     // Render log panel LAST if it's open - covers only the table area
     if let Some(ref panel) = app.store.state().log_panel.panel {
@@ -468,28 +468,6 @@ fn ui(f: &mut Frame, app: &mut App) {
         // Update viewport height for page down scrolling
         app.store
             .dispatch(Action::UpdateDebugConsoleViewport(viewport_height));
-    }
-}
-
-/// Render the status line showing background task progress
-fn render_status_line(f: &mut Frame, app: &App, area: Rect) {
-    if let Some(ref status) = app.store.state().task.status {
-        let (icon, color) = match status.status_type {
-            TaskStatusType::Running => ("⏳", app.store.state().theme.status_warning),
-            TaskStatusType::Success => ("✓", app.store.state().theme.status_success),
-            TaskStatusType::Error => ("✗", app.store.state().theme.status_error),
-            TaskStatusType::Warning => ("⚠", app.store.state().theme.status_warning),
-        };
-
-        let status_text = format!(" {} {}", icon, status.message);
-        let status_span = Span::styled(
-            status_text,
-            Style::default().fg(color).add_modifier(Modifier::BOLD),
-        );
-
-        let paragraph = Paragraph::new(Line::from(status_span))
-            .style(Style::default().bg(app.store.state().repos.colors.buffer_bg));
-        f.render_widget(paragraph, area);
     }
 }
 
