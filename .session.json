@@ -1,7 +1,7 @@
 {
   "selected_repo": {
-    "org": "cargo-generate",
-    "repo": "cargo-generate",
+    "org": "steganogram",
+    "repo": "stegano-rs",
     "branch": "main"
   }
 }

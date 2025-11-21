@@ -9,11 +9,7 @@ use crate::App;
 /// Render the shortcuts help panel as a centered floating window
 /// Pure presentation - uses pre-computed view model
 /// Returns the maximum scroll offset
-pub fn render_shortcuts_panel(
-    f: &mut Frame,
-    area: Rect,
-    app: &App,
-) -> usize {
+pub fn render_shortcuts_panel(f: &mut Frame, area: Rect, app: &App) -> usize {
     // Get view model - if not ready yet, return early
     let Some(ref vm) = app.store.state().ui.shortcuts_panel_view_model else {
         return 0;

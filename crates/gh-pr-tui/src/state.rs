@@ -48,7 +48,8 @@ pub struct UiState {
     pub shortcuts_scroll: usize,
     pub shortcuts_max_scroll: usize,
     /// View model for shortcuts panel
-    pub shortcuts_panel_view_model: Option<crate::view_models::shortcuts_panel::ShortcutsPanelViewModel>,
+    pub shortcuts_panel_view_model:
+        Option<crate::view_models::shortcuts_panel::ShortcutsPanelViewModel>,
     pub spinner_frame: usize,
     pub should_quit: bool,
     pub show_add_repo: bool,
@@ -146,7 +147,8 @@ pub struct ReposState {
     pub state: TableState,
     pub colors: TableColors,
     /// View model for repository tabs
-    pub repository_tabs_view_model: Option<crate::view_models::repository_tabs::RepositoryTabsViewModel>,
+    pub repository_tabs_view_model:
+        Option<crate::view_models::repository_tabs::RepositoryTabsViewModel>,
 }
 
 /// Log panel state

@@ -119,13 +119,14 @@ pub fn render_command_palette(f: &mut Frame, area: Rect, app: &App) {
                     Modifier::empty()
                 });
 
-            let title_style = Style::default()
-                .fg(row_vm.fg_color)
-                .add_modifier(if row_vm.is_selected {
-                    Modifier::BOLD
-                } else {
-                    Modifier::empty()
-                });
+            let title_style =
+                Style::default()
+                    .fg(row_vm.fg_color)
+                    .add_modifier(if row_vm.is_selected {
+                        Modifier::BOLD
+                    } else {
+                        Modifier::empty()
+                    });
 
             let category_style = Style::default().fg(if row_vm.is_selected {
                 // Use yellow for selected row (consistent with title)
@@ -149,9 +150,9 @@ pub fn render_command_palette(f: &mut Frame, area: Rect, app: &App) {
         let table = Table::new(
             rows,
             vec![
-                Constraint::Length(15),                     // Indicator + shortcut (2 + 13)
-                Constraint::Percentage(70),                 // Title (takes most space)
-                Constraint::Length(vm.max_category_width),  // Category (dynamically calculated)
+                Constraint::Length(15),                    // Indicator + shortcut (2 + 13)
+                Constraint::Percentage(70),                // Title (takes most space)
+                Constraint::Length(vm.max_category_width), // Category (dynamically calculated)
             ],
         )
         .style(Style::default().bg(theme.bg_panel));

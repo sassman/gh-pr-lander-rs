@@ -428,11 +428,7 @@ fn ui(f: &mut Frame, app: &mut App) {
 
     // Render shortcuts panel on top of everything if visible
     if app.store.state().ui.show_shortcuts {
-        let max_scroll = crate::views::help::render_shortcuts_panel(
-            f,
-            chunks[1],
-            app,
-        );
+        let max_scroll = crate::views::help::render_shortcuts_panel(f, chunks[1], app);
         app.store.state_mut().ui.shortcuts_max_scroll = max_scroll;
     }
 

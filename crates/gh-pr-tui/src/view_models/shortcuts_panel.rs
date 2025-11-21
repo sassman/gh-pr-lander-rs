@@ -32,7 +32,9 @@ impl ShortcutsPanelViewModel {
                 category.name,
                 ratatui::style::Style::default()
                     .fg(theme.status_warning)
-                    .add_modifier(ratatui::style::Modifier::BOLD | ratatui::style::Modifier::UNDERLINED),
+                    .add_modifier(
+                        ratatui::style::Modifier::BOLD | ratatui::style::Modifier::UNDERLINED,
+                    ),
             )]));
             content_lines.push(Line::from(""));
 
@@ -73,21 +75,30 @@ impl ShortcutsPanelViewModel {
 
         // Pre-format footer
         let footer_line = Line::from(vec![
-            Span::styled("Press ", ratatui::style::Style::default().fg(theme.text_muted)),
+            Span::styled(
+                "Press ",
+                ratatui::style::Style::default().fg(theme.text_muted),
+            ),
             Span::styled(
                 "x",
                 ratatui::style::Style::default()
                     .fg(theme.accent_primary)
                     .add_modifier(ratatui::style::Modifier::BOLD),
             ),
-            Span::styled(" or ", ratatui::style::Style::default().fg(theme.text_muted)),
+            Span::styled(
+                " or ",
+                ratatui::style::Style::default().fg(theme.text_muted),
+            ),
             Span::styled(
                 "Esc",
                 ratatui::style::Style::default()
                     .fg(theme.accent_primary)
                     .add_modifier(ratatui::style::Modifier::BOLD),
             ),
-            Span::styled(" to close this help", ratatui::style::Style::default().fg(theme.text_muted)),
+            Span::styled(
+                " to close this help",
+                ratatui::style::Style::default().fg(theme.text_muted),
+            ),
         ]);
 
         Self {

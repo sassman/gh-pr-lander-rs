@@ -26,7 +26,11 @@ pub fn render_repository_tabs(f: &mut Frame, area: Rect, app: &App) {
         .collect();
 
     let tabs = Tabs::new(tab_titles)
-        .block(Block::default().borders(Borders::ALL).title(vm.title.clone()))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(vm.title.clone()),
+        )
         .select(vm.selected_index)
         .style(Style::default().fg(repos_state.colors.row_fg))
         .highlight_style(

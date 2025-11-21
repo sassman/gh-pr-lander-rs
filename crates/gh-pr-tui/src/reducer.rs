@@ -31,7 +31,8 @@ pub fn reduce(mut state: AppState, action: &Action) -> (AppState, Vec<Effect>) {
     state.log_panel = log_panel_state;
     effects.extend(log_panel_effects);
 
-    let (merge_bot_state, merge_bot_effects) = merge_bot_reducer(state.merge_bot, action, &state.repos);
+    let (merge_bot_state, merge_bot_effects) =
+        merge_bot_reducer(state.merge_bot, action, &state.repos);
     state.merge_bot = merge_bot_state;
     effects.extend(merge_bot_effects);
 
@@ -316,9 +317,7 @@ fn recompute_splash_screen_view_model(state: &mut AppState) {
     use crate::state::BootstrapState;
     let should_show_splash = !matches!(
         state.infrastructure.bootstrap_state,
-        BootstrapState::UIReady
-            | BootstrapState::LoadingRemainingRepos
-            | BootstrapState::Completed
+        BootstrapState::UIReady | BootstrapState::LoadingRemainingRepos | BootstrapState::Completed
     );
 
     if should_show_splash {
@@ -800,7 +799,7 @@ fn repos_reducer(
             // Recompute view model after PR data loaded
             if *repo_index == state.selected_repo {
                 recompute_pr_table_view_model(&mut state, theme);
-            recompute_repository_tabs_view_model(&mut state);
+                recompute_repository_tabs_view_model(&mut state);
             }
         }
         Action::RepoDataLoaded(repo_index, Err(err)) => {
@@ -1477,7 +1476,7 @@ fn repos_reducer(
 
                 // Recompute view model for new repo
                 recompute_pr_table_view_model(&mut state, theme);
-            recompute_repository_tabs_view_model(&mut state);
+                recompute_repository_tabs_view_model(&mut state);
             }
         }
         Action::SelectPreviousRepo => {
@@ -1497,7 +1496,7 @@ fn repos_reducer(
 
                 // Recompute view model for new repo
                 recompute_pr_table_view_model(&mut state, theme);
-            recompute_repository_tabs_view_model(&mut state);
+                recompute_repository_tabs_view_model(&mut state);
             }
         }
         Action::StartOperationMonitor(repo_index, pr_number, operation) => {

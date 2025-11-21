@@ -52,7 +52,10 @@ impl CommandPaletteViewModel {
     pub fn from_state(
         input: &str,
         selected_index: usize,
-        filtered_commands: &[(gh_pr_tui_command_palette::CommandItem<crate::actions::Action>, u16)],
+        filtered_commands: &[(
+            gh_pr_tui_command_palette::CommandItem<crate::actions::Action>,
+            u16,
+        )],
         visible_height: usize,
         theme: &crate::theme::Theme,
     ) -> Self {
@@ -67,9 +70,7 @@ impl CommandPaletteViewModel {
             .unwrap_or(15); // Fallback to 15 if no commands
 
         // Calculate scroll offset to keep selected item visible
-        let scroll_offset = if total_commands == 0 {
-            0
-        } else if selected_index < visible_height / 2 {
+        let scroll_offset = if total_commands == 0 || selected_index < visible_height / 2 {
             0
         } else if selected_index >= total_commands.saturating_sub(visible_height / 2) {
             total_commands.saturating_sub(visible_height)
@@ -128,12 +129,13 @@ impl CommandPaletteViewModel {
             .collect();
 
         // Extract selected command details
-        let selected_command = filtered_commands.get(selected_index).map(|(cmd, _)| {
-            SelectedCommand {
-                description: cmd.description.clone(),
-                context: cmd.context.clone(),
-            }
-        });
+        let selected_command =
+            filtered_commands
+                .get(selected_index)
+                .map(|(cmd, _)| SelectedCommand {
+                    description: cmd.description.clone(),
+                    context: cmd.context.clone(),
+                });
 
         Self {
             input_text: format!("> {}", input),

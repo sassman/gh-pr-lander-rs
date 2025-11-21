@@ -1,4 +1,4 @@
-use ratatui::style::{palette::tailwind, Color};
+use ratatui::style::{Color, palette::tailwind};
 
 /// View model for splash screen - all presentation data pre-computed
 #[derive(Debug, Clone)]
@@ -59,9 +59,7 @@ impl SplashScreenViewModel {
                 // This state shouldn't be shown in splash screen as UI should be visible
                 ("Ready!".to_string(), 100, false)
             }
-            crate::state::BootstrapState::Error(err) => {
-                (format!("Error: {}", err), 0, true)
-            }
+            crate::state::BootstrapState::Error(err) => (format!("Error: {}", err), 0, true),
         };
 
         // Spinner or error icon
