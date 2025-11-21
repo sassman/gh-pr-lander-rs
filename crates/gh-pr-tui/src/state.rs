@@ -176,6 +176,8 @@ pub struct DebugConsoleState {
     pub height_percent: u16, // Height as percentage of screen (30-70)
     pub logs: crate::log_capture::LogBuffer,
     pub viewport_height: usize, // Updated during rendering for page down
+    /// View model - pre-computed presentation data
+    pub view_model: Option<crate::view_models::debug_console::DebugConsoleViewModel>,
 }
 
 // Re-export types from main.rs that are part of state
@@ -418,6 +420,7 @@ impl Default for DebugConsoleState {
             height_percent: 50, // 50% of screen height
             logs: crate::log_capture::DebugConsoleLogger::create_buffer(),
             viewport_height: 20, // Default, updated during rendering
+            view_model: None,
         }
     }
 }

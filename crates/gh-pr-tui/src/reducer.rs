@@ -40,7 +40,7 @@ pub fn reduce(mut state: AppState, action: &Action) -> (AppState, Vec<Effect>) {
     effects.extend(task_effects);
 
     let (debug_console_state, debug_console_effects) =
-        debug_console_reducer(state.debug_console, action);
+        debug_console_reducer(state.debug_console, action, &state.theme);
     state.debug_console = debug_console_state;
     effects.extend(debug_console_effects);
 
@@ -1993,6 +1993,7 @@ fn task_reducer(mut state: TaskState, action: &Action) -> (TaskState, Vec<Effect
 fn debug_console_reducer(
     mut state: DebugConsoleState,
     action: &Action,
+    theme: &crate::theme::Theme,
 ) -> (DebugConsoleState, Vec<Effect>) {
     match action {
         Action::ToggleDebugConsole => {
@@ -2001,16 +2002,24 @@ fn debug_console_reducer(
             if state.is_open {
                 state.scroll_offset = 0;
             }
+            // Recompute view model if console is now open
+            if state.is_open {
+                recompute_debug_console_view_model(&mut state, theme);
+            }
         }
         Action::ScrollDebugConsoleUp => {
             state.scroll_offset = state.scroll_offset.saturating_sub(1);
             // Disable auto-scroll when manually scrolling
             state.auto_scroll = false;
+            // Recompute view model
+            recompute_debug_console_view_model(&mut state, theme);
         }
         Action::ScrollDebugConsoleDown => {
             state.scroll_offset = state.scroll_offset.saturating_add(1);
             // Disable auto-scroll when manually scrolling
             state.auto_scroll = false;
+            // Recompute view model
+            recompute_debug_console_view_model(&mut state, theme);
         }
         Action::PageDebugConsoleDown => {
             // Page down by viewport_height - 1 (keep one line of context)
@@ -2018,21 +2027,54 @@ fn debug_console_reducer(
             state.scroll_offset = state.scroll_offset.saturating_add(page_size);
             // Disable auto-scroll when manually scrolling
             state.auto_scroll = false;
+            // Recompute view model
+            recompute_debug_console_view_model(&mut state, theme);
         }
         Action::ToggleDebugAutoScroll => {
             state.auto_scroll = !state.auto_scroll;
+            // Recompute view model
+            recompute_debug_console_view_model(&mut state, theme);
         }
         Action::ClearDebugLogs => {
             if let Ok(mut logs) = state.logs.lock() {
                 logs.clear();
             }
             state.scroll_offset = 0;
+            // Recompute view model
+            recompute_debug_console_view_model(&mut state, theme);
         }
         Action::UpdateDebugConsoleViewport(height) => {
             state.viewport_height = *height;
+            // Recompute view model
+            recompute_debug_console_view_model(&mut state, theme);
         }
         _ => {}
     }
 
     (state, vec![])
+}
+
+/// Recompute debug console view model after state changes
+fn recompute_debug_console_view_model(state: &mut DebugConsoleState, theme: &crate::theme::Theme) {
+    // Read logs from buffer
+    let logs = match state.logs.lock() {
+        Ok(log_buffer) => {
+            // Convert VecDeque to Vec for view model
+            log_buffer.iter().cloned().collect::<Vec<_>>()
+        }
+        Err(_) => return, // Skip if can't lock
+    };
+
+    // Use reasonable default for console height (30% of 24-line terminal = ~7 lines)
+    const DEFAULT_CONSOLE_HEIGHT: usize = 10;
+
+    state.view_model = Some(
+        crate::view_models::debug_console::DebugConsoleViewModel::from_state(
+            &logs,
+            state.scroll_offset,
+            state.auto_scroll,
+            DEFAULT_CONSOLE_HEIGHT,
+            theme,
+        ),
+    );
 }
