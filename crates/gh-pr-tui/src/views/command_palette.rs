@@ -102,69 +102,58 @@ pub fn render_command_palette(f: &mut Frame, area: Rect, app: &App) {
             .alignment(ratatui::layout::Alignment::Center);
         f.render_widget(no_results, chunks[1]);
     } else {
-        // Build result lines - simple iteration over pre-computed view models!
-        let result_lines: Vec<Line> = vm
-            .visible_rows
-            .iter()
-            .map(|row_vm| {
-                let mut spans = Vec::new();
+        // Build table rows - simple iteration over pre-computed view models!
+        use ratatui::widgets::{Cell, Row, Table};
 
-                // All text is pre-formatted in view model!
-                spans.push(Span::styled(
-                    row_vm.indicator.clone(),
-                    Style::default()
-                        .fg(if row_vm.is_selected {
-                            theme.accent_primary
-                        } else {
-                            theme.text_primary
-                        })
-                        .add_modifier(if row_vm.is_selected {
-                            Modifier::BOLD
-                        } else {
-                            Modifier::empty()
-                        }),
-                ));
+        let rows = vm.visible_rows.iter().map(|row_vm| {
+            let indicator_shortcut_style = Style::default()
+                .fg(if row_vm.is_selected {
+                    theme.accent_primary
+                } else {
+                    theme.text_muted
+                })
+                .add_modifier(if row_vm.is_selected {
+                    Modifier::BOLD
+                } else {
+                    Modifier::empty()
+                });
 
-                spans.push(Span::styled(
-                    row_vm.shortcut_hint.clone(),
-                    Style::default().fg(if row_vm.is_selected {
-                        theme.accent_primary
-                    } else {
-                        theme.text_muted
-                    }),
-                ));
+            let title_style = Style::default()
+                .fg(row_vm.fg_color)
+                .bg(row_vm.bg_color)
+                .add_modifier(if row_vm.is_selected {
+                    Modifier::BOLD
+                } else {
+                    Modifier::empty()
+                });
 
-                spans.push(Span::styled(
-                    row_vm.title.clone(),
-                    Style::default()
-                        .fg(row_vm.fg_color)
-                        .bg(row_vm.bg_color)
-                        .add_modifier(if row_vm.is_selected {
-                            Modifier::BOLD
-                        } else {
-                            Modifier::empty()
-                        }),
-                ));
+            let category_style = Style::default().fg(if row_vm.is_selected {
+                theme.text_secondary
+            } else {
+                theme.text_muted
+            });
 
-                spans.push(Span::raw(row_vm.padding.clone()));
+            // Combine indicator and shortcut in first cell
+            let first_cell = format!("{}{}", row_vm.indicator, row_vm.shortcut_hint);
 
-                spans.push(Span::styled(
-                    row_vm.category.clone(),
-                    Style::default().fg(if row_vm.is_selected {
-                        theme.text_secondary
-                    } else {
-                        theme.text_muted
-                    }),
-                ));
+            Row::new(vec![
+                Cell::from(first_cell).style(indicator_shortcut_style),
+                Cell::from(row_vm.title.clone()).style(title_style),
+                Cell::from(row_vm.category.clone()).style(category_style),
+            ])
+        });
 
-                Line::from(spans)
-            })
-            .collect();
+        let table = Table::new(
+            rows,
+            vec![
+                Constraint::Length(15),    // Indicator + shortcut (2 + 13)
+                Constraint::Percentage(70), // Title (takes most space)
+                Constraint::Min(15),        // Category (flexible, min 15 for longest)
+            ],
+        )
+        .style(Style::default().bg(theme.bg_panel));
 
-        let results_paragraph = Paragraph::new(result_lines)
-            .wrap(Wrap { trim: false })
-            .style(Style::default().bg(theme.bg_panel));
-        f.render_widget(results_paragraph, chunks[1]);
+        f.render_widget(table, chunks[1]);
     }
 
     // Render details area with selected command info (pre-computed in view model)
