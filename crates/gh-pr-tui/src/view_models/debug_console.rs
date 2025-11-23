@@ -66,7 +66,7 @@ impl DebugConsoleViewModel {
                 };
 
                 // Format timestamp
-                let timestamp = entry.timestamp.format("%H:%M:%S%.3f");
+                let timestamp = entry.timestamp.format("%Y-%m-%d %H:%M:%S%.3f");
 
                 // Format level (5 chars fixed width)
                 let level_str = format!("{:5}", entry.level.to_string().to_uppercase());
