@@ -220,7 +220,7 @@ impl PrNumber {
     }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct RepoData {
     pub prs: Vec<Pr>,
     pub table_state: TableState,
@@ -231,6 +231,24 @@ pub struct RepoData {
 
     /// Cached view model (recomputed when PR data changes)
     pub pr_table_view_model: Option<crate::view_models::pr_table::PrTableViewModel>,
+
+    /// Timestamp when this repo was last successfully loaded/updated
+    pub last_updated: Option<chrono::DateTime<chrono::Local>>,
+}
+
+impl Default for RepoData {
+    fn default() -> Self {
+        Self {
+            prs: Vec::new(),
+            table_state: TableState::default(),
+            selected_pr_numbers: HashSet::new(),
+            loading_state: LoadingState::default(),
+            auto_merge_queue: Vec::new(),
+            operation_monitor_queue: Vec::new(),
+            pr_table_view_model: None,
+            last_updated: None,
+        }
+    }
 }
 
 /// Represents a PR in the auto-merge queue

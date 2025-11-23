@@ -109,8 +109,11 @@ impl PrTableViewModel {
             selected_repo.org, selected_repo.repo, selected_repo.branch
         );
 
-        let (status_text, status_color) =
-            Self::format_loading_state(&repo_data.loading_state, theme);
+        let (status_text, status_color) = Self::format_loading_state(
+            &repo_data.loading_state,
+            repo_data.last_updated.as_ref(),
+            theme,
+        );
 
         PrTableHeaderViewModel {
             title,
@@ -186,14 +189,26 @@ impl PrTableViewModel {
     }
 
     /// Format loading state for display (view model responsibility)
-    fn format_loading_state(state: &LoadingState, theme: &Theme) -> (String, Color) {
+    fn format_loading_state(
+        state: &LoadingState,
+        last_updated: Option<&chrono::DateTime<chrono::Local>>,
+        theme: &Theme,
+    ) -> (String, Color) {
         match state {
             LoadingState::Idle => ("Idle [Ctrl+r to refresh]".to_string(), theme.text_muted),
             LoadingState::Loading => ("Loading...".to_string(), theme.status_warning),
-            LoadingState::Loaded => (
-                "Loaded [Ctrl+r to refresh]".to_string(),
-                theme.status_success,
-            ),
+            LoadingState::Loaded => {
+                let status_text = if let Some(timestamp) = last_updated {
+                    // Format as "Updated YYYY-MM-DD HH:MM:SS"
+                    format!(
+                        "Updated {} [Ctrl+r to refresh]",
+                        timestamp.format("%H:%M:%S")
+                    )
+                } else {
+                    "Loaded [Ctrl+r to refresh]".to_string()
+                };
+                (status_text, theme.status_success)
+            }
             LoadingState::Error(err) => {
                 let err_short = if err.len() > 30 {
                     format!("{}...", &err[..30])

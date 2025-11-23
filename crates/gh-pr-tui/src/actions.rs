@@ -83,6 +83,10 @@ pub enum Action {
     SetReposLoading(Vec<usize>), // Set multiple repos to loading state
     TickSpinner,                 // Increment spinner animation frame
 
+    // Recurring updates
+    StartRecurringUpdates(u64), // Start recurring updates with interval in milliseconds
+    RecurringUpdateTriggered,   // Triggered when recurring update interval elapses
+
     // Background task completion notifications
     BootstrapComplete(Result<BootstrapResult, String>),
     RepoLoadingStarted(usize), // Sent when we start fetching repo data

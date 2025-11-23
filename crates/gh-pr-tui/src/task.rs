@@ -75,6 +75,9 @@ pub enum TaskResult {
 
     /// Repo needs reload (e.g., after PR merged)
     RepoNeedsReload(usize), // repo_index
+
+    /// Dispatch an action (for recurring tasks or other background-triggered actions)
+    DispatchAction(crate::actions::Action),
 }
 
 /// Background tasks that can be executed asynchronously
@@ -175,6 +178,11 @@ pub enum BackgroundTask {
     DelayedTask {
         task: Box<BackgroundTask>,
         delay_ms: u64,
+    },
+    /// Recurring task - dispatches action repeatedly at interval
+    RecurringTask {
+        action: crate::actions::Action,
+        interval_ms: u64,
     },
 }
 
@@ -1744,6 +1752,34 @@ async fn process_task(task: BackgroundTask, result_tx: &mut mpsc::UnboundedSende
             tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms)).await;
             debug!("Delayed task triggered after {}ms", delay_ms);
             Box::pin(process_task(*task, result_tx)).await;
+        }
+        BackgroundTask::RecurringTask {
+            action,
+            interval_ms,
+        } => {
+            // Spawn a background task that dispatches the action repeatedly
+            let result_tx_clone = result_tx.clone();
+            let action = action.clone();
+
+            tokio::spawn(async move {
+                debug!(
+                    "Starting recurring task with interval: {}ms ({} minutes)",
+                    interval_ms,
+                    interval_ms / 60000
+                );
+                loop {
+                    // Sleep for the interval
+                    tokio::time::sleep(tokio::time::Duration::from_millis(interval_ms)).await;
+
+                    debug!(
+                        "Recurring task triggered (interval: {}ms), dispatching action: {:?}",
+                        interval_ms, action
+                    );
+
+                    // Dispatch the configured action
+                    let _ = result_tx_clone.send(TaskResult::DispatchAction(action.clone()));
+                }
+            });
         }
     }
 }

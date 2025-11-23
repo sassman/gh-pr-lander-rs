@@ -1,5 +1,5 @@
 use crate::{actions::Action, effect::Effect, state::*};
-use log::{error, info};
+use log::{debug, error, info};
 
 /// Root reducer that delegates to sub-reducers based on action type
 /// Pure function: takes state and action, returns (new state, effects to perform)
@@ -430,16 +430,24 @@ fn infrastructure_reducer(
             (state, vec![])
         }
         Action::BootstrapComplete(result) => {
+            // Start recurring updates when bootstrap completes
+            let mut effects = vec![];
             match result {
                 Ok(_) => {
                     state.bootstrap_state = BootstrapState::UIReady;
+                    // Start recurring updates every 30 minutes (1800000 milliseconds)
+                    const THIRTY_MINUTES_MS: u64 = 30 * 60 * 1000;
+                    debug!("Bootstrap completed, starting recurring updates");
+                    effects.push(Effect::DispatchAction(Action::StartRecurringUpdates(
+                        THIRTY_MINUTES_MS,
+                    )));
                 }
                 Err(_) => {
                     state.bootstrap_state =
                         BootstrapState::Error(result.as_ref().unwrap_err().clone());
                 }
             }
-            (state, vec![])
+            (state, effects)
         }
         _ => (state, vec![]),
     }
@@ -640,6 +648,7 @@ fn repos_reducer(
             let data = state.repo_data.entry(*repo_index).or_default();
             data.prs = prs.clone();
             data.loading_state = LoadingState::Loaded;
+            data.last_updated = Some(chrono::Local::now());
 
             // Update table selection based on PR list
             if data.prs.is_empty() {
@@ -1143,6 +1152,27 @@ fn repos_reducer(
                     repo,
                     filter: state.filter.clone(),
                     bypass_cache: true, // Bypass cache to get fresh data after operations
+                });
+            }
+        }
+        Action::StartRecurringUpdates(interval_ms) => {
+            // Effect: Start background recurring task to update all repos periodically
+            debug!(
+                "Starting recurring updates with interval: {}ms ({} minutes)",
+                interval_ms,
+                interval_ms / 60000
+            );
+            effects.push(Effect::StartRecurringUpdates(*interval_ms));
+        }
+        Action::RecurringUpdateTriggered => {
+            // Effect: Reload all repositories (triggered by recurring background task)
+            debug!("Recurring update triggered, reloading all repos");
+            for (repo_index, repo) in state.recent_repos.iter().enumerate() {
+                effects.push(Effect::LoadSingleRepo {
+                    repo_index,
+                    repo: repo.clone(),
+                    filter: state.filter.clone(),
+                    bypass_cache: true, // Bypass cache to get fresh data
                 });
             }
         }

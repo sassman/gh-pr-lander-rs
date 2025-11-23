@@ -169,6 +169,9 @@ pub enum Effect {
     ShowCacheStats,
     InvalidateRepoCache(usize), // Invalidate cache for specific repo index
 
+    /// Start recurring updates with interval in milliseconds
+    StartRecurringUpdates(u64),
+
     /// No effect
     None,
 }
@@ -795,6 +798,30 @@ pub async fn execute_effect(app: &mut App, effect: Effect) -> Result<Vec<Action>
         Effect::LoadPersistedSession => {
             // This is handled as part of LoadRepositories
             // No-op here as it's done synchronously in that effect
+        }
+
+        Effect::StartRecurringUpdates(interval_ms) => {
+            // Start recurring background task to update all repos periodically
+            debug!(
+                "Starting recurring updates: interval={}ms ({} minutes)",
+                interval_ms,
+                interval_ms / 60000
+            );
+
+            // Send RecurringTask to background worker
+            // It will dispatch RecurringUpdateTriggered at the specified interval
+            let _ = app.task_tx.send(BackgroundTask::RecurringTask {
+                action: Action::RecurringUpdateTriggered,
+                interval_ms,
+            });
+
+            follow_up_actions.push(Action::SetTaskStatus(Some(TaskStatus {
+                message: format!(
+                    "Recurring updates started ({} min interval)",
+                    interval_ms / 60000
+                ),
+                status_type: TaskStatusType::Success,
+            })));
         }
     }
 
