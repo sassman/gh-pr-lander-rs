@@ -1,7 +1,7 @@
 # Redux Middleware Migration Status
 
 **Branch**: `feat/cleaner-redux`
-**Status**: Phase 2 Complete - Core operations migrated
+**Status**: Phase 3 Complete - Simple operations migrated
 **Date**: 2024-11-24
 
 ---
@@ -38,6 +38,44 @@
 - Updated `main.rs` (wire up TaskMiddleware properly)
 
 **Effects Migrated** (5 total):
+
+### Phase 3: Simple Operations Migration (Complete)
+
+**Commit**: [pending] - Migrate Simple Operations
+
+**Files Changed**:
+- Updated `middleware.rs` (+194 lines)
+- Updated `reducer.rs` (removed 4 effect generations)
+
+**Effects Migrated** (4 total):
+
+#### Simple Operations (4 effects)
+- ✅ `Effect::OpenInBrowser` → TaskMiddleware handles OpenCurrentPrInBrowser
+- ✅ `Effect::OpenInIDE` → TaskMiddleware handles OpenInIDE
+- ✅ `Effect::AddRepository` → TaskMiddleware handles AddRepoFormSubmit
+- ✅ `Effect::SaveRepositories` → TaskMiddleware handles DeleteCurrentRepo
+
+**Before** (Complex - multiple effects):
+```
+Action::AddRepoFormSubmit
+  ↓
+Reducer generates: Effect::AddRepository
+  ↓
+execute_effect → check if exists, save file → dispatch RepositoryAdded
+```
+
+**After** (Simple - 0 effects):
+```
+Action::AddRepoFormSubmit
+  ↓
+TaskMiddleware:
+  - Build new repo from form data
+  - Check if repo exists
+  - Save to file asynchronously
+  - Dispatch RepositoryAdded, SelectRepoByIndex, ReloadRepo
+  ↓
+Reducer: Just hides form and resets it (no effects)
+```
 
 #### Bootstrap Flow (3 effects)
 - ✅ `Effect::LoadEnvFile` → TaskMiddleware handles Bootstrap action
@@ -109,33 +147,31 @@ Reducer: No effects needed
 |----------|-------|----------|-----------|----------|
 | **Bootstrap** | 3 | 3 | 0 | ✅ 100% |
 | **Repo Loading** | 3 | 2 | 1 | 🟨 67% |
-| **Simple Ops** | 4 | 0 | 4 | ⬜ 0% |
+| **Simple Ops** | 4 | 4 | 0 | ✅ 100% |
 | **PR Operations** | 4 | 0 | 4 | ⬜ 0% |
 | **Background Checks** | 3 | 0 | 3 | ⬜ 0% |
 | **Monitoring** | 3 | 0 | 3 | ⬜ 0% |
 | **Utility** | 6 | 0 | 6 | ⬜ 0% |
-| **Overall** | **26** | **5** | **21** | **🟨 19%** |
+| **Overall** | **26** | **9** | **17** | **🟨 35%** |
 
-### Effects Migrated ✅ (5/26)
+### Effects Migrated ✅ (9/26)
 
 1. ✅ `LoadEnvFile` - Middleware handles Bootstrap
 2. ✅ `InitializeOctocrab` - Middleware handles Bootstrap
 3. ✅ `LoadRepositories` - Middleware handles OctocrabInitialized
 4. ✅ `LoadSingleRepo` (RefreshCurrentRepo) - Middleware handles RefreshCurrentRepo
 5. ✅ `LoadSingleRepo` (ReloadRepo) - Middleware handles ReloadRepo
+6. ✅ `OpenInBrowser` - Middleware handles OpenCurrentPrInBrowser
+7. ✅ `OpenInIDE` - Middleware handles OpenInIDE
+8. ✅ `AddRepository` - Middleware handles AddRepoFormSubmit
+9. ✅ `SaveRepositories` - Middleware handles DeleteCurrentRepo
 
-### Effects Remaining ⬜ (21/26)
+### Effects Remaining ⬜ (17/26)
 
 #### Repo Loading (1 remaining)
 - ⬜ `LoadAllRepos` - Load multiple repos in parallel
 - ⬜ `DelayedRepoReload` - Reload after delay
 - ⬜ `LoadPersistedSession` - Restore session state
-
-#### Simple Operations (4 remaining)
-- ⬜ `OpenInBrowser` - Open PR in browser
-- ⬜ `OpenInIDE` - Open PR in IDE
-- ⬜ `AddRepository` - Add new repo to config
-- ⬜ `SaveRepositories` - Save repos to disk
 
 #### PR Operations (4 remaining)
 - ⬜ `PerformMerge` - Merge PRs
@@ -188,8 +224,10 @@ Action → Middleware → Reducer → State
 |--------|--------|-------|--------|
 | Bootstrap Effects | 3 | 0 | -100% |
 | Repo Loading Effects | 2 | 0 | -100% |
+| Simple Operations Effects | 4 | 0 | -100% |
+| Total Effects Eliminated | 0 | 9 | 35% of 26 |
 | Action Recursion Depth | 3+ levels | 1 level | -66% |
-| Effect Chaining | Yes (DispatchAction) | No | ✅ |
+| Effect Chaining | Yes (DispatchAction) | Reduced | ⬆️ |
 | Reducer Purity | Partial | Higher | ⬆️ |
 
 ### Code Quality
@@ -203,39 +241,7 @@ Action → Middleware → Reducer → State
 
 ## 🚀 How to Continue Migration
 
-### Next Priority: Simple Operations (4 effects)
-
-These are straightforward and don't involve complex async state:
-
-```rust
-// In TaskMiddleware::handle()
-
-Action::OpenInBrowser(url) => {
-    log::debug!("Opening in browser: {}", url);
-    tokio::spawn(async move {
-        let _ = webbrowser::open(url);
-    });
-}
-
-Action::OpenInIDE { repo, pr_number } => {
-    // Open PR in configured IDE
-    // ...
-}
-
-Action::AddRepository(repo) => {
-    // Add repo to recent_repos list
-    dispatcher.dispatch(Action::RepositoryAdded { ... });
-}
-
-Action::SaveRepositories(repos) => {
-    // Save to .recent-repositories.json
-    tokio::spawn(async move {
-        let _ = save_repos_to_file(repos);
-    });
-}
-```
-
-### Then: PR Operations (4 effects)
+### Next Priority: PR Operations (4 effects)
 
 These involve GitHub API calls:
 
@@ -316,10 +322,14 @@ async fn test_bootstrap_middleware() {
 │            Middleware Chain                    │
 ├────────────────────────────────────────────────┤
 │  1. LoggingMiddleware (logs all actions)      │
-│  2. TaskMiddleware (handles 5/26 operations)  │
-│     ✅ Bootstrap                                │
+│  2. TaskMiddleware (handles 9/26 operations)  │
+│     ✅ Bootstrap (3 effects)                   │
 │     ✅ RefreshCurrentRepo                      │
 │     ✅ ReloadRepo                              │
+│     ✅ OpenCurrentPrInBrowser                  │
+│     ✅ OpenInIDE                               │
+│     ✅ AddRepoFormSubmit                       │
+│     ✅ DeleteCurrentRepo                       │
 │     ⬜ MergeSelectedPrs (not yet)             │
 │     ⬜ Rebase (not yet)                       │
 └────────────────┬───────────────────────────────┘
@@ -327,16 +337,20 @@ async fn test_bootstrap_middleware() {
                  v
 ┌────────────────────────────────────────────────┐
 │              Reducer (purer)                   │
-│  - 5 fewer effects generated                   │
+│  - 9 fewer effects generated (35%)             │
 │  - Bootstrap: vec![] (was vec![3 effects])    │
 │  - RefreshCurrentRepo: vec![] (was vec![1])   │
 │  - ReloadRepo: vec![] (was vec![1])           │
+│  - OpenCurrentPrInBrowser: no effects         │
+│  - OpenInIDE: no effects                      │
+│  - AddRepoFormSubmit: no effects              │
+│  - DeleteCurrentRepo: no effects              │
 └────────────────┬───────────────────────────────┘
                  │
                  v
 ┌────────────────────────────────────────────────┐
 │            Effects (legacy)                    │
-│  - 21 effects still generated                  │
+│  - 17 effects still generated (65%)            │
 │  - execute_effect() still processes them       │
 │  - Will be removed when migration complete     │
 └────────────────┬───────────────────────────────┘
@@ -404,16 +418,16 @@ Migration is complete when:
 
 ## 📈 Progress Summary
 
-**Total Lines Changed**: +1,166 / -35 lines
-**Effects Migrated**: 5 / 26 (19%)
-**Phase**: 2 of 4 (Phase 1 & 2 complete)
-**Status**: ✅ Core operations working, ready for Phase 3
+**Total Lines Changed**: +1,360 / -90 lines (approx)
+**Effects Migrated**: 9 / 26 (35%)
+**Phase**: 3 of 5 (Phase 1, 2 & 3 complete)
+**Status**: ✅ Simple operations working, ready for Phase 4
 
 **Next Steps**:
-1. Port Simple Operations (4 effects)
-2. Port PR Operations (4 effects)
-3. Port Background Checks (3 effects)
-4. Port Monitoring (3+ effects)
+1. Port PR Operations (4 effects)
+2. Port Background Checks (3 effects)
+3. Port Monitoring (3+ effects)
+4. Port Remaining Repo Loading (1 effect)
 5. Port Utility effects (6 effects)
 6. Remove Effect system entirely
 7. Update all documentation
@@ -423,4 +437,4 @@ Migration is complete when:
 
 Generated: 2024-11-24
 Branch: `feat/cleaner-redux`
-Commits: 3 (3552bff, 5594cb0, 2bc9ed1)
+Commits: 3 (3552bff, 5594cb0, 2bc9ed1, [pending])
