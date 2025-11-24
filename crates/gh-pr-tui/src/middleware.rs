@@ -373,6 +373,227 @@ impl Middleware for TaskMiddleware {
                     }
                 }
 
+                //
+                // SIMPLE OPERATIONS
+                //
+
+                Action::OpenCurrentPrInBrowser => {
+                    log::debug!("TaskMiddleware: Handling OpenCurrentPrInBrowser");
+
+                    // Get current repo and selected PRs
+                    let repo_index = state.repos.selected_repo;
+                    if let Some(repo) = state.repos.recent_repos.get(repo_index) {
+                        // Check if there are selected PRs
+                        let has_selection = if let Some(repo_data) = state.repos.repo_data.get(&repo_index) {
+                            !repo_data.selected_pr_numbers.is_empty()
+                        } else {
+                            false
+                        };
+
+                        // Get PR numbers to open
+                        let prs_to_open: Vec<usize> = if has_selection {
+                            if let Some(repo_data) = state.repos.repo_data.get(&repo_index) {
+                                repo_data
+                                    .prs
+                                    .iter()
+                                    .filter(|pr| {
+                                        repo_data.selected_pr_numbers.contains(&crate::state::PrNumber::from_pr(pr))
+                                    })
+                                    .map(|pr| pr.number)
+                                    .collect()
+                            } else {
+                                Vec::new()
+                            }
+                        } else if let Some(repo_data) = state.repos.repo_data.get(&repo_index) {
+                            // No selection, open just the currently focused PR
+                            if let Some(selected_idx) = repo_data.table_state.selected() {
+                                repo_data
+                                    .prs
+                                    .get(selected_idx)
+                                    .map(|pr| vec![pr.number])
+                                    .unwrap_or_default()
+                            } else {
+                                vec![]
+                            }
+                        } else {
+                            vec![]
+                        };
+
+                        // Open each PR in browser
+                        for pr_number in prs_to_open {
+                            let url = format!(
+                                "https://github.com/{}/{}/pull/{}",
+                                repo.org, repo.repo, pr_number
+                            );
+                            log::debug!("Opening in browser: {}", url);
+
+                            // Spawn async task to open URL (platform-specific)
+                            tokio::spawn(async move {
+                                #[cfg(target_os = "macos")]
+                                let _ = tokio::process::Command::new("open")
+                                    .arg(&url)
+                                    .spawn();
+
+                                #[cfg(target_os = "linux")]
+                                let _ = tokio::process::Command::new("xdg-open")
+                                    .arg(&url)
+                                    .spawn();
+
+                                #[cfg(target_os = "windows")]
+                                let _ = tokio::process::Command::new("cmd")
+                                    .args(["/C", "start", &url])
+                                    .spawn();
+                            });
+                        }
+                    }
+                }
+
+                Action::OpenInIDE => {
+                    log::debug!("TaskMiddleware: Handling OpenInIDE");
+
+                    // Get current repo and selected PR
+                    let repo_index = state.repos.selected_repo;
+                    if let Some(repo) = state.repos.recent_repos.get(repo_index).cloned() {
+                        let config = state.config.clone();
+
+                        if let Some(repo_data) = state.repos.repo_data.get(&repo_index) {
+                            // Check if a PR is selected
+                            let pr_number = if let Some(selected_idx) = repo_data.table_state.selected() {
+                                repo_data.prs.get(selected_idx).map(|pr| pr.number).unwrap_or(0)
+                            } else {
+                                // No PR selected (empty list) - open main branch
+                                0
+                            };
+
+                            // Set status message
+                            let message = if pr_number == 0 {
+                                "Opening main branch in IDE...".to_string()
+                            } else {
+                                format!("Opening PR #{} in IDE...", pr_number)
+                            };
+                            dispatcher.dispatch(Action::SetTaskStatus(Some(TaskStatus {
+                                message,
+                                status_type: TaskStatusType::Running,
+                            })));
+
+                            // Send background task to open in IDE
+                            let _ = self.task_tx.send(BackgroundTask::OpenPRInIDE {
+                                repo,
+                                pr_number,
+                                ide_command: config.ide_command,
+                                temp_dir: config.temp_dir,
+                            });
+                        }
+                    }
+                }
+
+                Action::AddRepoFormSubmit => {
+                    log::debug!("TaskMiddleware: Handling AddRepoFormSubmit");
+
+                    // Build the new repo from form data
+                    let branch = if state.ui.add_repo_form.branch.is_empty() {
+                        "main".to_string()
+                    } else {
+                        state.ui.add_repo_form.branch.clone()
+                    };
+
+                    let new_repo = crate::state::Repo {
+                        org: state.ui.add_repo_form.org.clone(),
+                        repo: state.ui.add_repo_form.repo.clone(),
+                        branch,
+                    };
+
+                    // Check if repository already exists
+                    let repo_exists = state
+                        .repos
+                        .recent_repos
+                        .iter()
+                        .any(|r| {
+                            r.org == new_repo.org
+                                && r.repo == new_repo.repo
+                                && r.branch == new_repo.branch
+                        });
+
+                    if !repo_exists {
+                        // Calculate new repo index
+                        let repo_index = state.repos.recent_repos.len();
+
+                        // Build new repos list for saving
+                        let mut new_repos = state.repos.recent_repos.clone();
+                        new_repos.push(new_repo.clone());
+
+                        // Save to file asynchronously
+                        let dispatcher = dispatcher.clone();
+                        let new_repo_for_action = new_repo.clone();
+                        tokio::spawn(async move {
+                            match crate::store_recent_repos(&new_repos) {
+                                Ok(_) => {
+                                    // Dispatch success actions
+                                    dispatcher.dispatch(Action::SetTaskStatus(Some(TaskStatus {
+                                        message: format!(
+                                            "Repository {}/{} added",
+                                            new_repo.org, new_repo.repo
+                                        ),
+                                        status_type: TaskStatusType::Success,
+                                    })));
+                                    dispatcher.dispatch(Action::RepositoryAdded {
+                                        repo_index,
+                                        repo: new_repo_for_action.clone(),
+                                    });
+                                    dispatcher.dispatch(Action::SelectRepoByIndex(repo_index));
+                                    dispatcher.dispatch(Action::ReloadRepo(repo_index));
+                                }
+                                Err(e) => {
+                                    dispatcher.dispatch(Action::SetTaskStatus(Some(TaskStatus {
+                                        message: format!("Failed to save repository: {}", e),
+                                        status_type: TaskStatusType::Error,
+                                    })));
+                                }
+                            }
+                        });
+                    } else {
+                        // Repository already exists
+                        dispatcher.dispatch(Action::SetTaskStatus(Some(TaskStatus {
+                            message: format!(
+                                "Repository {}/{} already exists",
+                                new_repo.org, new_repo.repo
+                            ),
+                            status_type: TaskStatusType::Error,
+                        })));
+                    }
+                }
+
+                Action::DeleteCurrentRepo => {
+                    log::debug!("TaskMiddleware: Handling DeleteCurrentRepo");
+
+                    // Build updated repos list without current repo
+                    let repo_index = state.repos.selected_repo;
+                    let mut new_repos = state.repos.recent_repos.clone();
+
+                    if repo_index < new_repos.len() {
+                        new_repos.remove(repo_index);
+
+                        // Save to file asynchronously
+                        let dispatcher = dispatcher.clone();
+                        tokio::spawn(async move {
+                            match crate::store_recent_repos(&new_repos) {
+                                Ok(_) => {
+                                    dispatcher.dispatch(Action::SetTaskStatus(Some(TaskStatus {
+                                        message: "Repository deleted".to_string(),
+                                        status_type: TaskStatusType::Success,
+                                    })));
+                                }
+                                Err(e) => {
+                                    dispatcher.dispatch(Action::SetTaskStatus(Some(TaskStatus {
+                                        message: format!("Failed to save repositories: {}", e),
+                                        status_type: TaskStatusType::Error,
+                                    })));
+                                }
+                            }
+                        });
+                    }
+                }
+
                 // All other actions pass through unchanged
                 _ => {}
             }

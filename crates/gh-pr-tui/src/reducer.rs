@@ -154,25 +154,16 @@ fn ui_reducer(
             };
         }
         Action::AddRepoFormSubmit => {
-            // Validate and add repository
+            // MIGRATION NOTE: AddRepository now handled by TaskMiddleware
+            // Middleware will:
+            // - Check if repo exists
+            // - Save to file
+            // - Dispatch RepositoryAdded, SelectRepoByIndex, ReloadRepo
+
+            // Just hide the form and reset it
             if !state.add_repo_form.org.is_empty() && !state.add_repo_form.repo.is_empty() {
-                let branch = if state.add_repo_form.branch.is_empty() {
-                    "main".to_string()
-                } else {
-                    state.add_repo_form.branch.clone()
-                };
-
-                let new_repo = crate::state::Repo {
-                    org: state.add_repo_form.org.clone(),
-                    repo: state.add_repo_form.repo.clone(),
-                    branch,
-                };
-
-                // Return effect to add the repository
-                let effects = vec![Effect::AddRepository(new_repo)];
                 state.show_add_repo = false;
                 state.add_repo_form = AddRepoForm::default();
-                return (state, effects);
             }
         }
         Action::ShowClosePrPopup => {
@@ -610,16 +601,10 @@ fn repos_reducer(
                     }
                 }
 
-                // Effect: Save updated repository list to file
-                effects.push(Effect::SaveRepositories(state.recent_repos.clone()));
-
-                // Show status message
-                effects.push(Effect::DispatchAction(Action::SetTaskStatus(Some(
-                    crate::state::TaskStatus {
-                        message: "Repository deleted".to_string(),
-                        status_type: crate::state::TaskStatusType::Success,
-                    },
-                ))));
+                // MIGRATION NOTE: SaveRepositories now handled by TaskMiddleware
+                // Middleware will:
+                // - Save to file
+                // - Dispatch SetTaskStatus with success/error message
             }
         }
         Action::RepositoryAdded { repo_index, repo } => {
@@ -1422,45 +1407,11 @@ fn repos_reducer(
             }
         }
         Action::OpenCurrentPrInBrowser => {
-            // Effect: Open current PR(s) in browser
-            if let Some(repo) = state.recent_repos.get(state.selected_repo) {
-                // If multiple PRs selected, open all of them using PR numbers (stable)
-                let has_selection = if let Some(data) = state.repo_data.get(&state.selected_repo) {
-                    !data.selected_pr_numbers.is_empty()
-                } else {
-                    false
-                };
-
-                let prs_to_open: Vec<usize> = if has_selection {
-                    if let Some(data) = state.repo_data.get(&state.selected_repo) {
-                        state
-                            .prs
-                            .iter()
-                            .filter(|pr| data.selected_pr_numbers.contains(&PrNumber::from_pr(pr)))
-                            .map(|pr| pr.number)
-                            .collect()
-                    } else {
-                        Vec::new()
-                    }
-                } else if let Some(selected_idx) = state.state.selected() {
-                    // Open just the current PR
-                    state
-                        .prs
-                        .get(selected_idx)
-                        .map(|pr| vec![pr.number])
-                        .unwrap_or_default()
-                } else {
-                    vec![]
-                };
-
-                for pr_number in prs_to_open {
-                    let url = format!(
-                        "https://github.com/{}/{}/pull/{}",
-                        repo.org, repo.repo, pr_number
-                    );
-                    effects.push(Effect::OpenInBrowser { url });
-                }
-            }
+            // MIGRATION NOTE: OpenInBrowser now handled by TaskMiddleware
+            // Middleware will:
+            // - Get selected PRs from state
+            // - Open each PR URL in browser using platform-specific command
+            // No effects needed
         }
         Action::OpenBuildLogs => {
             // Effect: Load build logs for current PR
@@ -1472,22 +1423,12 @@ fn repos_reducer(
             }
         }
         Action::OpenInIDE => {
-            // Effect: Open current PR in IDE, or main branch if no PR selected
-            if let Some(repo) = state.recent_repos.get(state.selected_repo).cloned() {
-                if let Some(selected_idx) = state.state.selected() {
-                    if let Some(pr) = state.prs.get(selected_idx) {
-                        // Open the selected PR
-                        effects.push(Effect::OpenInIDE {
-                            repo,
-                            pr_number: pr.number,
-                        });
-                    }
-                } else {
-                    // No PR selected (empty list) - open main branch
-                    // Use pr_number = 0 as a special marker for main branch
-                    effects.push(Effect::OpenInIDE { repo, pr_number: 0 });
-                }
-            }
+            // MIGRATION NOTE: OpenInIDE now handled by TaskMiddleware
+            // Middleware will:
+            // - Get current repo and selected PR
+            // - Dispatch SetTaskStatus with progress message
+            // - Send BackgroundTask::OpenPRInIDE
+            // No effects needed
         }
         Action::SelectNextRepo => {
             if !state.recent_repos.is_empty() {
