@@ -177,7 +177,8 @@ impl Middleware for LoggingMiddleware {
 /// async operations directly in response to actions.
 ///
 /// # Example Operations
-/// - LoadRepo → fetch PR data from GitHub → dispatch RepoDataLoaded
+/// - Bootstrap → load .env, init Octocrab, load repos → dispatch BootstrapComplete
+/// - RefreshCurrentRepo → fetch PR data from GitHub → dispatch RepoDataLoaded
 /// - MergeSelectedPrs → call GitHub API → dispatch MergeComplete
 /// - Rebase → call GitHub API → dispatch RebaseComplete
 ///
@@ -189,23 +190,31 @@ impl Middleware for LoggingMiddleware {
 /// - TaskResult enum
 /// - result_to_action() conversion
 pub struct TaskMiddleware {
-    // TODO: Add octocrab, cache, etc. when implementing specific handlers
-    // octocrab: Option<octocrab::Octocrab>,
-    // cache: Arc<Mutex<gh_api_cache::GitHubApiCache>>,
+    /// GitHub client (set after initialization)
+    octocrab: Option<octocrab::Octocrab>,
+    /// API response cache
+    cache: std::sync::Arc<std::sync::Mutex<gh_api_cache::ApiCache>>,
+    /// Task channel for background operations (legacy - used during migration)
+    task_tx: tokio::sync::mpsc::UnboundedSender<crate::task::BackgroundTask>,
 }
 
 impl TaskMiddleware {
-    pub fn new() -> Self {
+    pub fn new(
+        cache: std::sync::Arc<std::sync::Mutex<gh_api_cache::ApiCache>>,
+        task_tx: tokio::sync::mpsc::UnboundedSender<crate::task::BackgroundTask>,
+    ) -> Self {
         Self {
-            // octocrab: None,
-            // cache,
+            octocrab: None,
+            cache,
+            task_tx,
         }
     }
-}
 
-impl Default for TaskMiddleware {
-    fn default() -> Self {
-        Self::new()
+    /// Get octocrab client (returns error if not initialized)
+    fn octocrab(&self) -> Result<octocrab::Octocrab, String> {
+        self.octocrab
+            .clone()
+            .ok_or_else(|| "Octocrab not initialized".to_string())
     }
 }
 
@@ -213,33 +222,155 @@ impl Middleware for TaskMiddleware {
     fn handle<'a>(
         &'a mut self,
         action: &'a Action,
-        _state: &'a AppState,
-        _dispatcher: &'a Dispatcher,
+        state: &'a AppState,
+        dispatcher: &'a Dispatcher,
     ) -> BoxFuture<'a, bool> {
         Box::pin(async move {
+            use crate::actions::{Action, BootstrapResult};
+            use crate::state::{TaskStatus, TaskStatusType};
+            use crate::task::BackgroundTask;
+
             match action {
-                // Example: Handle Bootstrap action
-                // In full implementation, this would:
-                // 1. Load .env file
-                // 2. Initialize Octocrab
-                // 3. Load repositories
-                // 4. Dispatch BootstrapComplete
+                //
+                // BOOTSTRAP FLOW
+                //
+
                 Action::Bootstrap => {
-                    log::debug!("TaskMiddleware: Bootstrap action (not yet implemented)");
-                    // For now, just pass through to let effect system handle it
+                    log::debug!("TaskMiddleware: Handling Bootstrap");
+
+                    // Step 1: Load .env file if GITHUB_TOKEN not set
+                    if std::env::var("GITHUB_TOKEN").is_err() {
+                        match dotenvy::dotenv() {
+                            Ok(path) => {
+                                log::debug!("Loaded .env file from: {:?}", path);
+                            }
+                            Err(_) => {
+                                log::debug!(".env file not found, will rely on environment variables");
+                            }
+                        }
+                    }
+
+                    // Step 2: Initialize Octocrab
+                    match std::env::var("GITHUB_TOKEN") {
+                        Ok(token) => match octocrab::Octocrab::builder()
+                            .personal_token(token)
+                            .build()
+                        {
+                            Ok(client) => {
+                                log::debug!("Octocrab client initialized successfully");
+                                dispatcher.dispatch(Action::OctocrabInitialized(client));
+                            }
+                            Err(e) => {
+                                log::error!("Failed to initialize octocrab: {}", e);
+                                dispatcher.dispatch(Action::BootstrapComplete(Err(format!(
+                                    "Failed to initialize GitHub client: {}",
+                                    e
+                                ))));
+                                return true; // Stop bootstrap flow
+                            }
+                        },
+                        Err(_) => {
+                            dispatcher.dispatch(Action::BootstrapComplete(Err(
+                                "GITHUB_TOKEN environment variable not set. Please set it or create a .env file.".to_string()
+                            )));
+                            return true; // Stop bootstrap flow
+                        }
+                    }
                 }
 
-                // Example: Handle ReloadRepo action
-                // In full implementation, this would:
-                // 1. Spawn async task
-                // 2. Fetch PR data from GitHub
-                // 3. Dispatch RepoDataLoaded(idx, Ok(prs))
+                Action::OctocrabInitialized(client) => {
+                    log::debug!("TaskMiddleware: Storing Octocrab client");
+                    // Store the client for future use
+                    self.octocrab = Some(client.clone());
+
+                    // Step 3: Load repositories from config
+                    match crate::loading_recent_repos() {
+                        Ok(repos) => {
+                            if repos.is_empty() {
+                                dispatcher.dispatch(Action::BootstrapComplete(Err(
+                                    "No repositories configured. Add repositories to .recent-repositories.json".to_string()
+                                )));
+                                return true;
+                            }
+
+                            // Restore session
+                            let selected_repo: usize =
+                                if let Ok(persisted_state) = crate::load_persisted_state() {
+                                    repos
+                                        .iter()
+                                        .position(|r| r == &persisted_state.selected_repo)
+                                        .unwrap_or_default()
+                                } else {
+                                    0
+                                };
+
+                            // Dispatch bootstrap complete
+                            let result = BootstrapResult {
+                                repos,
+                                selected_repo,
+                            };
+                            dispatcher.dispatch(Action::BootstrapComplete(Ok(result)));
+                        }
+                        Err(err) => {
+                            dispatcher.dispatch(Action::BootstrapComplete(Err(err.to_string())));
+                        }
+                    }
+                }
+
+                //
+                // REPO LOADING OPERATIONS
+                //
+
+                Action::RefreshCurrentRepo => {
+                    log::debug!("TaskMiddleware: Handling RefreshCurrentRepo");
+
+                    // Get current repo info
+                    let repo_index = state.repos.selected_repo;
+                    if let Some(repo) = state.repos.recent_repos.get(repo_index).cloned() {
+                        let filter = state.repos.filter.clone();
+
+                        // Dispatch loading status
+                        dispatcher.dispatch(Action::SetReposLoading(vec![repo_index]));
+                        dispatcher.dispatch(Action::SetTaskStatus(Some(TaskStatus {
+                            message: "Refreshing...".to_string(),
+                            status_type: TaskStatusType::Running,
+                        })));
+
+                        // Trigger background task (using legacy system for now)
+                        if let Ok(octocrab) = self.octocrab() {
+                            let _ = self.task_tx.send(BackgroundTask::LoadSingleRepo {
+                                repo_index,
+                                repo,
+                                filter,
+                                octocrab,
+                                cache: self.cache.clone(),
+                                bypass_cache: true, // Refresh always bypasses cache
+                            });
+                        }
+                    }
+                }
+
                 Action::ReloadRepo(repo_index) => {
-                    log::debug!(
-                        "TaskMiddleware: ReloadRepo {} (not yet implemented)",
-                        repo_index
-                    );
-                    // For now, just pass through to let effect system handle it
+                    log::debug!("TaskMiddleware: Handling ReloadRepo {}", repo_index);
+
+                    if let Some(repo) = state.repos.recent_repos.get(*repo_index).cloned() {
+                        let filter = state.repos.filter.clone();
+
+                        // Dispatch loading status
+                        dispatcher.dispatch(Action::SetReposLoading(vec![*repo_index]));
+
+                        // Trigger background task
+                        if let Ok(octocrab) = self.octocrab() {
+                            let _ = self.task_tx.send(BackgroundTask::LoadSingleRepo {
+                                repo_index: *repo_index,
+                                repo,
+                                filter,
+                                octocrab,
+                                cache: self.cache.clone(),
+                                bypass_cache: false, // Normal reload uses cache
+                            });
+                        }
+                    }
                 }
 
                 // All other actions pass through unchanged

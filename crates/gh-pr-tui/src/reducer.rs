@@ -417,13 +417,19 @@ fn infrastructure_reducer(
             // Start bootstrap sequence
             state.bootstrap_state = BootstrapState::LoadingRepositories;
 
-            // Return effects for loading env and initializing octocrab
-            (state, vec![Effect::LoadEnvFile, Effect::InitializeOctocrab])
+            // MIGRATION NOTE: Bootstrap flow now handled by TaskMiddleware
+            // Middleware will dispatch OctocrabInitialized → BootstrapComplete
+            // Old: vec![Effect::LoadEnvFile, Effect::InitializeOctocrab]
+            (state, vec![])
         }
         Action::OctocrabInitialized(client) => {
             // Store initialized Octocrab client in state (reducer responsibility)
             state.octocrab = Some(client.clone());
-            (state, vec![Effect::LoadRepositories])
+
+            // MIGRATION NOTE: Repo loading now handled by TaskMiddleware
+            // Middleware will dispatch BootstrapComplete after loading repos
+            // Old: vec![Effect::LoadRepositories]
+            (state, vec![])
         }
         Action::SetBootstrapState(new_state) => {
             state.bootstrap_state = new_state.clone();
@@ -1134,26 +1140,16 @@ fn repos_reducer(
             });
         }
         Action::RefreshCurrentRepo => {
-            // Effect: Reload current repository (bypass cache for user-triggered refresh)
-            if let Some(repo) = state.recent_repos.get(state.selected_repo).cloned() {
-                effects.push(Effect::LoadSingleRepo {
-                    repo_index: state.selected_repo,
-                    repo,
-                    filter: state.filter.clone(),
-                    bypass_cache: true, // User-triggered refresh should bypass cache
-                });
-            }
+            // MIGRATION NOTE: Reload now handled by TaskMiddleware
+            // Middleware dispatches SetReposLoading and SetTaskStatus
+            // Old: Effect::LoadSingleRepo with bypass_cache: true
+            // No effects needed - middleware handles everything
         }
-        Action::ReloadRepo(repo_index) => {
-            // Effect: Reload specific repository (e.g., after PR merged)
-            if let Some(repo) = state.recent_repos.get(*repo_index).cloned() {
-                effects.push(Effect::LoadSingleRepo {
-                    repo_index: *repo_index,
-                    repo,
-                    filter: state.filter.clone(),
-                    bypass_cache: true, // Bypass cache to get fresh data after operations
-                });
-            }
+        Action::ReloadRepo(_repo_index) => {
+            // MIGRATION NOTE: Reload now handled by TaskMiddleware
+            // Middleware dispatches SetReposLoading
+            // Old: Effect::LoadSingleRepo with bypass_cache: true
+            // No effects needed - middleware handles everything
         }
         Action::StartRecurringUpdates(interval_ms) => {
             // Effect: Start background recurring task to update all repos periodically
