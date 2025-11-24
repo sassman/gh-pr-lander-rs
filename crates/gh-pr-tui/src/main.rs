@@ -513,21 +513,25 @@ impl App {
         let cache_file = crate::infra::files::get_cache_file_path()
             .unwrap_or_else(|_| std::env::temp_dir().join("gh-api-cache.json"));
 
-        // Create store and wire up middleware
+        // Create cache and store
+        let cache = Arc::new(Mutex::new(ApiCache::new(cache_file).unwrap_or_default()));
         let mut store = Store::new(initial_state);
 
         // Add middleware in order (first added = first called)
         // 1. Logging middleware - logs all actions for debugging
         store.add_middleware(crate::middleware::LoggingMiddleware::new());
 
-        // 2. Task middleware - handles async operations (will replace effects)
-        store.add_middleware(crate::middleware::TaskMiddleware::new());
+        // 2. Task middleware - handles async operations (replaces Effect system)
+        store.add_middleware(crate::middleware::TaskMiddleware::new(
+            cache.clone(),
+            task_tx.clone(),
+        ));
 
         App {
             store,
             action_tx,
             task_tx,
-            cache: Arc::new(Mutex::new(ApiCache::new(cache_file).unwrap_or_default())),
+            cache,
         }
     }
 
