@@ -860,6 +860,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "gh-pr-lander"
+version = "0.1.0"
+dependencies = [
+ "env_logger",
+ "log",
+ "ratatui",
+]
+
+[[package]]
 name = "gh-pr-tui"
 version = "0.1.0"
 dependencies = [
