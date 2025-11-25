@@ -137,6 +137,9 @@ impl Middleware for TaskMiddleware {
                                 selected_repo,
                             };
                             dispatcher.dispatch(Action::BootstrapComplete(Ok(result)));
+
+                            // Step 4: Load the selected repo (for quick UI display)
+                            dispatcher.dispatch(Action::RefreshCurrentRepo);
                         }
                         Err(err) => {
                             dispatcher.dispatch(Action::BootstrapComplete(Err(err.to_string())));
