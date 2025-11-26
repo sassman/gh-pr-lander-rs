@@ -158,6 +158,7 @@ impl KeyboardMiddleware {
                 '`' => {
                     if state.active_view().view_id() != ViewId::DebugConsole {
                         // Push debug console as floating view
+                        // Note: Reducer handles duplicate prevention
                         dispatcher.dispatch(Action::GlobalActivateView(Box::new(
                             DebugConsoleView::new(),
                         )));

@@ -61,11 +61,30 @@ impl Clone for Box<dyn View> {
 
 /// Render the entire application UI
 ///
-/// Renders all views in the stack bottom-up, so floating views appear on top.
+/// Optimized rendering strategy:
+/// - If the top view is non-floating, only render that view (it covers everything)
+/// - If the top view is floating, render the base view below it, then the floating view on top
+///   (floating views use `Clear` widget to preserve unrendered areas)
 pub fn render(state: &AppState, area: Rect, f: &mut Frame) {
-    // Render each view in the stack, bottom to top
-    // This allows floating views to render on top of base views
-    for view in &state.view_stack {
-        view.render(state, area, f);
+    let stack_len = state.view_stack.len();
+
+    if stack_len == 0 {
+        return; // Should never happen, but guard against it
+    }
+
+    // Get the top-most view
+    let top_view = &state.view_stack[stack_len - 1];
+
+    if top_view.is_floating() {
+        // Floating view on top - render the view below it first (if any)
+        if stack_len > 1 {
+            let base_view = &state.view_stack[stack_len - 2];
+            base_view.render(state, area, f);
+        }
+        // Then render the floating view on top
+        top_view.render(state, area, f);
+    } else {
+        // Non-floating view - only render the top view (it covers everything)
+        top_view.render(state, area, f);
     }
 }

@@ -15,13 +15,32 @@ pub fn reduce(mut state: AppState, action: &Action) -> AppState {
         }
         Action::GlobalActivateView(new_view) => {
             // View stack logic:
-            // - If the new view is floating, push it onto the stack
+            // - If the new view is floating:
+            //   - Check if same view is already on top of stack (prevent duplicates)
+            //   - If not duplicate, push it onto the stack
             // - If the new view is not floating, clear the stack and replace with the new view
             if new_view.is_floating() {
-                log::debug!("Pushing floating view onto stack: {:?}", new_view.view_id());
-                state.view_stack.push(new_view.clone());
+                // Check if this floating view is already the top-most view
+                let is_duplicate = state
+                    .view_stack
+                    .last()
+                    .map(|top| top.view_id() == new_view.view_id())
+                    .unwrap_or(false);
+
+                if is_duplicate {
+                    log::debug!(
+                        "Ignoring duplicate floating view: {:?}",
+                        new_view.view_id()
+                    );
+                } else {
+                    log::debug!("Pushing floating view onto stack: {:?}", new_view.view_id());
+                    state.view_stack.push(new_view.clone());
+                }
             } else {
-                log::debug!("Replacing view stack with non-floating view: {:?}", new_view.view_id());
+                log::debug!(
+                    "Replacing view stack with non-floating view: {:?}",
+                    new_view.view_id()
+                );
                 state.view_stack.clear();
                 state.view_stack.push(new_view.clone());
             }
@@ -29,12 +48,13 @@ pub fn reduce(mut state: AppState, action: &Action) -> AppState {
         Action::GlobalClose => {
             // Close the top-most view
             // If there's more than one view in the stack, pop the top one
-            // If there's only one view, don't pop (we need at least one view)
+            // If there's only one view left, quit the application
             if state.view_stack.len() > 1 {
                 let popped = state.view_stack.pop();
                 log::debug!("Closed view: {:?}", popped.map(|v| v.view_id()));
             } else {
-                log::debug!("Cannot close the only view in the stack");
+                log::debug!("Closing last view - quitting application");
+                state.running = false;
             }
         }
         Action::BootstrapEnd => {
