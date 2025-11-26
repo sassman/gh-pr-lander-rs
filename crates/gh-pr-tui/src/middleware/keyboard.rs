@@ -141,12 +141,25 @@ impl KeyboardMiddleware {
                     return false; // Wait for second 'g' or timeout
                 }
 
+                'q' => {
+                    // Dispatch Close - panels will handle this contextually
+                    // (close panel if panel is open, quit if on main PR table)
+                    dispatcher.dispatch(Action::Close);
+                    return false;
+                }
+
                 // Any other character clears sequence and passes through
                 _ => {
                     self.clear_sequence();
                     return true;
                 }
             }
+        }
+
+        // Handle Escape key - universal close action
+        if let KeyCode::Esc = key.code {
+            dispatcher.dispatch(Action::Close);
+            return false;
         }
 
         // Handle arrow keys based on capabilities
@@ -202,7 +215,9 @@ impl KeyboardMiddleware {
             KeySequence::GoToTop => {
                 // Only dispatch ScrollToTop if panel supports vim vertical scrolling
                 if capabilities.supports_vim_vertical_scroll() {
-                    log::debug!("Dispatching ScrollToTop (capabilities support vim vertical scroll)");
+                    log::debug!(
+                        "Dispatching ScrollToTop (capabilities support vim vertical scroll)"
+                    );
                     dispatcher.dispatch(Action::ScrollToTop);
                     return false; // Block original key event
                 } else {
@@ -214,7 +229,9 @@ impl KeyboardMiddleware {
             KeySequence::GoToBottom => {
                 // Only dispatch ScrollToBottom if panel supports vim vertical scrolling
                 if capabilities.supports_vim_vertical_scroll() {
-                    log::debug!("Dispatching ScrollToBottom (capabilities support vim vertical scroll)");
+                    log::debug!(
+                        "Dispatching ScrollToBottom (capabilities support vim vertical scroll)"
+                    );
                     dispatcher.dispatch(Action::ScrollToBottom);
                     return false; // Block original key event
                 } else {
@@ -245,7 +262,8 @@ impl Middleware for KeyboardMiddleware {
                 let capabilities = state.ui.active_panel_capabilities;
                 log::debug!(
                     "KeyboardMiddleware: key={:?}, capabilities={:?}",
-                    key, capabilities
+                    key,
+                    capabilities
                 );
                 return self.handle_key(*key, capabilities, dispatcher);
             }
@@ -303,10 +321,7 @@ mod tests {
         // Should have dispatched NavigateNext (semantic action, not panel-specific)
         let dispatched_action = rx.try_recv();
         assert!(dispatched_action.is_ok());
-        assert!(matches!(
-            dispatched_action.unwrap(),
-            Action::NavigateNext
-        ));
+        assert!(matches!(dispatched_action.unwrap(), Action::NavigateNext));
     }
 
     #[test]
@@ -376,10 +391,7 @@ mod tests {
         // Should have dispatched ScrollToBottom
         let dispatched_action = rx.try_recv();
         assert!(dispatched_action.is_ok());
-        assert!(matches!(
-            dispatched_action.unwrap(),
-            Action::ScrollToBottom
-        ));
+        assert!(matches!(dispatched_action.unwrap(), Action::ScrollToBottom));
     }
 
     // End-to-End Integration Tests
@@ -513,20 +525,18 @@ mod tests {
 
         // Setup: Start with PR table
         let mut state = AppState::default();
-        state.repos.prs = vec![
-            crate::pr::Pr {
-                number: 1,
-                title: "PR 1".to_string(),
-                body: String::new(),
-                author: "author".to_string(),
-                no_comments: 0,
-                merge_state: "clean".to_string(),
-                mergeable: crate::pr::MergeableStatus::Unknown,
-                needs_rebase: false,
-                created_at: chrono::Utc::now(),
-                updated_at: chrono::Utc::now(),
-            },
-        ];
+        state.repos.prs = vec![crate::pr::Pr {
+            number: 1,
+            title: "PR 1".to_string(),
+            body: String::new(),
+            author: "author".to_string(),
+            no_comments: 0,
+            merge_state: "clean".to_string(),
+            mergeable: crate::pr::MergeableStatus::Unknown,
+            needs_rebase: false,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        }];
         state.repos.state.select(Some(0));
 
         // Press 'j' in PR table - should navigate PRs
@@ -563,7 +573,7 @@ mod tests {
         let dispatcher = Dispatcher::new(tx);
 
         // Setup: PR table with command palette open
-        let mut state = AppState::default();
+        let state = AppState::default();
         let (state, _) = reduce(state, &Action::ShowCommandPalette);
 
         // Add some commands to palette
@@ -606,9 +616,6 @@ mod tests {
 
         // Reducer should move command palette selection
         let (new_state, _effects) = reduce(state, &action);
-        assert_eq!(
-            new_state.ui.command_palette.unwrap().selected_index,
-            1
-        ); // Moved to second command
+        assert_eq!(new_state.ui.command_palette.unwrap().selected_index, 1); // Moved to second command
     }
 }

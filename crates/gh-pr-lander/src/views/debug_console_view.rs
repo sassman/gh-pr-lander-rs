@@ -1,9 +1,8 @@
 use crate::state::DebugConsoleState;
 use crate::theme::Theme;
+use crate::view_models::debug_console_view_model::DebugConsoleViewModel;
 use ratatui::{
     layout::Rect,
-    style::Stylize,
-    text::{Line, Span},
     widgets::{Block, Borders, Clear, Paragraph},
     Frame,
 };
@@ -25,47 +24,26 @@ pub fn render(state: &DebugConsoleState, theme: &Theme, area: Rect, f: &mut Fram
 
     f.render_widget(Clear, console_area);
 
+    // Create view model
+    let view_model = DebugConsoleViewModel::new(state);
+
     let block = Block::default()
-        .title(" Debug Console (` to toggle, c to clear) ")
+        .title(view_model.title())
         .borders(Borders::ALL)
         .border_style(theme.panel_border())
         .title_style(theme.panel_title());
 
-    // Show last N logs that fit in the console
+    // Calculate visible window
     let available_height = console_height.saturating_sub(2) as usize; // -2 for borders
-    let start_index = state.logs.len().saturating_sub(available_height);
 
-    // Color-code log messages by level
-    let visible_logs: Vec<Line> = state.logs[start_index..]
+    // Get visible logs and format them
+    let visible_logs = view_model.visible_logs(available_height);
+    let formatted_lines: Vec<_> = visible_logs
         .iter()
-        .map(|log| {
-            // Parse log level from message format: "[LEVEL] message"
-            if let Some(level_end) = log.find(']') {
-                if log.starts_with('[') {
-                    let level = &log[1..level_end];
-                    let message = &log[level_end + 1..];
-
-                    let style = match level {
-                        "ERROR" => theme.log_error(),
-                        "WARN" => theme.log_warning(),
-                        "INFO" => theme.log_info(),
-                        "DEBUG" => theme.log_debug(),
-                        _ => theme.text(),
-                    };
-
-                    return Line::from(vec![
-                        Span::styled(format!("[{}]", level), style.bold()),
-                        Span::styled(message, theme.text()),
-                    ]);
-                }
-            }
-
-            // Fallback: no level detected, use default style
-            Line::from(Span::styled(log.clone(), theme.text()))
-        })
+        .map(|record| DebugConsoleViewModel::format_log_line(record, theme))
         .collect();
 
-    let paragraph = Paragraph::new(visible_logs)
+    let paragraph = Paragraph::new(formatted_lines)
         .block(block)
         .style(theme.panel_background());
 

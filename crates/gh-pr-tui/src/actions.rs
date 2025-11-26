@@ -60,10 +60,10 @@ pub enum Action {
     // Semantic navigation actions (capability-based, panel-agnostic)
     // These are dispatched by KeyboardMiddleware based on capabilities
     // Each panel's reducer interprets them in its own context
-    NavigateNext,       // vim: j, arrow down - next item/line in active panel
-    NavigatePrevious,   // vim: k, arrow up - previous item/line in active panel
-    NavigateLeft,       // vim: h, arrow left - left/collapse in active panel
-    NavigateRight,      // vim: l, arrow right - right/expand in active panel
+    NavigateNext,     // vim: j, arrow down - next item/line in active panel
+    NavigatePrevious, // vim: k, arrow up - previous item/line in active panel
+    NavigateLeft,     // vim: h, arrow left - left/collapse in active panel
+    NavigateRight,    // vim: l, arrow right - right/expand in active panel
 
     // Semantic scroll actions (vim-style, capability-based)
     ScrollToTop,        // vim: gg - scroll to top of current panel
@@ -116,6 +116,11 @@ pub enum Action {
     RepoLoadingStarted(usize), // Sent when we start fetching repo data
     RepoDataLoaded(usize, Result<Vec<crate::pr::Pr>, String>),
     RefreshComplete(Result<Vec<crate::pr::Pr>, String>),
+
+    // CI/Build status checking
+    PrCheckBuild(usize, usize, String), // repo_index, pr_number, head_sha - trigger build status check
+    PrBuildStatusUpdated(usize, usize, crate::pr::MergeableStatus), // repo_index, pr_number, build_status
+
     MergeStatusUpdated(usize, usize, crate::pr::MergeableStatus), // repo_index, pr_number, status
     RebaseStatusUpdated(usize, usize, bool), // repo_index, pr_number, needs_rebase
     CommentCountUpdated(usize, usize, usize), // repo_index, pr_number, comment_count
@@ -173,6 +178,9 @@ pub enum Action {
     CommandPaletteSelectPrev,
     CommandPaletteExecute,
     UpdateCommandPaletteResults(Vec<(gh_pr_tui_command_palette::CommandItem<Action>, u16)>),
+
+    // Generic close action - closes active panel/popup, or quits if on main panel
+    Close,
 
     Quit,
     None,

@@ -28,7 +28,8 @@ impl PanelCapabilityProvider for ReposState {
 /// - Vim navigation (j/k)
 impl UiState {
     pub fn shortcuts_panel_capabilities(&self) -> PanelCapabilities {
-        let mut caps = PanelCapabilities::VIM_NAVIGATION_BINDINGS | PanelCapabilities::VIM_SCROLL_BINDINGS;
+        let mut caps =
+            PanelCapabilities::VIM_NAVIGATION_BINDINGS | PanelCapabilities::VIM_SCROLL_BINDINGS;
 
         // Check if shortcuts panel has scrollable content
         if self.shortcuts_scroll < self.shortcuts_max_scroll {
@@ -64,7 +65,8 @@ impl PanelCapabilityProvider for DebugConsoleState {
 impl PanelCapabilityProvider for LogPanelState {
     fn capabilities(&self) -> PanelCapabilities {
         // Log panel always supports vim navigation and scrolling
-        let mut caps = PanelCapabilities::VIM_NAVIGATION_BINDINGS | PanelCapabilities::VIM_SCROLL_BINDINGS;
+        let mut caps =
+            PanelCapabilities::VIM_NAVIGATION_BINDINGS | PanelCapabilities::VIM_SCROLL_BINDINGS;
 
         // Log panel typically has vertical scrollable content
         caps |= PanelCapabilities::SCROLL_VERTICAL;

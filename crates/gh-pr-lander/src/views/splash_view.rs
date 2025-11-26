@@ -1,0 +1,120 @@
+use crate::state::SplashState;
+use crate::theme::Theme;
+use ratatui::{
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
+    style::Stylize,
+    text::{Line, Span},
+    widgets::{Block, Paragraph},
+    Frame,
+};
+
+/// Render the splash screen with snake loading animation
+pub fn render(state: &SplashState, theme: &Theme, area: Rect, f: &mut Frame) {
+    // Full screen background
+    let background_block = Block::default().style(theme.panel_background());
+    f.render_widget(background_block, area);
+
+    // Title at the top
+    let title_area = Rect {
+        x: area.x,
+        y: area.y + 2,
+        width: area.width,
+        height: 3,
+    };
+
+    let title = Paragraph::new(Line::from(Span::styled(
+        "GitHub PR Lander",
+        theme.panel_title().bold(),
+    )))
+    .alignment(Alignment::Center);
+    f.render_widget(title, title_area);
+
+    // Center the snake animation
+    let vertical_chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Percentage(40),
+            Constraint::Length(8), // Height for snake + loading text
+            Constraint::Percentage(40),
+        ])
+        .split(area);
+
+    let horizontal_chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Min(0),
+            Constraint::Length(12), // Width for 5x5 grid (each cell is ~2 chars wide)
+            Constraint::Min(0),
+        ])
+        .split(vertical_chunks[1]);
+
+    let center_area = horizontal_chunks[1];
+
+    // Generate snake animation pattern (5x5 grid)
+    let snake_lines = generate_snake_animation(state.animation_frame, theme);
+
+    // Add loading text
+    let mut lines = snake_lines;
+    lines.push(Line::from(""));
+    lines.push(
+        Line::from(Span::styled("Loading...", theme.text().dim())).alignment(Alignment::Center),
+    );
+
+    let paragraph = Paragraph::new(lines)
+        .alignment(Alignment::Center)
+        .style(theme.panel_background());
+
+    f.render_widget(paragraph, center_area);
+}
+
+/// Generate snake animation for the current frame
+/// The snake chases its tail in a 5x5 grid pattern
+fn generate_snake_animation(frame: usize, theme: &Theme) -> Vec<Line<'static>> {
+    // Define the snake path (positions in reading order: row*5 + col)
+    // Snake moves around the perimeter clockwise, then spirals inward
+    let path = vec![
+        0, 1, 2, 3, 4, // Top row →
+        9, 14, 19, 24, // Right edge ↓
+        23, 22, 21, 20, // Bottom row ←
+        15, 10, 5, // Left edge ↑
+        6, 7, 8, // Inner top row →
+        13, 18, // Inner right edge ↓
+        17, 16, // Inner bottom row ←
+        11, // Inner left ↑
+        12, // Center
+    ];
+
+    // Calculate which positions are "lit" based on the frame
+    // Show up to 5 positions: the head and up to 4 trailing segments
+    // Head is at 'frame', tail segments are at frame-1, frame-2, frame-3, frame-4
+    let snake_length = 5;
+    let mut lit_positions = vec![false; 25];
+
+    for i in 0..snake_length {
+        // Only show segments that actually exist (don't wrap around at the start)
+        if frame >= i {
+            let pos_index = frame - i;
+            let grid_pos = path[pos_index % path.len()];
+            lit_positions[grid_pos] = true;
+        }
+    }
+
+    // Build the 5x5 grid
+    let mut lines = Vec::new();
+    for row in 0..5 {
+        let mut spans = Vec::new();
+        for col in 0..5 {
+            let pos = row * 5 + col;
+            let symbol = if lit_positions[pos] { "█" } else { "░" };
+            let style = if lit_positions[pos] {
+                theme.text().cyan().bold()
+            } else {
+                theme.muted().dim()
+            };
+            spans.push(Span::styled(format!("{} ", symbol), style));
+        }
+        lines.push(Line::from(spans));
+    }
+
+    lines
+}

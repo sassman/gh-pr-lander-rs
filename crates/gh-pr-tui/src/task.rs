@@ -3,8 +3,27 @@
 //! This module contains helper functions for GitHub API operations that are used
 //! by the middleware layer.
 
+use crate::log::WorkflowRunStatus;
 use crate::state::Repo;
 use octocrab::Octocrab;
+
+/// Convert check run conclusion string to WorkflowRunStatus
+///
+/// Helper for parsing check run conclusions from GitHub API
+fn parse_check_conclusion(conclusion: &str) -> WorkflowRunStatus {
+    match conclusion {
+        "success" => WorkflowRunStatus::Success,
+        "failure" => WorkflowRunStatus::Failure,
+        "cancelled" => WorkflowRunStatus::Cancelled,
+        "timed_out" => WorkflowRunStatus::TimedOut,
+        "action_required" => WorkflowRunStatus::ActionRequired,
+        "skipped" => WorkflowRunStatus::Skipped,
+        "neutral" => WorkflowRunStatus::Neutral,
+        "stale" => WorkflowRunStatus::Stale,
+        "startup_failure" => WorkflowRunStatus::StartupFailure,
+        _ => WorkflowRunStatus::Unknown,
+    }
+}
 
 /// Enable auto-merge on GitHub using GraphQL API
 pub async fn enable_github_auto_merge(
@@ -73,11 +92,18 @@ pub async fn get_pr_ci_status(
     let mut has_success = false;
 
     for check in check_runs {
-        if let Some(conclusion) = check["conclusion"].as_str() {
+        if let Some(conclusion_str) = check["conclusion"].as_str() {
+            let conclusion = parse_check_conclusion(conclusion_str);
             match conclusion {
-                "success" | "neutral" | "skipped" => has_success = true,
-                "failure" | "cancelled" | "timed_out" | "action_required" => has_failure = true,
-                _ => has_pending = true,
+                WorkflowRunStatus::Success
+                | WorkflowRunStatus::Neutral
+                | WorkflowRunStatus::Skipped => has_success = true,
+                WorkflowRunStatus::Failure
+                | WorkflowRunStatus::Cancelled
+                | WorkflowRunStatus::TimedOut
+                | WorkflowRunStatus::ActionRequired => has_failure = true,
+                WorkflowRunStatus::InProgress | WorkflowRunStatus::Unknown => has_pending = true,
+                WorkflowRunStatus::Stale | WorkflowRunStatus::StartupFailure => has_failure = true,
             }
         } else if let Some(status) = check["status"].as_str()
             && (status == "in_progress" || status == "queued")

@@ -2,8 +2,10 @@ use crate::actions::Action;
 use crate::dispatcher::Dispatcher;
 use crate::state::AppState;
 
+pub mod bootstrap;
 pub mod keyboard;
 pub mod logging;
+pub mod repository;
 
 /// Middleware trait - intercepts actions before they reach the reducer
 pub trait Middleware {

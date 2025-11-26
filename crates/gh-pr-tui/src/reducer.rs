@@ -4,10 +4,74 @@ use log::{debug, error, info};
 // MIGRATION: Effect system removed, all side effects in middleware
 type Effect = ();
 
+/// Push a panel onto the stack (if not already on top)
+fn push_panel(state: &mut AppState, panel: ActivePanel) {
+    // Don't push if it's already on top
+    if state.panel_stack.last() != Some(&panel) {
+        state.panel_stack.push(panel);
+    }
+}
+
+/// Remove a panel from anywhere in the stack
+fn remove_panel(state: &mut AppState, panel: ActivePanel) {
+    state.panel_stack.retain(|p| p != &panel);
+}
+
 /// Root reducer that delegates to sub-reducers based on action type
 /// Pure function: takes state and action, returns (new state, effects to perform)
 pub fn reduce(mut state: AppState, action: &Action) -> (AppState, Vec<Effect>) {
     let mut effects = Vec::new();
+
+    // Handle Close action at top level (needs access to all state)
+    // Context-aware close: close the topmost panel from the stack
+    if matches!(action, Action::Close) {
+        use crate::state::ActivePanel;
+
+        // Pop the topmost panel from the stack
+        if let Some(panel) = state.panel_stack.pop() {
+            // Close the panel based on its type
+            match panel {
+                ActivePanel::CommandPalette => {
+                    state.ui.command_palette = None;
+                }
+                ActivePanel::ClosePrPopup => {
+                    state.ui.close_pr_state = None;
+                }
+                ActivePanel::AddRepoPopup => {
+                    state.ui.show_add_repo = false;
+                }
+                ActivePanel::LogPanel => {
+                    state.log_panel.panel = None;
+                    state.log_panel.view_model = None;
+                }
+                ActivePanel::DebugConsole => {
+                    state.debug_console.is_open = false;
+                }
+                ActivePanel::Shortcuts => {
+                    state.ui.show_shortcuts = false;
+                    state.ui.shortcuts_panel_view_model = None;
+                }
+                ActivePanel::PrTable => {
+                    // Closing main PR table = quit application
+                    return reduce(state, &Action::Quit);
+                }
+            }
+
+            // Update capabilities after closing panel
+            state.ui.active_panel_capabilities =
+                crate::panel_capabilities::get_active_panel_capabilities(
+                    &state.repos,
+                    &state.log_panel,
+                    &state.ui,
+                    &state.debug_console,
+                );
+
+            return (state, vec![]);
+        } else {
+            // Stack is empty (shouldn't happen) - default to quit
+            return reduce(state, &Action::Quit);
+        }
+    }
 
     // highest priority is the infrastructure setup, then the rest.
     let (infrastructure_state, infrastructure_effects) =
@@ -61,12 +125,70 @@ pub fn reduce(mut state: AppState, action: &Action) -> (AppState, Vec<Effect>) {
         _ => {}
     }
 
+    // Manage panel stack based on panel visibility changes
+    // This must happen after all sub-reducers have updated their state
+    match action {
+        Action::Bootstrap => {
+            // Initialize stack with base PrTable panel
+            state.panel_stack = vec![ActivePanel::PrTable];
+        }
+        Action::ToggleShortcuts => {
+            if state.ui.show_shortcuts {
+                push_panel(&mut state, ActivePanel::Shortcuts);
+            } else {
+                remove_panel(&mut state, ActivePanel::Shortcuts);
+            }
+        }
+        Action::ShowAddRepoPopup => {
+            push_panel(&mut state, ActivePanel::AddRepoPopup);
+        }
+        Action::HideAddRepoPopup | Action::AddRepoFormSubmit => {
+            if !state.ui.show_add_repo {
+                remove_panel(&mut state, ActivePanel::AddRepoPopup);
+            }
+        }
+        Action::ShowClosePrPopup => {
+            push_panel(&mut state, ActivePanel::ClosePrPopup);
+        }
+        Action::HideClosePrPopup | Action::ClosePrFormSubmit => {
+            if state.ui.close_pr_state.is_none() {
+                remove_panel(&mut state, ActivePanel::ClosePrPopup);
+            }
+        }
+        Action::ShowCommandPalette => {
+            push_panel(&mut state, ActivePanel::CommandPalette);
+        }
+        Action::HideCommandPalette | Action::CommandPaletteExecute => {
+            if state.ui.command_palette.is_none() {
+                remove_panel(&mut state, ActivePanel::CommandPalette);
+            }
+        }
+        Action::BuildLogsLoaded(_, _) => {
+            if state.log_panel.panel.is_some() {
+                push_panel(&mut state, ActivePanel::LogPanel);
+            }
+        }
+        Action::CloseLogPanel => {
+            if state.log_panel.panel.is_none() {
+                remove_panel(&mut state, ActivePanel::LogPanel);
+            }
+        }
+        Action::ToggleDebugConsole => {
+            if state.debug_console.is_open {
+                push_panel(&mut state, ActivePanel::DebugConsole);
+            } else {
+                remove_panel(&mut state, ActivePanel::DebugConsole);
+            }
+        }
+        _ => {}
+    }
+
     // Update active panel capabilities when focus or panel state changes
     // This ensures KeyboardMiddleware always has up-to-date capabilities
     match action {
         // Bootstrap: Initialize capabilities
         Action::Bootstrap
-        // Panel visibility changes
+        // Panel visibility changes (Close is handled at top level and updates capabilities there)
         | Action::ToggleShortcuts
         | Action::ShowAddRepoPopup
         | Action::HideAddRepoPopup
@@ -108,8 +230,12 @@ fn ui_reducer(
         // KeyPressed is handled by KeyboardMiddleware - no-op in reducer
         Action::KeyPressed(_) => {}
 
+        // Close is handled at top-level reducer - no-op here
+        Action::Close => {}
+
         Action::Quit => {
-            state.should_quit = true;
+            // Shutdown is now handled by ShutdownMiddleware
+            // This action is blocked by the middleware, so this code won't be reached
         }
         Action::TickSpinner => {
             // Increment spinner frame for animation (0-9 cycle)
@@ -275,10 +401,9 @@ fn ui_reducer(
         Action::ResetForceRedraw => {
             state.force_redraw = false;
         }
-        Action::FatalError(err) => {
-            state.should_quit = true;
-            // Also set error in loading state for visibility
-            // Note: Using repos.loading_state as a general error indicator
+        Action::FatalError(_err) => {
+            // Shutdown is now handled by ShutdownMiddleware
+            // This action is blocked by the middleware, so this code won't be reached
         }
         Action::UpdateShortcutsMaxScroll(max_scroll) => {
             state.shortcuts_max_scroll = *max_scroll;
@@ -326,7 +451,8 @@ fn ui_reducer(
         Action::ScrollPageDown => {
             // Shortcuts panel - page down (10 lines)
             if state.show_shortcuts {
-                state.shortcuts_scroll = (state.shortcuts_scroll + 10).min(state.shortcuts_max_scroll);
+                state.shortcuts_scroll =
+                    (state.shortcuts_scroll + 10).min(state.shortcuts_max_scroll);
                 recompute_shortcuts_panel_view_model(&mut state, theme);
             }
             // Otherwise, no-op (handled by other panels)
@@ -342,7 +468,8 @@ fn ui_reducer(
         Action::ScrollHalfPageDown => {
             // Shortcuts panel - half page down (5 lines)
             if state.show_shortcuts {
-                state.shortcuts_scroll = (state.shortcuts_scroll + 5).min(state.shortcuts_max_scroll);
+                state.shortcuts_scroll =
+                    (state.shortcuts_scroll + 5).min(state.shortcuts_max_scroll);
                 recompute_shortcuts_panel_view_model(&mut state, theme);
             }
             // Otherwise, no-op (handled by other panels)
@@ -942,18 +1069,42 @@ fn repos_reducer(
 
         // Semantic navigation actions - translate to PR table actions
         Action::NavigateNext => {
-            return repos_reducer(state, &Action::NavigateToNextPr, config, theme, infrastructure);
+            return repos_reducer(
+                state,
+                &Action::NavigateToNextPr,
+                config,
+                theme,
+                infrastructure,
+            );
         }
         Action::NavigatePrevious => {
-            return repos_reducer(state, &Action::NavigateToPreviousPr, config, theme, infrastructure);
+            return repos_reducer(
+                state,
+                &Action::NavigateToPreviousPr,
+                config,
+                theme,
+                infrastructure,
+            );
         }
         Action::NavigateLeft => {
             // Left arrow - navigate to previous repo tab
-            return repos_reducer(state, &Action::SelectPreviousRepo, config, theme, infrastructure);
+            return repos_reducer(
+                state,
+                &Action::SelectPreviousRepo,
+                config,
+                theme,
+                infrastructure,
+            );
         }
         Action::NavigateRight => {
             // Right arrow - navigate to next repo tab
-            return repos_reducer(state, &Action::SelectNextRepo, config, theme, infrastructure);
+            return repos_reducer(
+                state,
+                &Action::SelectNextRepo,
+                config,
+                theme,
+                infrastructure,
+            );
         }
 
         Action::NavigateToNextPr => {
@@ -1079,6 +1230,26 @@ fn repos_reducer(
                 // First dispatch action to update state immediately
 
                 // Then start background monitoring
+            }
+        }
+        Action::PrBuildStatusUpdated(repo_index, pr_number, status) => {
+            // Update PR build status in repo_data
+            if let Some(data) = state.repo_data.get_mut(repo_index)
+                && let Some(pr) = data.prs.iter_mut().find(|p| p.number == *pr_number)
+            {
+                pr.mergeable = *status;
+            }
+
+            // Sync legacy fields if this is the selected repo
+            if *repo_index == state.selected_repo
+                && let Some(pr) = state.prs.iter_mut().find(|p| p.number == *pr_number)
+            {
+                pr.mergeable = *status;
+            }
+
+            // Recompute view model if this is the selected repo (status changed)
+            if *repo_index == state.selected_repo {
+                recompute_pr_table_view_model(&mut state, theme);
             }
         }
         Action::RebaseStatusUpdated(repo_index, pr_number, needs_rebase) => {
@@ -1999,11 +2170,18 @@ mod tests {
         let (new_state, _effects) = reduce(state, &Action::Bootstrap);
 
         // After bootstrap, capabilities should be initialized to PR table (default panel)
-        assert!(new_state.ui.active_panel_capabilities.supports_vim_navigation());
-        assert!(new_state
-            .ui
-            .active_panel_capabilities
-            .contains(PanelCapabilities::ITEM_NAVIGATION));
+        assert!(
+            new_state
+                .ui
+                .active_panel_capabilities
+                .supports_vim_navigation()
+        );
+        assert!(
+            new_state
+                .ui
+                .active_panel_capabilities
+                .contains(PanelCapabilities::ITEM_NAVIGATION)
+        );
     }
 
     #[test]
@@ -2015,11 +2193,18 @@ mod tests {
 
         // Should now have shortcuts panel capabilities
         assert!(new_state.ui.show_shortcuts);
-        assert!(new_state.ui.active_panel_capabilities.supports_vim_navigation());
-        assert!(new_state
-            .ui
-            .active_panel_capabilities
-            .contains(PanelCapabilities::VIM_SCROLL_BINDINGS));
+        assert!(
+            new_state
+                .ui
+                .active_panel_capabilities
+                .supports_vim_navigation()
+        );
+        assert!(
+            new_state
+                .ui
+                .active_panel_capabilities
+                .contains(PanelCapabilities::VIM_SCROLL_BINDINGS)
+        );
     }
 
     #[test]
@@ -2031,9 +2216,19 @@ mod tests {
 
         // Should have command palette capabilities
         assert!(new_state.ui.command_palette.is_some());
-        assert!(new_state.ui.active_panel_capabilities.supports_vim_navigation());
+        assert!(
+            new_state
+                .ui
+                .active_panel_capabilities
+                .supports_vim_navigation()
+        );
         // Command palette doesn't have scroll capabilities
-        assert!(!new_state.ui.active_panel_capabilities.supports_vim_vertical_scroll());
+        assert!(
+            !new_state
+                .ui
+                .active_panel_capabilities
+                .supports_vim_vertical_scroll()
+        );
     }
 
     #[test]
@@ -2045,12 +2240,24 @@ mod tests {
 
         // Should have debug console capabilities
         assert!(new_state.debug_console.is_open);
-        assert!(new_state.ui.active_panel_capabilities.supports_vim_navigation());
-        assert!(new_state.ui.active_panel_capabilities.supports_vim_vertical_scroll());
-        assert!(new_state
-            .ui
-            .active_panel_capabilities
-            .contains(PanelCapabilities::SCROLL_VERTICAL));
+        assert!(
+            new_state
+                .ui
+                .active_panel_capabilities
+                .supports_vim_navigation()
+        );
+        assert!(
+            new_state
+                .ui
+                .active_panel_capabilities
+                .supports_vim_vertical_scroll()
+        );
+        assert!(
+            new_state
+                .ui
+                .active_panel_capabilities
+                .contains(PanelCapabilities::SCROLL_VERTICAL)
+        );
     }
 
     #[test]
@@ -2081,13 +2288,25 @@ mod tests {
 
         // Should revert to PR table capabilities
         assert!(new_state.log_panel.panel.is_none());
-        assert!(new_state.ui.active_panel_capabilities.supports_vim_navigation());
-        assert!(new_state
-            .ui
-            .active_panel_capabilities
-            .contains(PanelCapabilities::ITEM_NAVIGATION));
+        assert!(
+            new_state
+                .ui
+                .active_panel_capabilities
+                .supports_vim_navigation()
+        );
+        assert!(
+            new_state
+                .ui
+                .active_panel_capabilities
+                .contains(PanelCapabilities::ITEM_NAVIGATION)
+        );
         // PR table doesn't have scroll capabilities
-        assert!(!new_state.ui.active_panel_capabilities.supports_vim_vertical_scroll());
+        assert!(
+            !new_state
+                .ui
+                .active_panel_capabilities
+                .supports_vim_vertical_scroll()
+        );
     }
 
     // Semantic Action Tests - UI Reducer
@@ -2297,7 +2516,8 @@ mod tests {
             },
         });
 
-        let (log_state, _effects) = log_panel_reducer(state, &Action::ScrollToTop, &crate::theme::Theme::default());
+        let (log_state, _effects) =
+            log_panel_reducer(state, &Action::ScrollToTop, &crate::theme::Theme::default());
 
         assert_eq!(log_state.panel.unwrap().scroll_offset, 0);
     }
@@ -2321,8 +2541,11 @@ mod tests {
             },
         });
 
-        let (log_state, _effects) =
-            log_panel_reducer(state, &Action::NavigateNext, &crate::theme::Theme::default());
+        let (log_state, _effects) = log_panel_reducer(
+            state,
+            &Action::NavigateNext,
+            &crate::theme::Theme::default(),
+        );
 
         // NavigateNext should delegate to ScrollLogPanelDown
         // Since the panel is empty, scroll_offset might not change, but the delegation happened
@@ -2352,8 +2575,11 @@ mod tests {
         state.scroll_offset = 0;
         state.auto_scroll = false;
 
-        let (console_state, _effects) =
-            debug_console_reducer(state, &Action::ScrollToBottom, &crate::theme::Theme::default());
+        let (console_state, _effects) = debug_console_reducer(
+            state,
+            &Action::ScrollToBottom,
+            &crate::theme::Theme::default(),
+        );
 
         assert!(console_state.auto_scroll); // Should enable auto-scroll
     }
@@ -2364,8 +2590,11 @@ mod tests {
         state.is_open = true;
         state.scroll_offset = 0;
 
-        let (console_state, _effects) =
-            debug_console_reducer(state, &Action::NavigateNext, &crate::theme::Theme::default());
+        let (console_state, _effects) = debug_console_reducer(
+            state,
+            &Action::NavigateNext,
+            &crate::theme::Theme::default(),
+        );
 
         // Should have tried to scroll down (delegates to ScrollDebugConsoleDown)
         // Offset might be clamped by view model, but auto_scroll should be disabled
@@ -2383,10 +2612,12 @@ mod tests {
         let (state_after_scroll, _) = reduce(state, &Action::ScrollShortcutsDown);
 
         // Should still have scroll capability
-        assert!(state_after_scroll
-            .ui
-            .active_panel_capabilities
-            .contains(PanelCapabilities::SCROLL_VERTICAL));
+        assert!(
+            state_after_scroll
+                .ui
+                .active_panel_capabilities
+                .contains(PanelCapabilities::SCROLL_VERTICAL)
+        );
     }
 
     #[test]
@@ -2406,7 +2637,17 @@ mod tests {
         let (new_state, _) = reduce(state, &Action::ShowCommandPalette);
 
         // Command palette should have priority (no scroll capabilities)
-        assert!(new_state.ui.active_panel_capabilities.supports_vim_navigation());
-        assert!(!new_state.ui.active_panel_capabilities.supports_vim_vertical_scroll());
+        assert!(
+            new_state
+                .ui
+                .active_panel_capabilities
+                .supports_vim_navigation()
+        );
+        assert!(
+            !new_state
+                .ui
+                .active_panel_capabilities
+                .supports_vim_vertical_scroll()
+        );
     }
 }

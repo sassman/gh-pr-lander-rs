@@ -1,6 +1,7 @@
 use crate::actions::Action;
 use crate::dispatcher::Dispatcher;
 use log::{Level, Metadata, Record};
+use std::fmt::Display;
 use std::sync::{Arc, Mutex};
 
 /// Custom logger that sends log messages to the debug console
@@ -41,17 +42,23 @@ impl log::Log for DebugConsoleLogger {
             return;
         }
 
-        let log_msg = format!("[{}] {}", record.level(), record.args());
+        // Create owned log record
+        let owned_record = OwnedLogRecord {
+            ts: std::time::SystemTime::now(),
+            level: record.level(),
+            target: record.target().to_string(),
+            message: format!("{}", record.args()),
+        };
 
         // If DEBUG=1, also print to stderr (won't interfere with TUI)
         if self.debug_mode {
-            eprintln!("{}", log_msg);
+            eprintln!("{}", owned_record);
         }
 
         // Send to debug console
         if let Ok(dispatcher) = self.dispatcher.lock() {
             if let Some(ref d) = *dispatcher {
-                d.dispatch(Action::DebugConsoleLogAdded(log_msg));
+                d.dispatch(Action::DebugConsoleLogAdded(owned_record));
             }
         }
     }
@@ -60,6 +67,7 @@ impl log::Log for DebugConsoleLogger {
 }
 
 use std::sync::OnceLock;
+use std::time::SystemTime;
 
 /// Global logger instance
 static LOGGER: OnceLock<DebugConsoleLogger> = OnceLock::new();
@@ -74,4 +82,21 @@ pub fn init() -> &'static DebugConsoleLogger {
     log::set_max_level(log::LevelFilter::Debug);
 
     logger
+}
+
+/// Owned log record (extracted from log::Record)
+#[derive(Debug, Clone)]
+pub struct OwnedLogRecord {
+    pub ts: SystemTime,
+    pub level: log::Level,
+    pub target: String,
+    pub message: String,
+}
+
+impl Display for OwnedLogRecord {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let datetime: chrono::DateTime<chrono::Local> = self.ts.into();
+        let timestamp = datetime.format("%H:%M:%S%.3f");
+        write!(f, "[{}] [{}] {}", timestamp, self.level, self.message)
+    }
 }

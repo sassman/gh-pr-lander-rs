@@ -16,8 +16,8 @@ use std::{
 };
 use tokio::sync::mpsc;
 
-// Import debug from the log crate using :: prefix to disambiguate from our log module
-use ::log::debug;
+// Import log macros from the log crate using :: prefix to disambiguate from our log module
+use ::log::{debug, info};
 
 use crate::actions::Action;
 use crate::config::Config;
@@ -80,7 +80,7 @@ fn shutdown() -> Result<()> {
     Ok(())
 }
 
-async fn update(app: &mut App, msg: Action) -> Result<Action> {
+async fn update(app: &mut App, msg: Action) {
     // When close PR popup is open, handle popup-specific actions
     let msg = if app.store.state().ui.close_pr_state.is_some() {
         match msg {
@@ -94,7 +94,7 @@ async fn update(app: &mut App, msg: Action) -> Result<Action> {
             Action::Quit => Action::HideClosePrPopup,
             // Ignore all other actions while popup is open
             _ => {
-                return Ok(Action::None);
+                return;
             }
         }
     } else if app.store.state().ui.show_add_repo {
@@ -109,19 +109,7 @@ async fn update(app: &mut App, msg: Action) -> Result<Action> {
             Action::Quit => Action::HideAddRepoPopup,
             _ => {
                 // Ignore all other actions when popup is open
-                return Ok(Action::None);
-            }
-        }
-    } else if app.store.state().ui.show_shortcuts {
-        // When shortcuts panel is open, remap navigation to shortcuts scrolling
-        match msg {
-            Action::NavigateToNextPr => Action::ScrollShortcutsDown,
-            Action::NavigateToPreviousPr => Action::ScrollShortcutsUp,
-            Action::ToggleShortcuts | Action::CloseLogPanel => msg,
-            Action::Quit => Action::ToggleShortcuts,
-            _ => {
-                // Ignore all other actions when shortcuts panel is open
-                return Ok(Action::None);
+                return;
             }
         }
     } else {
@@ -134,14 +122,7 @@ async fn update(app: &mut App, msg: Action) -> Result<Action> {
 
     // Dispatch through middleware chain, then reducer
     // Middleware can handle async operations and dispatch follow-up actions
-    let _effects = app.store.dispatch_async(msg, &dispatcher).await;
-
-    // MIGRATION COMPLETE: Effect system removed!
-    // All side effects are now handled by TaskMiddleware
-    // The effects vector above is always empty - kept for backward compatibility
-    // Future: Change dispatch_async() to return () instead of Vec<Effect>
-
-    Ok(Action::None)
+    app.store.dispatch_async(msg, &dispatcher).await;
 }
 
 fn start_event_handler(
@@ -205,7 +186,10 @@ async fn run_with_log_buffer(log_buffer: log_capture::LogBuffer) -> Result<()> {
 
     let (action_tx, mut action_rx) = mpsc::unbounded_channel();
 
-    let mut app = App::new(action_tx.clone(), log_buffer);
+    // Create should_quit flag for shutdown signaling
+    let should_quit = Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+    let mut app = App::new(action_tx.clone(), log_buffer, should_quit.clone());
 
     // Create shared state for close PR popup (synced in main loop)
     let show_close_pr_shared = Arc::new(Mutex::new(false));
@@ -262,31 +246,22 @@ async fn run_with_log_buffer(log_buffer: log_capture::LogBuffer) -> Result<()> {
 
         match maybe_action {
             Ok(Some(action)) => {
-                if let Err(err) = update(&mut app, action).await {
-                    debug!("Fatal error updating app: {}", err);
-                    // Dispatch fatal error action (Redux)
-                    let _ = app.action_tx.send(Action::FatalError(err.to_string()));
-                }
+                update(&mut app, action).await;
             }
-            Ok(None) => break, // Channel closed
+            Ok(None) => {
+                // Channel closed - this shouldn't happen in normal operation
+                info!("Action channel closed unexpectedly, exiting main loop");
+                break;
+            }
             Err(_) => {
-                // Timeout - tick spinner animation (maintains clean architecture without blocking progress)
-                let _ = app.action_tx.send(Action::TickSpinner);
-                // Also step the merge bot if it's running (Redux action)
-                if app.store.state().merge_bot.bot.is_running() {
-                    let _ = app.action_tx.send(Action::MergeBotTick);
-                }
+                // Timeout - no action received in 100ms
+                // Note: Periodic tasks (TickSpinner, MergeBotTick) are now handled by middleware
             }
         }
 
-        if app.store.state().ui.should_quit {
-            store_recent_repos(&app.store.state().repos.recent_repos)?;
-            if let Some(repo) = app.repo().cloned() {
-                let persisted_state = PersistedState {
-                    selected_repo: repo,
-                };
-                store_persisted_state(&persisted_state)?;
-            }
+        // Check should_quit flag set by ShutdownMiddleware
+        if should_quit.load(std::sync::atomic::Ordering::SeqCst) {
+            info!("Shutdown flag set, exiting main loop");
             break;
         }
     }
@@ -413,7 +388,11 @@ async fn main() -> Result<()> {
 }
 
 impl App {
-    fn new(action_tx: mpsc::UnboundedSender<Action>, log_buffer: log_capture::LogBuffer) -> App {
+    fn new(
+        action_tx: mpsc::UnboundedSender<Action>,
+        log_buffer: log_capture::LogBuffer,
+        should_quit: Arc<std::sync::atomic::AtomicBool>,
+    ) -> App {
         // Initialize Redux store with default state
         let theme = Theme::default();
 
@@ -433,6 +412,7 @@ impl App {
             config: Config::load(),
             theme: theme.clone(),
             infra: InfrastructureState::default(),
+            panel_stack: vec![], // Will be initialized during Bootstrap action
         };
 
         // Initialize splash screen view model for first render
@@ -456,13 +436,24 @@ impl App {
         let mut store = Store::new(initial_state);
 
         // Add middleware in order (first added = first called)
-        // 1. Logging middleware - logs all actions for debugging
+        // 1. Shutdown middleware - handles graceful shutdown (must be first to intercept Quit/FatalError)
+        store.add_middleware(crate::middleware::ShutdownMiddleware::new(
+            should_quit.clone(),
+        ));
+
+        // 2. Logging middleware - logs all actions for debugging
         store.add_middleware(crate::middleware::LoggingMiddleware::new());
 
-        // 2. Keyboard middleware - translates key events to semantic actions based on capabilities
+        // 3. Splash screen middleware - manages splash screen lifecycle and spinner animation
+        store.add_middleware(crate::middleware::SplashScreenMiddleware::new());
+
+        // 4. Merge bot middleware - manages merge bot lifecycle and periodic ticking
+        store.add_middleware(crate::middleware::MergeBotMiddleware::new());
+
+        // 5. Keyboard middleware - translates key events to semantic actions based on capabilities
         store.add_middleware(crate::middleware::KeyboardMiddleware::new());
 
-        // 3. Task middleware - handles async operations (replaces Effect system)
+        // 6. Task middleware - handles async operations (replaces Effect system)
         store.add_middleware(crate::middleware::TaskMiddleware::new(cache));
 
         App { store, action_tx }

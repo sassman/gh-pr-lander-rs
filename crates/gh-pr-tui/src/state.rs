@@ -7,6 +7,25 @@ use std::{
 use crate::{config::Config, log::LogPanel, merge_bot::MergeBot, pr::Pr, theme::Theme};
 use gh_pr_tui_command_palette::CommandItem;
 
+/// Identifies which panel/popup is currently active
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ActivePanel {
+    /// Main PR table (base layer)
+    PrTable,
+    /// Shortcuts help panel
+    Shortcuts,
+    /// Debug console (Quake-style drop-down)
+    DebugConsole,
+    /// Build logs panel
+    LogPanel,
+    /// Add repository popup
+    AddRepoPopup,
+    /// Close PR popup
+    ClosePrPopup,
+    /// Command palette
+    CommandPalette,
+}
+
 /// Root application state following Redux pattern
 #[derive(Debug, Clone, Default)]
 pub struct AppState {
@@ -21,6 +40,10 @@ pub struct AppState {
 
     /// Infrastructure state
     pub infra: InfrastructureState,
+
+    /// Stack of active panels (topmost = currently visible/focused)
+    /// Used for context-aware Close action handling
+    pub panel_stack: Vec<ActivePanel>,
 }
 
 /// Infrastructure state (GitHub client, etc.)
@@ -54,7 +77,6 @@ pub struct UiState {
     pub shortcuts_panel_view_model:
         Option<crate::view_models::shortcuts_panel::ShortcutsPanelViewModel>,
     pub spinner_frame: usize,
-    pub should_quit: bool,
     pub show_add_repo: bool,
     pub add_repo_form: AddRepoForm,
     /// Shared state for event handler to know if add repo popup is open
@@ -394,7 +416,6 @@ impl Default for UiState {
             shortcuts_max_scroll: 0,
             shortcuts_panel_view_model: None,
             spinner_frame: 0,
-            should_quit: false,
             show_add_repo: false,
             add_repo_form: AddRepoForm::default(),
             show_add_repo_shared: Arc::new(Mutex::new(false)),

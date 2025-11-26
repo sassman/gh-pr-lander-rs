@@ -10,6 +10,7 @@ use ratatui::{
 use std::io;
 
 mod actions;
+mod capabilities;
 mod dispatcher;
 mod logger;
 mod middleware;
@@ -22,7 +23,10 @@ mod view_models;
 mod views;
 
 use actions::Action;
-use middleware::{keyboard::KeyboardMiddleware, logging::LoggingMiddleware};
+use middleware::{
+    bootstrap::BootstrapMiddleware, keyboard::KeyboardMiddleware, logging::LoggingMiddleware,
+    repository::RepositoryMiddleware,
+};
 use state::AppState;
 use store::Store;
 
@@ -44,7 +48,9 @@ fn main() -> io::Result<()> {
 
     // Add middleware in order (they execute in this order)
     store.add_middleware(Box::new(LoggingMiddleware::new()));
+    store.add_middleware(Box::new(BootstrapMiddleware::new()));
     store.add_middleware(Box::new(KeyboardMiddleware::new()));
+    store.add_middleware(Box::new(RepositoryMiddleware::new()));
 
     // Connect logger to dispatcher (so logs can be sent to debug console)
     logger.set_dispatcher(store.dispatcher().clone());
@@ -69,7 +75,16 @@ fn run_app(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     store: &mut Store,
 ) -> io::Result<()> {
+    // Start bootstrap process
+    store.dispatch(Action::BootstrapStart);
+
     loop {
+        // Process any pending actions from background threads
+        let pending = store.dispatcher().drain();
+        for action in pending {
+            store.dispatch(action);
+        }
+
         // Render
         terminal.draw(|mut frame| {
             let area = frame.area();

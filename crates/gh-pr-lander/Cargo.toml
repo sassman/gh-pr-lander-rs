@@ -6,3 +6,5 @@ edition = "2021"
 [dependencies]
 ratatui = { version = "0.29", features = ["crossterm"] }
 log = "0.4"
+bitflags = "2.6"
+chrono = "0.4"

@@ -44,12 +44,18 @@ use std::pin::Pin;
 mod dispatcher;
 mod keyboard;
 mod logging;
+mod merge_bot;
+mod shutdown;
+mod splash_screen;
 mod task;
 
 // Re-exports
 pub use dispatcher::Dispatcher;
 pub use keyboard::KeyboardMiddleware;
 pub use logging::LoggingMiddleware;
+pub use merge_bot::MergeBotMiddleware;
+pub use shutdown::ShutdownMiddleware;
+pub use splash_screen::SplashScreenMiddleware;
 pub use task::TaskMiddleware;
 
 /// BoxFuture type alias for async middleware handlers
@@ -140,9 +146,7 @@ mod tests {
         let dispatcher = Dispatcher::new(tx);
         let state = AppState::default();
 
-        let should_continue = middleware
-            .handle(&Action::None, &state, &dispatcher)
-            .await;
+        let should_continue = middleware.handle(&Action::None, &state, &dispatcher).await;
 
         assert!(should_continue);
         assert!(middleware.called);

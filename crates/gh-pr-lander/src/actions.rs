@@ -1,6 +1,6 @@
 use ratatui::crossterm::event::KeyEvent;
 
-use crate::state::ActiveView;
+use crate::{logger::OwnedLogRecord, state::ActiveView};
 
 /// Actions represent all possible state changes in the application.
 /// Actions are prefixed by scope to indicate which part of the app they affect.
@@ -16,15 +16,29 @@ pub enum Action {
     LocalKeyPressed(char), // Key pressed in active view context
 
     // Navigation actions (semantic, vim-style)
-    NavNext,      // j, down arrow
-    NavPrevious,  // k, up arrow
-    NavLeft,      // h, left arrow
-    NavRight,     // l, right arrow
-    NavJumpToEnd, // G
+    NavigateNext,     // j, down arrow
+    NavigatePrevious, // k, up arrow
+    NavigateLeft,     // h, left arrow
+    NavigateRight,    // l, right arrow
+
+    // Scroll actions
+    ScrollToTop,        // gg
+    ScrollToBottom,     // G
+    ScrollPageDown,     // Page Down
+    ScrollPageUp,       // Page Up
+    ScrollHalfPageDown, // Ctrl+d
+    ScrollHalfPageUp,   // Ctrl+u
 
     // Debug console actions
-    DebugConsoleClear,            // Clear debug console logs
-    DebugConsoleLogAdded(String), // New log message added
+    DebugConsoleClear,                    // Clear debug console logs
+    DebugConsoleLogAdded(OwnedLogRecord), // New log record added
+
+    // Bootstrap actions
+    BootstrapStart,
+    BootstrapEnd,
+
+    // Animation/Timer actions
+    Tick, // Periodic tick for animations (500ms interval)
 
     // No-op action
     None,

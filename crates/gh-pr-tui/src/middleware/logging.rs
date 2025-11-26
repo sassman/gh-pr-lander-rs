@@ -29,8 +29,17 @@ impl Middleware for LoggingMiddleware {
         _dispatcher: &'a Dispatcher,
     ) -> BoxFuture<'a, bool> {
         Box::pin(async move {
-            // Log the action (skip None to reduce noise)
-            if !matches!(action, Action::None) {
+            // Log the action (skip noise actions to reduce clutter)
+            if !matches!(
+                action,
+                Action::None
+                    | Action::TickSpinner
+                    | Action::MergeBotTick
+                    | Action::UpdateLogPanelViewport(_)
+                    | Action::UpdateDebugConsoleViewport(_)
+                    | Action::UpdateShortcutsMaxScroll(_)
+                    | Action::ResetForceRedraw
+            ) {
                 log::debug!("Action: {:?}", action);
             }
             // Always continue to next middleware
