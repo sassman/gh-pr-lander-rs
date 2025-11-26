@@ -9,7 +9,8 @@
 use crate::dispatcher::Dispatcher;
 use crate::middleware::Middleware;
 use crate::state::AppState;
-use crate::{actions::Action, state::ActiveView};
+use crate::actions::Action;
+use crate::views::{DebugConsoleView, MainView, ViewId};
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::time::{Duration, Instant};
 
@@ -155,11 +156,10 @@ impl KeyboardMiddleware {
 
                 // Backtick toggles debug console
                 '`' => {
-                    let same_view = ActiveView::DebugConsole;
-                    if state.active_view != same_view {
-                        dispatcher.dispatch(Action::GlobalActivateView(same_view));
+                    if state.active_view.view_id() != ViewId::DebugConsole {
+                        dispatcher.dispatch(Action::GlobalActivateView(Box::new(DebugConsoleView::new())));
                     } else {
-                        dispatcher.dispatch(Action::GlobalActivateView(ActiveView::Main));
+                        dispatcher.dispatch(Action::GlobalActivateView(Box::new(MainView::new())));
                     }
                     return false;
                 }
@@ -271,7 +271,6 @@ impl Middleware for KeyboardMiddleware {
         // Only intercept GlobalKeyPressed actions
         if let Action::GlobalKeyPressed(key) = action {
             // Get capabilities from the active view via the View trait
-            use crate::views::View;
             let capabilities = state.active_view.capabilities(state);
             log::debug!(
                 "KeyboardMiddleware: key={:?}, capabilities={:?}",

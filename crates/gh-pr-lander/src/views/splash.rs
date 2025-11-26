@@ -1,5 +1,7 @@
-use crate::state::SplashState;
+use crate::capabilities::PanelCapabilities;
+use crate::state::AppState;
 use crate::theme::Theme;
+use crate::views::View;
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::Stylize,
@@ -8,8 +10,42 @@ use ratatui::{
     Frame,
 };
 
+/// Splash screen view - shown during bootstrap
+#[derive(Debug, Clone)]
+pub struct SplashView;
+
+impl SplashView {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl View for SplashView {
+    fn view_id(&self) -> crate::views::ViewId {
+        crate::views::ViewId::Splash
+    }
+
+    fn render(&self, state: &AppState, area: Rect, f: &mut Frame) {
+        render_splash(&state.splash, &state.theme, area, f);
+    }
+
+    fn capabilities(&self, _state: &AppState) -> PanelCapabilities {
+        // Splash screen has no interactive capabilities
+        PanelCapabilities::empty()
+    }
+
+    fn clone_box(&self) -> Box<dyn View> {
+        Box::new(self.clone())
+    }
+}
+
 /// Render the splash screen with snake loading animation
-pub fn render(state: &SplashState, theme: &Theme, area: Rect, f: &mut Frame) {
+fn render_splash(
+    state: &crate::state::SplashState,
+    theme: &Theme,
+    area: Rect,
+    f: &mut Frame,
+) {
     // Full screen background
     let background_block = Block::default().style(theme.panel_background());
     f.render_widget(background_block, area);

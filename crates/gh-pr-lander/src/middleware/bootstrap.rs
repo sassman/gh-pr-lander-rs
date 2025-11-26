@@ -29,6 +29,7 @@ impl Middleware for BootstrapMiddleware {
                     *started = true;
 
                     let dispatcher_clone = dispatcher.clone();
+                    let should_continue = self.tick_thread_started.clone();
 
                     // Spawn tick generation thread
                     thread::spawn(move || {
@@ -36,6 +37,10 @@ impl Middleware for BootstrapMiddleware {
                         let mut last_tick = Instant::now();
 
                         loop {
+                            if *should_continue.lock().unwrap() != true {
+                                log::debug!("Bootstrap: Tick thread terminating");
+                                break;
+                            }
                             // Wait for next tick
                             let now = Instant::now();
                             let elapsed = now.duration_since(last_tick);
@@ -52,6 +57,15 @@ impl Middleware for BootstrapMiddleware {
 
                     log::debug!("Bootstrap: Tick thread started");
                 }
+
+                // Pass through
+                true
+            }
+            Action::BootstrapEnd => {
+                // Stop the tick thread
+                let mut started = self.tick_thread_started.lock().unwrap();
+                *started = false;
+                log::debug!("Bootstrap: Received BootstrapEnd, stopping tick thread");
 
                 // Pass through
                 true

@@ -1,12 +1,5 @@
 use crate::logger::OwnedLogRecord;
-
-/// Identifies which view is currently active
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ActiveView {
-    Splash,
-    Main,
-    DebugConsole,
-}
+use crate::views::{SplashView, View};
 
 /// Debug console state
 #[derive(Debug, Clone)]
@@ -43,20 +36,43 @@ impl Default for SplashState {
 }
 
 /// Application state
-#[derive(Debug, Clone)]
 pub struct AppState {
     pub running: bool,
-    pub active_view: ActiveView,
+    pub active_view: Box<dyn View>,
     pub splash: SplashState,
     pub debug_console: DebugConsoleState,
     pub theme: crate::theme::Theme,
+}
+
+impl std::fmt::Debug for AppState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AppState")
+            .field("running", &self.running)
+            .field("active_view", &self.active_view)
+            .field("splash", &self.splash)
+            .field("debug_console", &self.debug_console)
+            .field("theme", &"<theme>")
+            .finish()
+    }
+}
+
+impl Clone for AppState {
+    fn clone(&self) -> Self {
+        Self {
+            running: self.running,
+            active_view: self.active_view.clone(),
+            splash: self.splash.clone(),
+            debug_console: self.debug_console.clone(),
+            theme: self.theme.clone(),
+        }
+    }
 }
 
 impl Default for AppState {
     fn default() -> Self {
         Self {
             running: true,
-            active_view: ActiveView::Splash,
+            active_view: Box::new(SplashView::new()),
             splash: SplashState::default(),
             debug_console: DebugConsoleState::default(),
             theme: crate::theme::Theme::default(),

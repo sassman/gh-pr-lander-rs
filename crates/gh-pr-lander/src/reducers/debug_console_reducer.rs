@@ -1,12 +1,13 @@
 use crate::actions::Action;
 use crate::capabilities::{PanelCapabilities, PanelCapabilityProvider};
-use crate::state::{ActiveView, DebugConsoleState};
+use crate::state::DebugConsoleState;
+use crate::views::ViewId;
 
 /// Reducer for debug console state
 pub fn reduce(mut state: DebugConsoleState, action: &Action) -> DebugConsoleState {
     let is_active = state.visible;
     match action {
-        Action::GlobalActivateView(ActiveView::DebugConsole) => {
+        Action::GlobalActivateView(view) if view.view_id() == ViewId::DebugConsole => {
             state.visible = true;
         }
         Action::GlobalActivateView(_) => {
