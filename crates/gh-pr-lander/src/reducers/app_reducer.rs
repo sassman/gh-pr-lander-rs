@@ -1,5 +1,6 @@
 use crate::actions::Action;
-use crate::reducers::{debug_console_reducer, splash_reducer};
+use crate::commands::{filter_commands, get_all_commands};
+use crate::reducers::{command_palette_reducer, debug_console_reducer, splash_reducer};
 use crate::state::AppState;
 use crate::views::MainView;
 
@@ -79,12 +80,31 @@ pub fn reduce(mut state: AppState, action: &Action) -> AppState {
                 state.main_view.selected_repository
             );
         }
+        Action::CommandPaletteExecute => {
+            // Execute the currently selected command
+            let all_commands = get_all_commands();
+            let filtered = filter_commands(&all_commands, &state.command_palette.query);
+
+            if let Some(cmd) = filtered.get(state.command_palette.selected_index) {
+                log::debug!("Executing command: {}", cmd.title);
+                // Close the command palette first
+                if state.view_stack.last().map(|v| v.view_id()) == Some(crate::views::ViewId::CommandPalette) {
+                    state.view_stack.pop();
+                }
+                // Reset command palette state
+                state.command_palette.query.clear();
+                state.command_palette.selected_index = 0;
+                // Dispatch the command's action by recursively calling reduce
+                return reduce(state, &cmd.action);
+            }
+        }
         _ => {}
     }
 
     // Run sub-reducers for component-specific actions
     state.splash = splash_reducer::reduce(state.splash, action);
     state.debug_console = debug_console_reducer::reduce(state.debug_console, action);
+    state.command_palette = command_palette_reducer::reduce(state.command_palette, action);
 
     // Note: Capabilities are now computed on-demand via the View trait
     // instead of being stored in state

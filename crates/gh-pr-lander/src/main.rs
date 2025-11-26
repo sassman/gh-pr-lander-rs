@@ -11,6 +11,7 @@ use std::io;
 
 mod actions;
 mod capabilities;
+mod commands;
 mod dispatcher;
 mod logger;
 mod middleware;

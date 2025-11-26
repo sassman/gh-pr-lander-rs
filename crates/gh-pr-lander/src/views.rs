@@ -3,11 +3,13 @@ use crate::state::AppState;
 use ratatui::{layout::Rect, Frame};
 
 // New view modules (concrete view types)
+pub mod command_palette;
 pub mod debug_console;
 pub mod main;
 pub mod splash;
 
 // Re-export concrete view types for convenience
+pub use command_palette::CommandPaletteView;
 pub use debug_console::DebugConsoleView;
 pub use main::MainView;
 pub use splash::SplashView;
@@ -18,6 +20,7 @@ pub enum ViewId {
     Splash,
     Main,
     DebugConsole,
+    CommandPalette,
 }
 
 /// View trait - defines the interface that all views must implement

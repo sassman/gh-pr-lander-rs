@@ -49,6 +49,22 @@ impl Default for MainViewState {
     }
 }
 
+/// Command palette state
+#[derive(Debug, Clone)]
+pub struct CommandPaletteState {
+    pub query: String,          // Search query
+    pub selected_index: usize,  // Currently selected command index
+}
+
+impl Default for CommandPaletteState {
+    fn default() -> Self {
+        Self {
+            query: String::new(),
+            selected_index: 0,
+        }
+    }
+}
+
 /// Application state
 pub struct AppState {
     pub running: bool,
@@ -58,6 +74,7 @@ pub struct AppState {
     pub splash: SplashState,
     pub main_view: MainViewState,
     pub debug_console: DebugConsoleState,
+    pub command_palette: CommandPaletteState,
     pub theme: crate::theme::Theme,
 }
 
@@ -78,6 +95,7 @@ impl std::fmt::Debug for AppState {
             .field("splash", &self.splash)
             .field("main_view", &self.main_view)
             .field("debug_console", &self.debug_console)
+            .field("command_palette", &self.command_palette)
             .field("theme", &"<theme>")
             .finish()
     }
@@ -91,6 +109,7 @@ impl Clone for AppState {
             splash: self.splash.clone(),
             main_view: self.main_view.clone(),
             debug_console: self.debug_console.clone(),
+            command_palette: self.command_palette.clone(),
             theme: self.theme.clone(),
         }
     }
@@ -104,6 +123,7 @@ impl Default for AppState {
             splash: SplashState::default(),
             main_view: MainViewState::default(),
             debug_console: DebugConsoleState::default(),
+            command_palette: CommandPaletteState::default(),
             theme: crate::theme::Theme::default(),
         }
     }

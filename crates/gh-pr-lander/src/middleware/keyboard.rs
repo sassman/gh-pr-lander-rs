@@ -10,7 +10,7 @@ use crate::actions::Action;
 use crate::dispatcher::Dispatcher;
 use crate::middleware::Middleware;
 use crate::state::AppState;
-use crate::views::{DebugConsoleView, ViewId};
+use crate::views::{CommandPaletteView, DebugConsoleView, ViewId};
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::time::{Duration, Instant};
 
@@ -98,6 +98,11 @@ impl KeyboardMiddleware {
                         dispatcher.dispatch(Action::GlobalQuit);
                         return false;
                     }
+                    'p' => {
+                        // Toggle command palette
+                        dispatcher.dispatch(Action::PushView(Box::new(CommandPaletteView::new())));
+                        return false;
+                    }
                     'd' if capabilities.contains(PanelCapabilities::VIM_SCROLL_BINDINGS) => {
                         dispatcher.dispatch(Action::ScrollHalfPageDown);
                         return false;
@@ -166,7 +171,14 @@ impl KeyboardMiddleware {
                 // Any other character clears sequence and dispatches as LocalKeyPressed
                 _ => {
                     self.clear_sequence();
-                    dispatcher.dispatch(Action::LocalKeyPressed(c));
+                    // If in command palette, update the query
+                    if active_view_id == ViewId::CommandPalette {
+                        let mut new_query = state.command_palette.query.clone();
+                        new_query.push(c);
+                        dispatcher.dispatch(Action::CommandPaletteUpdateQuery(new_query));
+                    } else {
+                        dispatcher.dispatch(Action::LocalKeyPressed(c));
+                    }
                     return false;
                 }
             }
@@ -174,8 +186,31 @@ impl KeyboardMiddleware {
 
         // Handle Escape key - universal close action
         if let KeyCode::Esc = key.code {
+            // If in command palette, clear query first, then close on second Esc
+            if active_view_id == ViewId::CommandPalette && !state.command_palette.query.is_empty() {
+                dispatcher.dispatch(Action::CommandPaletteClear);
+                return false;
+            }
             dispatcher.dispatch(Action::GlobalClose);
             return false;
+        }
+
+        // Handle Enter key
+        if let KeyCode::Enter = key.code {
+            if active_view_id == ViewId::CommandPalette {
+                dispatcher.dispatch(Action::CommandPaletteExecute);
+                return false;
+            }
+        }
+
+        // Handle Backspace key
+        if let KeyCode::Backspace = key.code {
+            if active_view_id == ViewId::CommandPalette && !state.command_palette.query.is_empty() {
+                let mut new_query = state.command_palette.query.clone();
+                new_query.pop();
+                dispatcher.dispatch(Action::CommandPaletteUpdateQuery(new_query));
+                return false;
+            }
         }
 
         // Handle Tab/Shift+Tab for repository navigation in MainView

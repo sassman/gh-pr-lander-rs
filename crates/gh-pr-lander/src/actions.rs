@@ -42,6 +42,11 @@ pub enum Action {
     DebugConsoleClear, // Clear debug console logs
     DebugConsoleLogAdded(OwnedLogRecord), // New log record added
 
+    /// ## Command palette actions
+    CommandPaletteUpdateQuery(String), // Update search query
+    CommandPaletteExecute,             // Execute selected command
+    CommandPaletteClear,               // Clear query and reset
+
     /// ## Bootstrap actions
     BootstrapStart,
     BootstrapEnd,
@@ -76,6 +81,11 @@ impl Clone for Action {
             Self::ScrollHalfPageUp => Self::ScrollHalfPageUp,
             Self::DebugConsoleClear => Self::DebugConsoleClear,
             Self::DebugConsoleLogAdded(record) => Self::DebugConsoleLogAdded(record.clone()),
+            Self::CommandPaletteUpdateQuery(query) => {
+                Self::CommandPaletteUpdateQuery(query.clone())
+            }
+            Self::CommandPaletteExecute => Self::CommandPaletteExecute,
+            Self::CommandPaletteClear => Self::CommandPaletteClear,
             Self::BootstrapStart => Self::BootstrapStart,
             Self::BootstrapEnd => Self::BootstrapEnd,
             Self::Tick => Self::Tick,
@@ -109,6 +119,12 @@ impl std::fmt::Debug for Action {
             Self::DebugConsoleLogAdded(record) => {
                 f.debug_tuple("DebugConsoleLogAdded").field(record).finish()
             }
+            Self::CommandPaletteUpdateQuery(query) => f
+                .debug_tuple("CommandPaletteUpdateQuery")
+                .field(query)
+                .finish(),
+            Self::CommandPaletteExecute => write!(f, "CommandPaletteExecute"),
+            Self::CommandPaletteClear => write!(f, "CommandPaletteClear"),
             Self::BootstrapStart => write!(f, "BootstrapStart"),
             Self::BootstrapEnd => write!(f, "BootstrapEnd"),
             Self::Tick => write!(f, "Tick"),
