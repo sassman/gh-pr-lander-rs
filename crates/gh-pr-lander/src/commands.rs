@@ -11,6 +11,7 @@ pub struct Command {
     pub title: String,
     pub description: String,
     pub category: String,
+    pub shortcut_hint: Option<String>,
     pub action: Action,
 }
 
@@ -25,12 +26,14 @@ pub fn get_all_commands() -> Vec<Command> {
             title: "Toggle debug console".to_string(),
             description: "Show or hide the debug console".to_string(),
             category: "Debug".to_string(),
+            shortcut_hint: Some("`".to_string()),
             action: Action::PushView(Box::new(crate::views::DebugConsoleView::new())),
         },
         Command {
             title: "Clear debug logs".to_string(),
             description: "Clear all debug console logs".to_string(),
             category: "Debug".to_string(),
+            shortcut_hint: None,
             action: Action::DebugConsoleClear,
         },
         // Navigation category
@@ -38,12 +41,14 @@ pub fn get_all_commands() -> Vec<Command> {
             title: "Next repository".to_string(),
             description: "Switch to the next repository".to_string(),
             category: "Navigation".to_string(),
+            shortcut_hint: Some("Tab".to_string()),
             action: Action::RepositoryNext,
         },
         Command {
             title: "Previous repository".to_string(),
             description: "Switch to the previous repository".to_string(),
             category: "Navigation".to_string(),
+            shortcut_hint: Some("Shift+Tab".to_string()),
             action: Action::RepositoryPrevious,
         },
         // General category
@@ -51,12 +56,14 @@ pub fn get_all_commands() -> Vec<Command> {
             title: "Quit application".to_string(),
             description: "Exit the application".to_string(),
             category: "General".to_string(),
+            shortcut_hint: Some("q / Ctrl+C".to_string()),
             action: Action::GlobalQuit,
         },
         Command {
             title: "Close current view".to_string(),
             description: "Close the current view or panel".to_string(),
             category: "General".to_string(),
+            shortcut_hint: Some("Esc / q".to_string()),
             action: Action::GlobalClose,
         },
     ]
