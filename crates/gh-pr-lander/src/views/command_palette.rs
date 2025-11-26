@@ -3,10 +3,10 @@ use crate::commands::{filter_commands, get_all_commands};
 use crate::state::AppState;
 use crate::views::View;
 use ratatui::{
-    layout::{Alignment, Constraint, Direction, Layout, Rect},
+    layout::{Alignment, Constraint, Direction, Layout, Margin, Rect},
     style::{Modifier, Stylize},
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, List, ListItem, Paragraph},
+    widgets::{Block, Borders, Cell, Clear, Paragraph, Row, Table, Wrap},
     Frame,
 };
 
@@ -44,83 +44,111 @@ impl View for CommandPaletteView {
 fn render(state: &AppState, area: Rect, f: &mut Frame) {
     let theme = &state.theme;
 
-    // Calculate centered area (60% width, 70% height)
-    let palette_width = (area.width * 60 / 100).max(50);
-    let palette_height = (area.height * 70 / 100).max(20);
-    let palette_x = (area.width.saturating_sub(palette_width)) / 2;
-    let palette_y = (area.height.saturating_sub(palette_height)) / 2;
-
-    let palette_area = Rect {
-        x: area.x + palette_x,
-        y: area.y + palette_y,
-        width: palette_width,
-        height: palette_height,
-    };
-
-    // Clear the area behind the palette
-    f.render_widget(Clear, palette_area);
-
-    // Create main block
-    let block = Block::default()
-        .title(" Command Palette ")
-        .borders(Borders::ALL)
-        .border_style(theme.panel_border().add_modifier(Modifier::BOLD))
-        .title_style(theme.panel_title().add_modifier(Modifier::BOLD))
-        .style(theme.panel_background());
-
-    // Split into search input area and results area
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(3), // Search input
-            Constraint::Min(0),    // Results list
-        ])
-        .split(block.inner(palette_area));
-
-    f.render_widget(block, palette_area);
-
-    // Render search input
-    let query_text = if state.command_palette.query.is_empty() {
-        Span::styled("Type to search commands...", theme.muted())
-    } else {
-        Span::styled(&state.command_palette.query, theme.text())
-    };
-
-    let search_input = Paragraph::new(Line::from(vec![
-        Span::styled("> ", theme.success().bold()),
-        query_text,
-    ]))
-    .style(theme.panel_background())
-    .block(
-        Block::default()
-            .borders(Borders::BOTTOM)
-            .border_style(theme.panel_border()),
-    );
-
-    f.render_widget(search_input, chunks[0]);
-
     // Get all commands and filter by query
     let all_commands = get_all_commands();
     let filtered_commands = filter_commands(&all_commands, &state.command_palette.query);
 
-    // Render command list
-    if filtered_commands.is_empty() {
-        let no_results = Paragraph::new(vec![
-            Line::from(""),
-            Line::from(Span::styled(
-                "No commands found",
-                theme.muted().italic(),
-            )),
+    // Calculate centered area (70% width, 60% height)
+    let popup_width = (area.width * 70 / 100).min(100);
+    let popup_height = (area.height * 60 / 100).min(30);
+    let popup_x = (area.width.saturating_sub(popup_width)) / 2;
+    let popup_y = (area.height.saturating_sub(popup_height)) / 2;
+
+    let popup_area = Rect {
+        x: area.x + popup_x,
+        y: area.y + popup_y,
+        width: popup_width,
+        height: popup_height,
+    };
+
+    // Clear the area behind the popup
+    f.render_widget(Clear, popup_area);
+
+    // Render background
+    f.render_widget(
+        Block::default().style(theme.panel_background()),
+        popup_area,
+    );
+
+    // Render border and title with command count
+    let title = format!(" Command Palette ({} commands) ", filtered_commands.len());
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(title)
+        .title_style(theme.panel_title().add_modifier(Modifier::BOLD))
+        .border_style(theme.panel_border().add_modifier(Modifier::BOLD))
+        .style(theme.panel_background());
+
+    f.render_widget(block, popup_area);
+
+    // Calculate inner area with margins
+    let inner = popup_area.inner(Margin {
+        horizontal: 2,
+        vertical: 1,
+    });
+
+    // Split into input area, results area, details area, and footer
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3), // Input box
+            Constraint::Min(5),    // Results list
+            Constraint::Length(2), // Details area
+            Constraint::Length(1), // Footer
         ])
-        .alignment(Alignment::Center);
+        .split(inner);
+
+    // Render input box
+    let input_text = if state.command_palette.query.is_empty() {
+        Line::from(vec![Span::styled(
+            "Type to search commands...",
+            theme.muted().italic(),
+        )])
+    } else {
+        Line::from(vec![Span::styled(&state.command_palette.query, theme.text())])
+    };
+
+    let input_paragraph = Paragraph::new(input_text)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(theme.panel_border())
+                .style(theme.panel_background()),
+        )
+        .style(theme.text());
+
+    f.render_widget(input_paragraph, chunks[0]);
+
+    // Render results list
+    if filtered_commands.is_empty() {
+        let no_results = Paragraph::new("No matching commands")
+            .style(theme.muted())
+            .alignment(Alignment::Center);
         f.render_widget(no_results, chunks[1]);
     } else {
-        // Create list items
-        let items: Vec<ListItem> = filtered_commands
+        // Calculate max category width for better table layout
+        let max_category_width = filtered_commands
+            .iter()
+            .map(|cmd| cmd.category.len())
+            .max()
+            .unwrap_or(10)
+            as u16
+            + 2; // Add padding
+
+        // Build table rows
+        let rows: Vec<Row> = filtered_commands
             .iter()
             .enumerate()
             .map(|(idx, cmd)| {
                 let is_selected = idx == state.command_palette.selected_index;
+
+                let indicator = if is_selected { "> " } else { "  " };
+
+                let indicator_style = if is_selected {
+                    theme.success().bold()
+                } else {
+                    theme.muted()
+                };
 
                 let title_style = if is_selected {
                     theme.success().bold()
@@ -134,59 +162,61 @@ fn render(state: &AppState, area: Rect, f: &mut Frame) {
                     theme.muted()
                 };
 
-                let desc_style = if is_selected {
-                    theme.text_secondary()
+                let bg_color = if is_selected {
+                    theme.panel_background() // Could use a highlight background if available
                 } else {
-                    theme.muted()
+                    theme.panel_background()
                 };
 
-                let content = vec![
-                    Line::from(vec![
-                        Span::styled(if is_selected { "> " } else { "  " }, theme.success()),
-                        Span::styled(&cmd.title, title_style),
-                        Span::raw("  "),
-                        Span::styled(format!("[{}]", cmd.category), category_style),
-                    ]),
-                    Line::from(vec![
-                        Span::raw("  "),
-                        Span::styled(&cmd.description, desc_style),
-                    ]),
-                ];
-
-                ListItem::new(content)
+                Row::new(vec![
+                    Cell::from(indicator).style(indicator_style),
+                    Cell::from(cmd.title.clone()).style(title_style),
+                    Cell::from(cmd.category.clone()).style(category_style),
+                ])
+                .style(bg_color)
             })
             .collect();
 
-        let list = List::new(items)
-            .style(theme.panel_background())
-            .highlight_style(theme.panel_background()); // We handle highlighting manually
+        let table = Table::new(
+            rows,
+            vec![
+                Constraint::Length(2),          // Indicator
+                Constraint::Percentage(70),     // Title
+                Constraint::Length(max_category_width), // Category
+            ],
+        )
+        .style(theme.panel_background());
 
-        f.render_widget(list, chunks[1]);
+        f.render_widget(table, chunks[1]);
     }
 
-    // Render footer with hints
-    let footer_y = palette_area.y + palette_area.height;
-    if footer_y < area.height {
-        let footer_area = Rect {
-            x: palette_area.x,
-            y: footer_y,
-            width: palette_width,
-            height: 1,
-        };
+    // Render details area with selected command description
+    if let Some(cmd) = filtered_commands.get(state.command_palette.selected_index) {
+        let details_line = Line::from(vec![Span::styled(
+            &cmd.description,
+            theme.text_secondary(),
+        )]);
 
-        let hints = Line::from(vec![
-            Span::styled("↑/↓", theme.key_hint()),
-            Span::styled(" navigate  ", theme.key_description()),
-            Span::styled("Enter", theme.key_hint()),
-            Span::styled(" execute  ", theme.key_description()),
-            Span::styled("Esc", theme.key_hint()),
-            Span::styled(" close", theme.key_description()),
-        ]);
+        let details_paragraph = Paragraph::new(details_line)
+            .wrap(Wrap { trim: false })
+            .style(theme.panel_background());
 
-        let footer = Paragraph::new(hints)
-            .style(theme.muted())
-            .alignment(Alignment::Center);
-
-        f.render_widget(footer, footer_area);
+        f.render_widget(details_paragraph, chunks[2]);
     }
+
+    // Render footer with keyboard hints
+    let footer_line = Line::from(vec![
+        Span::styled("Enter", theme.key_hint().bold()),
+        Span::styled(" execute  ", theme.key_description()),
+        Span::styled("↑/↓", theme.key_hint().bold()),
+        Span::styled(" navigate  ", theme.key_description()),
+        Span::styled("Esc", theme.key_hint().bold()),
+        Span::styled(" close", theme.key_description()),
+    ]);
+
+    let footer = Paragraph::new(footer_line)
+        .style(theme.muted())
+        .alignment(Alignment::Center);
+
+    f.render_widget(footer, chunks[3]);
 }
