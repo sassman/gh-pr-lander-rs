@@ -56,21 +56,28 @@ pub fn reduce(mut state: AppState, action: &Action) -> AppState {
             state.view_stack.clear();
             state.view_stack.push(Box::new(MainView::new()));
         }
-        Action::TabNext => {
-            // Move to next tab (with wrapping)
-            let num_tabs = 2; // TODO: Make this dynamic
-            state.main_view.selected_tab = (state.main_view.selected_tab + 1) % num_tabs;
-            log::debug!("Switched to tab {}", state.main_view.selected_tab);
+        Action::RepositoryNext => {
+            // Move to next repository (with wrapping)
+            let num_repos = 2; // TODO: Make this dynamic based on actual repositories
+            state.main_view.selected_repository =
+                (state.main_view.selected_repository + 1) % num_repos;
+            log::debug!(
+                "Switched to repository {}",
+                state.main_view.selected_repository
+            );
         }
-        Action::TabPrevious => {
-            // Move to previous tab (with wrapping)
-            let num_tabs = 2; // TODO: Make this dynamic
-            state.main_view.selected_tab = if state.main_view.selected_tab == 0 {
-                num_tabs - 1
+        Action::RepositoryPrevious => {
+            // Move to previous repository (with wrapping)
+            let num_repos = 2; // TODO: Make this dynamic based on actual repositories
+            state.main_view.selected_repository = if state.main_view.selected_repository == 0 {
+                num_repos - 1
             } else {
-                state.main_view.selected_tab - 1
+                state.main_view.selected_repository - 1
             };
-            log::debug!("Switched to tab {}", state.main_view.selected_tab);
+            log::debug!(
+                "Switched to repository {}",
+                state.main_view.selected_repository
+            );
         }
         _ => {}
     }

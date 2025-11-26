@@ -38,12 +38,14 @@ impl Default for SplashState {
 /// Main view state
 #[derive(Debug, Clone)]
 pub struct MainViewState {
-    pub selected_tab: usize, // Currently selected tab index
+    pub selected_repository: usize, // Currently selected repository index
 }
 
 impl Default for MainViewState {
     fn default() -> Self {
-        Self { selected_tab: 0 }
+        Self {
+            selected_repository: 0,
+        }
     }
 }
 

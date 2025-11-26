@@ -50,11 +50,11 @@ fn render(state: &AppState, area: Rect, f: &mut Frame) {
         .border_style(theme.panel_border())
         .title_style(theme.panel_title());
 
-    // Split into tabs area and content area
+    // Split into repository tabs area and content area
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3), // Tab bar
+            Constraint::Length(3), // Repository tab bar
             Constraint::Min(0),    // Content area
         ])
         .split(block.inner(area));
@@ -62,21 +62,21 @@ fn render(state: &AppState, area: Rect, f: &mut Frame) {
     // Render the outer block
     f.render_widget(block, area);
 
-    // Render tabs
-    let tab_titles = vec!["Tab 1", "Tab 2"];
+    // Render repository tabs
+    let tab_titles = vec!["Repository 1", "Repository 2"];
     let tabs = Tabs::new(tab_titles)
         .block(Block::default().borders(Borders::BOTTOM))
-        .select(state.main_view.selected_tab)
+        .select(state.main_view.selected_repository)
         .style(theme.panel_background())
         .highlight_style(theme.success().bold());
 
     f.render_widget(tabs, chunks[0]);
 
-    // Render tab content based on selected tab
-    let content = match state.main_view.selected_tab {
-        0 => render_tab1_content(theme),
-        1 => render_tab2_content(theme),
-        _ => vec![Line::from("Invalid tab")],
+    // Render repository content based on selected repository
+    let content = match state.main_view.selected_repository {
+        0 => render_repo1_content(theme),
+        1 => render_repo2_content(theme),
+        _ => vec![Line::from("Invalid repository")],
     };
 
     let paragraph = Paragraph::new(content)
@@ -86,41 +86,47 @@ fn render(state: &AppState, area: Rect, f: &mut Frame) {
     f.render_widget(paragraph, chunks[1]);
 }
 
-/// Render content for Tab 1
-fn render_tab1_content(theme: &crate::theme::Theme) -> Vec<Line<'static>> {
+/// Render content for Repository 1
+fn render_repo1_content(theme: &crate::theme::Theme) -> Vec<Line<'static>> {
     vec![
         Line::from(""),
-        Line::from(Span::styled("Welcome to Tab 1!", theme.success().bold())),
+        Line::from(Span::styled(
+            "Welcome to Repository 1!",
+            theme.success().bold(),
+        )),
         Line::from(""),
         Line::from(Span::styled(
-            "This is placeholder content for the first tab",
+            "This is placeholder content for the first repository",
             theme.text_secondary(),
         )),
         Line::from(""),
         Line::from(Span::styled("Controls:", theme.section_header())),
         Line::from(vec![
-            Span::styled("  h/l or ←/→  ", theme.key_hint()),
-            Span::styled("- Switch tabs", theme.key_description()),
+            Span::styled("  Tab/Shift+Tab  ", theme.key_hint()),
+            Span::styled("- Switch repositories", theme.key_description()),
         ]),
         Line::from(vec![
-            Span::styled("  `           ", theme.key_hint()),
+            Span::styled("  `              ", theme.key_hint()),
             Span::styled("- Toggle debug console", theme.key_description()),
         ]),
         Line::from(vec![
-            Span::styled("  q or Esc    ", theme.key_hint()),
+            Span::styled("  q or Esc       ", theme.key_hint()),
             Span::styled("- Quit", theme.key_description()),
         ]),
     ]
 }
 
-/// Render content for Tab 2
-fn render_tab2_content(theme: &crate::theme::Theme) -> Vec<Line<'static>> {
+/// Render content for Repository 2
+fn render_repo2_content(theme: &crate::theme::Theme) -> Vec<Line<'static>> {
     vec![
         Line::from(""),
-        Line::from(Span::styled("Welcome to Tab 2!", theme.success().bold())),
+        Line::from(Span::styled(
+            "Welcome to Repository 2!",
+            theme.success().bold(),
+        )),
         Line::from(""),
         Line::from(Span::styled(
-            "This is placeholder content for the second tab",
+            "This is placeholder content for the second repository",
             theme.text_secondary(),
         )),
         Line::from(""),

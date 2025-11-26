@@ -129,22 +129,13 @@ impl KeyboardMiddleware {
                 }
 
                 // Vim navigation: h (left) / l (right)
-                // In MainView, h/l switch tabs
                 'h' if capabilities.supports_vim_navigation() => {
-                    if active_view_id == ViewId::Main {
-                        dispatcher.dispatch(Action::TabPrevious);
-                    } else {
-                        dispatcher.dispatch(Action::NavigateLeft);
-                    }
+                    dispatcher.dispatch(Action::NavigateLeft);
                     return false;
                 }
 
                 'l' if capabilities.supports_vim_navigation() => {
-                    if active_view_id == ViewId::Main {
-                        dispatcher.dispatch(Action::TabNext);
-                    } else {
-                        dispatcher.dispatch(Action::NavigateRight);
-                    }
+                    dispatcher.dispatch(Action::NavigateRight);
                     return false;
                 }
 
@@ -187,6 +178,26 @@ impl KeyboardMiddleware {
             return false;
         }
 
+        // Handle Tab/Shift+Tab for repository navigation in MainView
+        if let KeyCode::Tab = key.code {
+            if active_view_id == ViewId::Main {
+                if key.modifiers.contains(KeyModifiers::SHIFT) {
+                    dispatcher.dispatch(Action::RepositoryPrevious);
+                } else {
+                    dispatcher.dispatch(Action::RepositoryNext);
+                }
+                return false;
+            }
+        }
+
+        // Handle Backtab (Shift+Tab on some terminals)
+        if let KeyCode::BackTab = key.code {
+            if active_view_id == ViewId::Main {
+                dispatcher.dispatch(Action::RepositoryPrevious);
+                return false;
+            }
+        }
+
         // Handle arrow keys based on capabilities
         match key.code {
             KeyCode::Down if capabilities.supports_vim_navigation() => {
@@ -200,20 +211,12 @@ impl KeyboardMiddleware {
             }
 
             KeyCode::Left if capabilities.supports_vim_navigation() => {
-                if active_view_id == ViewId::Main {
-                    dispatcher.dispatch(Action::TabPrevious);
-                } else {
-                    dispatcher.dispatch(Action::NavigateLeft);
-                }
+                dispatcher.dispatch(Action::NavigateLeft);
                 return false;
             }
 
             KeyCode::Right if capabilities.supports_vim_navigation() => {
-                if active_view_id == ViewId::Main {
-                    dispatcher.dispatch(Action::TabNext);
-                } else {
-                    dispatcher.dispatch(Action::NavigateRight);
-                }
+                dispatcher.dispatch(Action::NavigateRight);
                 return false;
             }
 
