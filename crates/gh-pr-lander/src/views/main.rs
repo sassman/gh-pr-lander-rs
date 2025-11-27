@@ -6,6 +6,7 @@ use ratatui::{
     buffer::Buffer,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::Stylize,
+    symbols,
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph, Widget},
     Frame,
@@ -45,29 +46,25 @@ impl View for MainView {
 fn render(state: &AppState, area: Rect, f: &mut Frame) {
     let theme = &state.theme;
 
-    // Create main block
-    let block = Block::default()
-        .title(" Github PR Lander ")
-        .borders(Borders::ALL)
-        .border_style(theme.panel_border())
-        .title_style(theme.panel_title());
-
     // Split into repository tabs area and content area
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3), // Repository tab bar
-            Constraint::Min(0),    // Content area
+            Constraint::Length(1), // Repository tab bar (single row)
+            Constraint::Min(0),    // Content area with QuadrantOutside border
         ])
-        .split(block.inner(area));
+        .split(area);
 
-    // Render the outer block
-    f.render_widget(block, area);
-
-    // Render DOS-style repository tabs
+    // Render modern-style repository tabs
     let tab_titles = vec!["Repository 1", "Repository 2"];
-    let dos_tabs = DosStyleTabs::new(tab_titles, state.main_view.selected_repository, theme);
-    f.render_widget(dos_tabs, chunks[0]);
+    let tabs_widget = ModernTabs::new(tab_titles, state.main_view.selected_repository, theme);
+    f.render_widget(tabs_widget, chunks[0]);
+
+    // Render content with QuadrantOutside border - uses half-block characters
+    // that create a connected appearance with the tab bar
+    let content_block = Block::bordered()
+        .border_type(ratatui::widgets::BorderType::QuadrantOutside)
+        .border_style(ratatui::style::Style::default().fg(theme.accent_primary));
 
     // Render repository content based on selected repository
     let content = match state.main_view.selected_repository {
@@ -77,6 +74,7 @@ fn render(state: &AppState, area: Rect, f: &mut Frame) {
     };
 
     let paragraph = Paragraph::new(content)
+        .block(content_block)
         .style(theme.panel_background())
         .alignment(Alignment::Center);
 
@@ -131,15 +129,16 @@ fn render_repo2_content(theme: &crate::theme::Theme) -> Vec<Line<'static>> {
     ]
 }
 
-/// DOS/Turbo Vision style tabs widget
-/// Renders tabs with box-drawing characters like classic MS-DOS applications
-struct DosStyleTabs<'a> {
+/// Modern background-color style tabs widget
+/// Uses background colors instead of borders - active tab has prominent color,
+/// inactive tabs are subtle. Content frame matches selected tab's color.
+struct ModernTabs<'a> {
     titles: Vec<&'a str>,
     selected: usize,
     theme: &'a Theme,
 }
 
-impl<'a> DosStyleTabs<'a> {
+impl<'a> ModernTabs<'a> {
     fn new(titles: Vec<&'a str>, selected: usize, theme: &'a Theme) -> Self {
         Self {
             titles,
@@ -149,24 +148,25 @@ impl<'a> DosStyleTabs<'a> {
     }
 }
 
-impl Widget for DosStyleTabs<'_> {
+impl Widget for ModernTabs<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        if area.height < 3 || area.width < 10 {
+        if area.height < 1 || area.width < 10 {
             return;
         }
 
-        // DOS-style tab characters
-        // Selected tab:   ┌────────┐
-        //                 │  Tab   │
-        // Unselected:     └────────┴───
-        // Bottom line connects selected tab to content
+        // Modern style: background colors only, no borders on tabs
+        // Selected:   ████████████ (prominent color)
+        // Unselected: ▒▒▒▒▒▒▒▒▒▒▒▒ (subtle)
 
         let mut x = area.x + 1; // Start with a small margin
 
-        // Track tab positions for the bottom line
-        let mut tab_positions: Vec<(u16, u16, bool)> = Vec::new(); // (start_x, end_x, is_selected)
+        // Colors
+        let active_bg = self.theme.accent_primary;
+        let active_fg = self.theme.bg_primary;
+        let inactive_bg = self.theme.bg_tertiary;
+        let inactive_fg = self.theme.text_muted;
 
-        // First pass: render each tab
+        // Render each tab (just 1 row of content with background)
         for (i, title) in self.titles.iter().enumerate() {
             let is_selected = i == self.selected;
             let tab_width = title.len() as u16 + 4; // 2 chars padding on each side
@@ -175,75 +175,24 @@ impl Widget for DosStyleTabs<'_> {
                 break; // Don't overflow
             }
 
-            let start_x = x;
-            let end_x = x + tab_width - 1;
-            tab_positions.push((start_x, end_x, is_selected));
-
-            // Styles
-            let border_style = if is_selected {
-                self.theme.panel_border()
+            // Style based on selection
+            let style = if is_selected {
+                ratatui::style::Style::default()
+                    .fg(active_fg)
+                    .bg(active_bg)
+                    .add_modifier(ratatui::style::Modifier::BOLD)
             } else {
-                self.theme.muted()
+                ratatui::style::Style::default()
+                    .fg(inactive_fg)
+                    .bg(inactive_bg)
             };
-            let text_style = if is_selected {
-                self.theme.panel_title().bold()
-            } else {
-                self.theme.text_secondary()
-            };
-            let bg_style = self.theme.panel_background();
 
-            // Row 0: Top border ┌────────┐
-            buf.set_string(x, area.y, "┌", border_style);
-            for dx in 1..tab_width - 1 {
-                buf.set_string(x + dx, area.y, "─", border_style);
-            }
-            buf.set_string(x + tab_width - 1, area.y, "┐", border_style);
+            // Render tab background and text
+            let padded_title = format!("  {}  ", title);
+            buf.set_string(x, area.y, &padded_title, style);
 
-            // Row 1: Content │  Tab   │
-            buf.set_string(x, area.y + 1, "│", border_style);
-            // Fill background
-            for dx in 1..tab_width - 1 {
-                buf.set_string(x + dx, area.y + 1, " ", bg_style);
-            }
-            // Center the title
-            let title_start = x + 2;
-            buf.set_string(title_start, area.y + 1, *title, text_style);
-            buf.set_string(x + tab_width - 1, area.y + 1, "│", border_style);
-
-            // Row 2: Bottom - handled in second pass
             x += tab_width + 1; // Gap between tabs
         }
 
-        // Second pass: render the bottom line
-        // This creates the connected look where selected tab opens into content
-        let bottom_y = area.y + 2;
-        let border_style = self.theme.panel_border();
-        let muted_style = self.theme.muted();
-
-        // Fill the entire bottom row first with the base line
-        for dx in 0..area.width {
-            buf.set_string(area.x + dx, bottom_y, "─", border_style);
-        }
-
-        // Now handle each tab's bottom
-        for (start_x, end_x, is_selected) in &tab_positions {
-            if *is_selected {
-                // Selected tab: open bottom (connects to content)
-                // ┘          └
-                buf.set_string(*start_x, bottom_y, "┘", border_style);
-                for dx in 1..(end_x - start_x) {
-                    buf.set_string(start_x + dx, bottom_y, " ", self.theme.panel_background());
-                }
-                buf.set_string(*end_x, bottom_y, "└", border_style);
-            } else {
-                // Unselected tab: closed bottom with frame border color
-                // └──────────┘
-                buf.set_string(*start_x, bottom_y, "└", border_style);
-                for dx in 1..(end_x - start_x) {
-                    buf.set_string(start_x + dx, bottom_y, "─", border_style);
-                }
-                buf.set_string(*end_x, bottom_y, "┘", border_style);
-            }
-        }
     }
 }
