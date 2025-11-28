@@ -5,7 +5,9 @@ use crate::theme::Theme;
 use crate::view_models::debug_console_view_model::DebugConsoleViewModel;
 use crate::views::View;
 use ratatui::{
-    layout::Rect,
+    layout::{Alignment, Rect},
+    style::Stylize,
+    text::{Line, Span},
     widgets::{Block, Borders, Clear, Paragraph},
     Frame,
 };
@@ -46,6 +48,14 @@ fn render(state: &DebugConsoleState, theme: &Theme, area: Rect, f: &mut Frame) {
         return; // Don't render if not visible
     }
 
+    // Render dimmed overlay over the entire screen to create modal effect
+    let overlay = Block::default().style(
+        ratatui::style::Style::default()
+            .bg(ratatui::style::Color::Black)
+            .add_modifier(ratatui::style::Modifier::DIM),
+    );
+    f.render_widget(overlay, area);
+
     // Calculate console height based on percentage
     let console_height = (area.height * 70) / 100;
     let console_area = Rect {
@@ -55,16 +65,29 @@ fn render(state: &DebugConsoleState, theme: &Theme, area: Rect, f: &mut Frame) {
         height: console_height.min(area.height),
     };
 
+    // Clear the console area (removes the dim effect for the console itself)
     f.render_widget(Clear, console_area);
 
     // Create view model
     let view_model = DebugConsoleViewModel::new(state);
 
+    // Build footer hint for bottom border
+    let footer_hint = Line::from(vec![
+        Span::styled(" j/k", theme.key_hint().bold()),
+        Span::styled(" scroll  ", theme.muted()),
+        Span::styled("gg/G", theme.key_hint().bold()),
+        Span::styled(" top/bottom  ", theme.muted()),
+        Span::styled("`", theme.key_hint().bold()),
+        Span::styled(" close ", theme.muted()),
+    ]);
+
     let block = Block::default()
         .title(view_model.title())
         .borders(Borders::ALL)
         .border_style(theme.panel_border())
-        .title_style(theme.panel_title());
+        .title_style(theme.panel_title())
+        .title_bottom(footer_hint)
+        .title_alignment(Alignment::Center);
 
     // Calculate visible window
     let available_height = console_height.saturating_sub(2) as usize; // -2 for borders

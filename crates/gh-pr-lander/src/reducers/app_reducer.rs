@@ -1,7 +1,7 @@
 use crate::actions::Action;
-use crate::reducers::{command_palette_reducer, debug_console_reducer, splash_reducer};
+use crate::reducers::{add_repo_reducer, command_palette_reducer, debug_console_reducer, splash_reducer};
 use crate::state::AppState;
-use crate::views::MainView;
+use crate::views::{AddRepositoryView, MainView};
 
 /// Reducer - pure function that produces new state from current state + action
 ///
@@ -42,14 +42,41 @@ pub fn reduce(mut state: AppState, action: &Action) -> AppState {
             state.view_stack.push(new_view.clone());
         }
 
-        Action::GlobalClose | Action::CommandPaletteClose | Action::CommandPaletteExecute => {
-            // Close the top-most view (CommandPaletteClose/Execute specifically close the palette)
+        Action::GlobalClose | Action::CommandPaletteClose | Action::CommandPaletteExecute | Action::AddRepoClose => {
+            // Close the top-most view
             if state.view_stack.len() > 1 {
                 let popped = state.view_stack.pop();
                 log::debug!("Closed view: {:?}", popped.map(|v| v.view_id()));
+                // Reset add repo form when closing the view
+                if matches!(action, Action::AddRepoClose) {
+                    state.add_repo_form.reset();
+                }
             } else {
                 log::debug!("Closing last view - quitting application");
                 state.running = false;
+            }
+        }
+
+        Action::RepositoryAdd => {
+            // Open the add repository form
+            log::debug!("Opening add repository form");
+            state.add_repo_form.reset(); // Reset form when opening
+            state.view_stack.push(Box::new(AddRepositoryView::new()));
+        }
+
+        Action::AddRepoConfirm => {
+            // Confirm and add the repository if valid
+            if state.add_repo_form.is_valid() {
+                let repo = state.add_repo_form.to_repository();
+                log::info!("Adding repository: {}", repo.display_name());
+                state.main_view.repositories.push(repo);
+                state.add_repo_form.reset();
+                // Close the form
+                if state.view_stack.len() > 1 {
+                    state.view_stack.pop();
+                }
+            } else {
+                log::warn!("Cannot add repository: form is not valid (org and repo are required)");
             }
         }
 
@@ -96,6 +123,9 @@ pub fn reduce(mut state: AppState, action: &Action) -> AppState {
     // Command palette reducer (handles CommandPalette* actions only)
     state.command_palette =
         command_palette_reducer::reduce(state.command_palette, action, &state.keymap);
+
+    // Add repository form reducer (handles AddRepo* actions only)
+    state.add_repo_form = add_repo_reducer::reduce(state.add_repo_form, action);
 
     state
 }

@@ -43,14 +43,16 @@ pub enum Action {
     DebugConsoleLogAdded(OwnedLogRecord), // New log record added
 
     /// ## Text input actions (generic, for any view with TEXT_INPUT capability)
-    TextInputChar(char), // Character typed into input field
-    TextInputBackspace, // Backspace pressed in input field
-    TextInputEscape,    // Escape pressed in input field (clear or close)
-    TextInputConfirm,   // Enter pressed in input field (confirm/execute)
+    TextInputChar(char),  // Character typed into input field
+    TextInputBackspace,   // Backspace pressed in input field
+    TextInputClearLine,   // Cmd+Backspace - clear entire field/line
+    TextInputEscape,      // Escape pressed in input field (clear or close)
+    TextInputConfirm,     // Enter pressed in input field (confirm/execute)
 
     /// ## Command palette actions
-    CommandPaletteChar(char), // Character typed into search field
+    CommandPaletteChar(char),   // Character typed into search field
     CommandPaletteBackspace,    // Backspace pressed in search field
+    CommandPaletteClear,        // Clear entire query (Cmd+Backspace)
     CommandPaletteClose,        // Close the command palette
     CommandPaletteExecute,      // Execute selected command
     CommandPaletteNavigateNext, // Navigate to next command
@@ -58,6 +60,15 @@ pub enum Action {
 
     /// ## Repository management actions
     RepositoryAdd, // Show add repository dialog/popup
+
+    /// ## Add repository form actions
+    AddRepoChar(char),      // Character typed into current field
+    AddRepoBackspace,       // Backspace pressed in current field
+    AddRepoClearField,      // Clear entire current field (Cmd+Backspace)
+    AddRepoNextField,       // Move to next field (Tab)
+    AddRepoPrevField,       // Move to previous field (Shift+Tab)
+    AddRepoConfirm,         // Confirm and add the repository (Enter)
+    AddRepoClose,           // Close the form without adding (Esc)
 
     /// ## Bootstrap actions
     BootstrapStart,
@@ -95,15 +106,24 @@ impl Clone for Action {
             Self::DebugConsoleLogAdded(record) => Self::DebugConsoleLogAdded(record.clone()),
             Self::TextInputChar(c) => Self::TextInputChar(*c),
             Self::TextInputBackspace => Self::TextInputBackspace,
+            Self::TextInputClearLine => Self::TextInputClearLine,
             Self::TextInputEscape => Self::TextInputEscape,
             Self::TextInputConfirm => Self::TextInputConfirm,
             Self::CommandPaletteChar(c) => Self::CommandPaletteChar(*c),
             Self::CommandPaletteBackspace => Self::CommandPaletteBackspace,
+            Self::CommandPaletteClear => Self::CommandPaletteClear,
             Self::CommandPaletteClose => Self::CommandPaletteClose,
             Self::CommandPaletteExecute => Self::CommandPaletteExecute,
             Self::CommandPaletteNavigateNext => Self::CommandPaletteNavigateNext,
             Self::CommandPaletteNavigatePrev => Self::CommandPaletteNavigatePrev,
             Self::RepositoryAdd => Self::RepositoryAdd,
+            Self::AddRepoChar(c) => Self::AddRepoChar(*c),
+            Self::AddRepoBackspace => Self::AddRepoBackspace,
+            Self::AddRepoClearField => Self::AddRepoClearField,
+            Self::AddRepoNextField => Self::AddRepoNextField,
+            Self::AddRepoPrevField => Self::AddRepoPrevField,
+            Self::AddRepoConfirm => Self::AddRepoConfirm,
+            Self::AddRepoClose => Self::AddRepoClose,
             Self::BootstrapStart => Self::BootstrapStart,
             Self::BootstrapEnd => Self::BootstrapEnd,
             Self::Tick => Self::Tick,
@@ -139,15 +159,24 @@ impl std::fmt::Debug for Action {
             }
             Self::TextInputChar(c) => f.debug_tuple("TextInputChar").field(c).finish(),
             Self::TextInputBackspace => write!(f, "TextInputBackspace"),
+            Self::TextInputClearLine => write!(f, "TextInputClearLine"),
             Self::TextInputEscape => write!(f, "TextInputEscape"),
             Self::TextInputConfirm => write!(f, "TextInputConfirm"),
             Self::CommandPaletteChar(c) => f.debug_tuple("CommandPaletteChar").field(c).finish(),
             Self::CommandPaletteBackspace => write!(f, "CommandPaletteBackspace"),
+            Self::CommandPaletteClear => write!(f, "CommandPaletteClear"),
             Self::CommandPaletteClose => write!(f, "CommandPaletteClose"),
             Self::CommandPaletteExecute => write!(f, "CommandPaletteExecute"),
             Self::CommandPaletteNavigateNext => write!(f, "CommandPaletteNavigateNext"),
             Self::CommandPaletteNavigatePrev => write!(f, "CommandPaletteNavigatePrev"),
             Self::RepositoryAdd => write!(f, "RepositoryAdd"),
+            Self::AddRepoChar(c) => f.debug_tuple("AddRepoChar").field(c).finish(),
+            Self::AddRepoBackspace => write!(f, "AddRepoBackspace"),
+            Self::AddRepoClearField => write!(f, "AddRepoClearField"),
+            Self::AddRepoNextField => write!(f, "AddRepoNextField"),
+            Self::AddRepoPrevField => write!(f, "AddRepoPrevField"),
+            Self::AddRepoConfirm => write!(f, "AddRepoConfirm"),
+            Self::AddRepoClose => write!(f, "AddRepoClose"),
             Self::BootstrapStart => write!(f, "BootstrapStart"),
             Self::BootstrapEnd => write!(f, "BootstrapEnd"),
             Self::Tick => write!(f, "Tick"),

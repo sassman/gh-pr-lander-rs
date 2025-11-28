@@ -206,7 +206,14 @@ impl Keymap {
         for (binding, pattern) in &self.bindings {
             match pattern {
                 ParsedKeyPattern::Single { code, modifiers } => {
-                    if key.code == *code && key.modifiers == *modifiers {
+                    // Special case: BackTab can come with or without SHIFT modifier
+                    // depending on terminal, so we match it loosely
+                    let matches = if *code == KeyCode::BackTab {
+                        key.code == KeyCode::BackTab
+                    } else {
+                        key.code == *code && key.modifiers == *modifiers
+                    };
+                    if matches {
                         return (Some(binding.command), true, None);
                     }
                 }

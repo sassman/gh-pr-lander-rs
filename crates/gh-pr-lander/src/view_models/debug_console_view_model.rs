@@ -58,11 +58,11 @@ impl<'a> DebugConsoleViewModel<'a> {
     pub fn title(&self) -> String {
         if self.state.scroll_offset > 0 {
             format!(
-                " Debug Console (` to toggle, c to clear) - ↑{} ",
+                " Debug Console (c to clear) - ↑{} ",
                 self.state.scroll_offset
             )
         } else {
-            " Debug Console (` to toggle, c to clear) ".to_string()
+            " Debug Console (c to clear) ".to_string()
         }
     }
 }

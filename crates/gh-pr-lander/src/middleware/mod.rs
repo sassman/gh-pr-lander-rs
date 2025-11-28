@@ -2,6 +2,7 @@ use crate::actions::Action;
 use crate::dispatcher::Dispatcher;
 use crate::state::AppState;
 
+pub mod add_repository;
 pub mod bootstrap;
 pub mod command_palette;
 pub mod keyboard;

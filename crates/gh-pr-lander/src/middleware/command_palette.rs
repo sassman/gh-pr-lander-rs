@@ -51,6 +51,12 @@ impl Middleware for CommandPaletteMiddleware {
                 false
             }
 
+            Action::TextInputClearLine => {
+                // Clear entire query without closing the palette
+                dispatcher.dispatch(Action::CommandPaletteClear);
+                false
+            }
+
             Action::TextInputEscape => {
                 // Escape behavior: clear query if not empty, otherwise close
                 if !state.command_palette.query.is_empty() {

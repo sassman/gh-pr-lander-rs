@@ -29,6 +29,12 @@ pub fn reduce(
             state.selected_index = 0;
         }
 
+        Action::CommandPaletteClear => {
+            // Clear query but keep palette open
+            state.query.clear();
+            state.selected_index = 0;
+        }
+
         Action::CommandPaletteClose => {
             state.query.clear();
             state.selected_index = 0;

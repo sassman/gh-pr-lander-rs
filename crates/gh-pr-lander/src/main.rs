@@ -26,8 +26,9 @@ mod views;
 
 use actions::Action;
 use middleware::{
-    bootstrap::BootstrapMiddleware, command_palette::CommandPaletteMiddleware,
-    keyboard::KeyboardMiddleware, logging::LoggingMiddleware, repository::RepositoryMiddleware,
+    add_repository::AddRepositoryMiddleware, bootstrap::BootstrapMiddleware,
+    command_palette::CommandPaletteMiddleware, keyboard::KeyboardMiddleware,
+    logging::LoggingMiddleware, repository::RepositoryMiddleware,
 };
 use state::AppState;
 use store::Store;
@@ -53,6 +54,7 @@ fn main() -> io::Result<()> {
     store.add_middleware(Box::new(BootstrapMiddleware::new()));
     store.add_middleware(Box::new(KeyboardMiddleware::new()));
     store.add_middleware(Box::new(CommandPaletteMiddleware::new()));
+    store.add_middleware(Box::new(AddRepositoryMiddleware::new()));
     store.add_middleware(Box::new(RepositoryMiddleware::new()));
 
     // Connect logger to dispatcher (so logs can be sent to debug console)

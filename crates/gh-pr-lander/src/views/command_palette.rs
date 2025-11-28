@@ -48,6 +48,14 @@ fn render(state: &AppState, area: Rect, f: &mut Frame) {
     // Build view model - all data preparation happens here
     let vm = CommandPaletteViewModel::from_state(state);
 
+    // Render dimmed overlay over the entire screen to create modal effect
+    let overlay = Block::default().style(
+        ratatui::style::Style::default()
+            .bg(ratatui::style::Color::Black)
+            .add_modifier(Modifier::DIM),
+    );
+    f.render_widget(overlay, area);
+
     // Calculate centered area (70% width, 60% height)
     let popup_width = (area.width * 70 / 100).min(100);
     let popup_height = (area.height * 60 / 100).min(30);
@@ -61,11 +69,21 @@ fn render(state: &AppState, area: Rect, f: &mut Frame) {
         height: popup_height,
     };
 
-    // Clear the area behind the popup
+    // Clear the popup area (removes the dim effect for the popup itself)
     f.render_widget(Clear, popup_area);
 
-    // Render background
+    // Render popup background
     f.render_widget(Block::default().style(theme.panel_background()), popup_area);
+
+    // Build footer hint for bottom border
+    let footer_hint = Line::from(vec![
+        Span::styled(" Enter", theme.key_hint().bold()),
+        Span::styled(" execute  ", theme.muted()),
+        Span::styled("↑/↓", theme.key_hint().bold()),
+        Span::styled(" navigate  ", theme.muted()),
+        Span::styled("Esc", theme.key_hint().bold()),
+        Span::styled(" close ", theme.muted()),
+    ]);
 
     // Render border and title with command count
     let title = format!(" Command Palette ({} commands) ", vm.total_commands);
@@ -73,6 +91,8 @@ fn render(state: &AppState, area: Rect, f: &mut Frame) {
         .borders(Borders::ALL)
         .title(title)
         .title_style(theme.panel_title().add_modifier(Modifier::BOLD))
+        .title_bottom(footer_hint)
+        .title_alignment(Alignment::Center)
         .border_style(theme.panel_border().add_modifier(Modifier::BOLD))
         .style(theme.panel_background());
 
@@ -84,14 +104,13 @@ fn render(state: &AppState, area: Rect, f: &mut Frame) {
         vertical: 1,
     });
 
-    // Split into input area, results area, details area, and footer
+    // Split into input area, results area, and details area (footer is now in bottom border)
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(3), // Input box
             Constraint::Min(5),    // Results list
             Constraint::Length(2), // Details area
-            Constraint::Length(1), // Footer
         ])
         .split(inner);
 
@@ -179,20 +198,4 @@ fn render(state: &AppState, area: Rect, f: &mut Frame) {
 
         f.render_widget(details_paragraph, chunks[2]);
     }
-
-    // Render footer with keyboard hints
-    let footer_line = Line::from(vec![
-        Span::styled("Enter", theme.key_hint().bold()),
-        Span::styled(" execute  ", theme.key_description()),
-        Span::styled("↑/↓", theme.key_hint().bold()),
-        Span::styled(" navigate  ", theme.key_description()),
-        Span::styled("Esc", theme.key_hint().bold()),
-        Span::styled(" close", theme.key_description()),
-    ]);
-
-    let footer = Paragraph::new(footer_line)
-        .style(theme.muted())
-        .alignment(Alignment::Center);
-
-    f.render_widget(footer, chunks[3]);
 }

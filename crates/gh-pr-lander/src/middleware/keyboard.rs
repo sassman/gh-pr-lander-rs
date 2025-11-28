@@ -114,9 +114,14 @@ impl KeyboardMiddleware {
                 false
             }
 
-            // Backspace - remove last character
+            // Backspace - remove last character (or clear line with Cmd/Super modifier)
             KeyCode::Backspace => {
-                dispatcher.dispatch(Action::TextInputBackspace);
+                if key.modifiers.contains(KeyModifiers::SUPER) {
+                    // Cmd+Backspace on Mac - clear entire line
+                    dispatcher.dispatch(Action::TextInputClearLine);
+                } else {
+                    dispatcher.dispatch(Action::TextInputBackspace);
+                }
                 false
             }
 
@@ -130,12 +135,41 @@ impl KeyboardMiddleware {
                 false
             }
 
+            // Tab for field navigation
+            KeyCode::Tab => {
+                if key.modifiers.contains(KeyModifiers::SHIFT) {
+                    dispatcher.dispatch(Action::NavigatePrevious);
+                } else {
+                    dispatcher.dispatch(Action::NavigateNext);
+                }
+                false
+            }
+
+            // BackTab (Shift+Tab) - some terminals send this instead of Tab with SHIFT modifier
+            KeyCode::BackTab => {
+                dispatcher.dispatch(Action::NavigatePrevious);
+                false
+            }
+
             // Character input
             KeyCode::Char(c) => {
                 // Ctrl+C always quits
                 if key.modifiers.contains(KeyModifiers::CONTROL) && c == 'c' {
                     dispatcher.dispatch(Action::GlobalQuit);
                     return false;
+                }
+
+                // Ctrl+U - Unix line kill (clear line) - this is what Cmd+Backspace sends in terminals
+                if key.modifiers.contains(KeyModifiers::CONTROL) && c == 'u' {
+                    dispatcher.dispatch(Action::TextInputClearLine);
+                    return false;
+                }
+
+                // Don't send characters with Ctrl/Super modifiers as text input
+                if key.modifiers.contains(KeyModifiers::CONTROL)
+                    || key.modifiers.contains(KeyModifiers::SUPER)
+                {
+                    return true; // Pass through
                 }
 
                 // Send character to text input

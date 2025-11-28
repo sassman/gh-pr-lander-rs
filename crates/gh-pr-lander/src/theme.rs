@@ -242,4 +242,14 @@ impl Theme {
     pub fn log_debug(&self) -> Style {
         Style::default().fg(self.text_secondary)
     }
+
+    /// Style for accent color
+    pub fn accent(&self) -> Style {
+        Style::default().fg(self.accent_primary)
+    }
+
+    /// Background color for selection/focused input
+    pub fn selection_bg(&self) -> Color {
+        self.active_bg
+    }
 }
