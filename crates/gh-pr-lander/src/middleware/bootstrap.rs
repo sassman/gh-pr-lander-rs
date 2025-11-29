@@ -1,7 +1,8 @@
 use crate::actions::Action;
 use crate::dispatcher::Dispatcher;
+use crate::domain_models::Repository;
 use crate::middleware::Middleware;
-use crate::state::{AppState, Repository};
+use crate::state::AppState;
 use gh_pr_config::load_recent_repositories;
 use std::sync::{Arc, Mutex};
 use std::thread;

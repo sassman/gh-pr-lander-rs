@@ -58,6 +58,7 @@ fn palette_command_ids() -> Vec<CommandId> {
         RepositoryPrevious,
         DebugToggleConsole,
         DebugClearLogs,
+        DebugLogDump,
         CommandPaletteOpen,
         GlobalClose,
         GlobalQuit,

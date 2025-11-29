@@ -1,3 +1,4 @@
+use crate::domain_models::Repository;
 use crate::keybindings::{default_keymap, Keymap};
 use crate::logger::OwnedLogRecord;
 use crate::views::{SplashView, View};
@@ -26,34 +27,25 @@ impl Default for SplashState {
     }
 }
 
-/// A tracked repository
-#[derive(Debug, Clone, Default)]
-pub struct Repository {
-    pub org: String,
-    pub repo: String,
-    pub branch: String,
-}
-
-impl Repository {
-    pub fn new(org: impl Into<String>, repo: impl Into<String>, branch: impl Into<String>) -> Self {
-        Self {
-            org: org.into(),
-            repo: repo.into(),
-            branch: branch.into(),
-        }
-    }
-
-    /// Display name for the repository (org/repo)
-    pub fn display_name(&self) -> String {
-        format!("{}/{}", self.org, self.repo)
-    }
-}
-
 /// Main view state
 #[derive(Debug, Clone, Default)]
 pub struct MainViewState {
-    pub selected_repository: usize,      // Currently selected repository index
-    pub repositories: Vec<Repository>,   // List of tracked repositories
+    pub selected_repository: usize, // Currently selected repository index
+    pub repositories: Vec<Repository>, // List of tracked repositories
+    pub repo_data: std::collections::HashMap<usize, RepositoryData>, // PR data per repository
+}
+
+/// Data for a single repository (PRs, loading state, etc.)
+#[derive(Debug, Clone, Default)]
+pub struct RepositoryData {
+    /// List of pull requests for this repository
+    pub prs: Vec<crate::domain_models::Pr>,
+    /// Current loading state
+    pub loading_state: crate::domain_models::LoadingState,
+    /// Currently selected PR index in the table
+    pub selected_pr: usize,
+    /// Timestamp of last successful load
+    pub last_updated: Option<chrono::DateTime<chrono::Local>>,
 }
 
 /// Form field for the add repository dialog
@@ -91,10 +83,10 @@ impl AddRepoField {
 /// State for the add repository form
 #[derive(Debug, Clone, Default)]
 pub struct AddRepoFormState {
-    pub url: String,            // GitHub URL (for auto-parsing)
-    pub org: String,            // Organization/owner name
-    pub repo: String,           // Repository name
-    pub branch: String,         // Branch name (default: "main")
+    pub url: String,    // GitHub URL (for auto-parsing)
+    pub org: String,    // Organization/owner name
+    pub repo: String,   // Repository name
+    pub branch: String, // Branch name (default: "main")
     pub focused_field: AddRepoField,
 }
 
@@ -196,7 +188,10 @@ mod tests {
     #[test]
     fn test_parse_https_url() {
         let result = parse_github_url("https://github.com/cargo-generate/cargo-generate.git");
-        assert_eq!(result, Some(("cargo-generate".to_string(), "cargo-generate".to_string())));
+        assert_eq!(
+            result,
+            Some(("cargo-generate".to_string(), "cargo-generate".to_string()))
+        );
     }
 
     #[test]
@@ -208,7 +203,10 @@ mod tests {
     #[test]
     fn test_parse_ssh_url() {
         let result = parse_github_url("git@github.com:cargo-generate/cargo-generate.git");
-        assert_eq!(result, Some(("cargo-generate".to_string(), "cargo-generate".to_string())));
+        assert_eq!(
+            result,
+            Some(("cargo-generate".to_string(), "cargo-generate".to_string()))
+        );
     }
 
     #[test]
@@ -220,7 +218,10 @@ mod tests {
     #[test]
     fn test_parse_short_url() {
         let result = parse_github_url("github.com/octocat/Hello-World");
-        assert_eq!(result, Some(("octocat".to_string(), "Hello-World".to_string())));
+        assert_eq!(
+            result,
+            Some(("octocat".to_string(), "Hello-World".to_string()))
+        );
     }
 
     #[test]

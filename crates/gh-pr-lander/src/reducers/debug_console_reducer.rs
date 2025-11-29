@@ -1,5 +1,6 @@
 use crate::actions::Action;
 use crate::capabilities::{PanelCapabilities, PanelCapabilityProvider};
+use crate::logger::OwnedLogRecord;
 use crate::state::DebugConsoleState;
 use crate::views::ViewId;
 
@@ -19,6 +20,12 @@ pub fn reduce(mut state: DebugConsoleState, action: &Action) -> DebugConsoleStat
             state.logs.push(log_record.clone());
             // If we're at the bottom (scroll_offset == 0), stay at bottom
             // Otherwise, keep current scroll position
+        }
+        Action::DebugConsoleDumpLogs => {
+            // Dump logs to file
+            if let Err(e) = dump_logs_to_file(&state.logs) {
+                log::warn!("Failed to dump debug logs to file: {}", e);
+            }
         }
         Action::LocalKeyPressed(c) if *c == 'c' && is_active => {
             // Handle local 'c' key - clear logs
@@ -69,6 +76,26 @@ pub fn reduce(mut state: DebugConsoleState, action: &Action) -> DebugConsoleStat
     }
 
     state
+}
+
+fn dump_logs_to_file(logs: &[OwnedLogRecord]) -> anyhow::Result<()> {
+    use chrono::Local;
+    use std::fs::File;
+    use std::io::Write;
+    use std::path::PathBuf;
+
+    let timestamp = Local::now().format("%Y%m%d-%H%M%S");
+    let filename = format!("debug-{}.log", timestamp);
+    let mut path = PathBuf::from(".");
+    path.push(filename);
+
+    let mut file = File::create(&path)?;
+    for log in logs {
+        writeln!(file, "{}", log)?;
+    }
+
+    log::info!("Debug logs dumped to file: {:?}", path);
+    Ok(())
 }
 
 impl PanelCapabilityProvider for DebugConsoleState {

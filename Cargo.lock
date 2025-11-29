@@ -879,13 +879,16 @@ dependencies = [
 name = "gh-pr-lander"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "bitflags",
  "chrono",
  "figlet-rs",
  "gh-pr-config",
  "log",
+ "octocrab",
  "ratatui",
  "serde",
+ "tokio",
 ]
 
 [[package]]

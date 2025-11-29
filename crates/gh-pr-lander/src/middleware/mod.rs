@@ -7,6 +7,7 @@ pub mod bootstrap;
 pub mod command_palette;
 pub mod keyboard;
 pub mod logging;
+pub mod pull_request;
 pub mod repository;
 
 /// Middleware trait - intercepts actions before they reach the reducer

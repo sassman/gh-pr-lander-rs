@@ -79,7 +79,18 @@ pub fn init() -> &'static DebugConsoleLogger {
     // Set as global logger
     log::set_logger(logger).expect("Failed to set logger");
 
-    log::set_max_level(log::LevelFilter::Debug);
+    let level = std::env::var("RUST_LOG")
+        .map(|v| match v.as_str().to_lowercase().as_str() {
+            "error" => log::LevelFilter::Error,
+            "warn" => log::LevelFilter::Warn,
+            "info" => log::LevelFilter::Info,
+            "debug" => log::LevelFilter::Debug,
+            "trace" => log::LevelFilter::Trace,
+            _ => log::LevelFilter::Info,
+        })
+        .unwrap_or(log::LevelFilter::Debug);
+
+    log::set_max_level(level);
 
     logger
 }

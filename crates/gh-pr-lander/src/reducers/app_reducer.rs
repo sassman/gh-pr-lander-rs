@@ -1,5 +1,7 @@
 use crate::actions::Action;
-use crate::reducers::{add_repo_reducer, command_palette_reducer, debug_console_reducer, splash_reducer};
+use crate::reducers::{
+    add_repo_reducer, command_palette_reducer, debug_console_reducer, pr_reducer, splash_reducer,
+};
 use crate::state::AppState;
 use crate::views::MainView;
 
@@ -132,6 +134,9 @@ pub fn reduce(mut state: AppState, action: &Action) -> AppState {
 
     // Add repository form reducer (handles AddRepo* actions only)
     state.add_repo_form = add_repo_reducer::reduce(state.add_repo_form, action);
+
+    // PR reducer (handles PR* actions and navigation)
+    state.main_view = pr_reducer::reduce(state.main_view, action);
 
     state
 }

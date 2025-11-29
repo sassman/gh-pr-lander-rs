@@ -1,6 +1,10 @@
 use ratatui::crossterm::event::KeyEvent;
 
-use crate::{logger::OwnedLogRecord, state::Repository, views::View};
+use crate::{
+    domain_models::{Pr, Repository},
+    logger::OwnedLogRecord,
+    views::View,
+};
 
 /// Actions represent all possible state changes in the application.
 /// Actions are prefixed by scope to indicate which part of the app they affect.
@@ -41,16 +45,17 @@ pub enum Action {
     /// ## Debug console actions
     DebugConsoleClear, // Clear debug console logs
     DebugConsoleLogAdded(OwnedLogRecord), // New log record added
+    DebugConsoleDumpLogs,
 
     /// ## Text input actions (generic, for any view with TEXT_INPUT capability)
-    TextInputChar(char),  // Character typed into input field
-    TextInputBackspace,   // Backspace pressed in input field
-    TextInputClearLine,   // Cmd+Backspace - clear entire field/line
-    TextInputEscape,      // Escape pressed in input field (clear or close)
-    TextInputConfirm,     // Enter pressed in input field (confirm/execute)
+    TextInputChar(char), // Character typed into input field
+    TextInputBackspace, // Backspace pressed in input field
+    TextInputClearLine, // Cmd+Backspace - clear entire field/line
+    TextInputEscape,    // Escape pressed in input field (clear or close)
+    TextInputConfirm,   // Enter pressed in input field (confirm/execute)
 
     /// ## Command palette actions
-    CommandPaletteChar(char),   // Character typed into search field
+    CommandPaletteChar(char), // Character typed into search field
     CommandPaletteBackspace,    // Backspace pressed in search field
     CommandPaletteClear,        // Clear entire query (Cmd+Backspace)
     CommandPaletteClose,        // Close the command palette
@@ -59,17 +64,31 @@ pub enum Action {
     CommandPaletteNavigatePrev, // Navigate to previous command
 
     /// ## Repository management actions
-    RepositoryAdd,                      // Show add repository dialog/popup
+    RepositoryAdd, // Show add repository dialog/popup
     RepositoryAddBulk(Vec<Repository>), // Add multiple repositories at once (from config)
 
     /// ## Add repository form actions
-    AddRepoChar(char),      // Character typed into current field
-    AddRepoBackspace,       // Backspace pressed in current field
-    AddRepoClearField,      // Clear entire current field (Cmd+Backspace)
-    AddRepoNextField,       // Move to next field (Tab)
-    AddRepoPrevField,       // Move to previous field (Shift+Tab)
-    AddRepoConfirm,         // Confirm and add the repository (Enter)
-    AddRepoClose,           // Close the form without adding (Esc)
+    AddRepoChar(char), // Character typed into current field
+    AddRepoBackspace,  // Backspace pressed in current field
+    AddRepoClearField, // Clear entire current field (Cmd+Backspace)
+    AddRepoNextField,  // Move to next field (Tab)
+    AddRepoPrevField,  // Move to previous field (Shift+Tab)
+    AddRepoConfirm,    // Confirm and add the repository (Enter)
+    AddRepoClose,      // Close the form without adding (Esc)
+
+    /// ## Pull Request actions
+    /// Start loading PRs for a repository (repo_index)
+    PrLoadStart(usize),
+    /// PRs loaded successfully for a repository (repo_index, prs)
+    PrLoaded(usize, Vec<Pr>),
+    /// Failed to load PRs for a repository (repo_index, error_message)
+    PrLoadError(usize, String),
+    /// Navigate to next PR in the table
+    PrNavigateNext,
+    /// Navigate to previous PR in the table
+    PrNavigatePrevious,
+    /// Refresh PRs for the current repository
+    PrRefresh,
 
     /// ## Bootstrap actions
     BootstrapStart,
@@ -105,6 +124,7 @@ impl Clone for Action {
             Self::ScrollHalfPageUp => Self::ScrollHalfPageUp,
             Self::DebugConsoleClear => Self::DebugConsoleClear,
             Self::DebugConsoleLogAdded(record) => Self::DebugConsoleLogAdded(record.clone()),
+            Self::DebugConsoleDumpLogs => Self::DebugConsoleDumpLogs,
             Self::TextInputChar(c) => Self::TextInputChar(*c),
             Self::TextInputBackspace => Self::TextInputBackspace,
             Self::TextInputClearLine => Self::TextInputClearLine,
@@ -126,6 +146,12 @@ impl Clone for Action {
             Self::AddRepoPrevField => Self::AddRepoPrevField,
             Self::AddRepoConfirm => Self::AddRepoConfirm,
             Self::AddRepoClose => Self::AddRepoClose,
+            Self::PrLoadStart(idx) => Self::PrLoadStart(*idx),
+            Self::PrLoaded(idx, prs) => Self::PrLoaded(*idx, prs.clone()),
+            Self::PrLoadError(idx, err) => Self::PrLoadError(*idx, err.clone()),
+            Self::PrNavigateNext => Self::PrNavigateNext,
+            Self::PrNavigatePrevious => Self::PrNavigatePrevious,
+            Self::PrRefresh => Self::PrRefresh,
             Self::BootstrapStart => Self::BootstrapStart,
             Self::BootstrapEnd => Self::BootstrapEnd,
             Self::Tick => Self::Tick,
@@ -159,6 +185,7 @@ impl std::fmt::Debug for Action {
             Self::DebugConsoleLogAdded(record) => {
                 f.debug_tuple("DebugConsoleLogAdded").field(record).finish()
             }
+            Self::DebugConsoleDumpLogs => write!(f, "DebugConsoleDumpLogs"),
             Self::TextInputChar(c) => f.debug_tuple("TextInputChar").field(c).finish(),
             Self::TextInputBackspace => write!(f, "TextInputBackspace"),
             Self::TextInputClearLine => write!(f, "TextInputClearLine"),
@@ -182,6 +209,12 @@ impl std::fmt::Debug for Action {
             Self::AddRepoPrevField => write!(f, "AddRepoPrevField"),
             Self::AddRepoConfirm => write!(f, "AddRepoConfirm"),
             Self::AddRepoClose => write!(f, "AddRepoClose"),
+            Self::PrLoadStart(idx) => write!(f, "PrLoadStart({})", idx),
+            Self::PrLoaded(idx, prs) => write!(f, "PrLoaded({}, {} prs)", idx, prs.len()),
+            Self::PrLoadError(idx, err) => write!(f, "PrLoadError({}, {})", idx, err),
+            Self::PrNavigateNext => write!(f, "PrNavigateNext"),
+            Self::PrNavigatePrevious => write!(f, "PrNavigatePrevious"),
+            Self::PrRefresh => write!(f, "PrRefresh"),
             Self::BootstrapStart => write!(f, "BootstrapStart"),
             Self::BootstrapEnd => write!(f, "BootstrapEnd"),
             Self::Tick => write!(f, "Tick"),

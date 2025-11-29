@@ -80,7 +80,10 @@ fn render(state: &AppState, area: Rect, f: &mut Frame) {
         Span::styled(" Enter", theme.key_hint().bold()),
         Span::styled(" execute  ", theme.muted()),
         Span::styled(
-            format!("{}/{}", vm.footer_hints.navigate_up, vm.footer_hints.navigate_down),
+            format!(
+                "{}/{}",
+                vm.footer_hints.navigate_up, vm.footer_hints.navigate_down
+            ),
             theme.key_hint().bold(),
         ),
         Span::styled(" navigate  ", theme.muted()),

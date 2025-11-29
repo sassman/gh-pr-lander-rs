@@ -1,13 +1,15 @@
 use crate::capabilities::PanelCapabilities;
-use crate::state::{AppState, Repository};
+use crate::domain_models::LoadingState;
+use crate::state::AppState;
 use crate::theme::Theme;
+use crate::view_models::{EmptyPrTableViewModel, PrTableViewModel};
 use crate::views::View;
 use ratatui::{
     buffer::Buffer,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::Stylize,
-    text::{Line, Span},
-    widgets::{Block, Paragraph, Widget},
+    style::Modifier,
+    text::Line,
+    widgets::{Block, Cell, Paragraph, Row, Table, Widget},
     Frame,
 };
 
@@ -54,103 +56,184 @@ fn render(state: &AppState, area: Rect, f: &mut Frame) {
         ])
         .split(area);
 
-    // Generate tab titles from repositories: "org/repo@branch"
-    let tab_titles: Vec<String> = state
+    // Generate tab titles and loading states from repositories
+    let tab_data: Vec<(String, bool)> = state
         .main_view
         .repositories
         .iter()
-        .map(|repo| format!("{}/{}@{}", repo.org, repo.repo, repo.branch))
+        .enumerate()
+        .map(|(idx, repo)| {
+            let title = format!("{}/{}@{}", repo.org, repo.repo, repo.branch);
+            let is_loading = state.main_view.repo_data.get(&idx).is_none_or(|data| {
+                matches!(
+                    data.loading_state,
+                    LoadingState::Idle | LoadingState::Loading
+                )
+            });
+            (title, is_loading)
+        })
         .collect();
-    let tabs_widget = ModernTabs::new(tab_titles, state.main_view.selected_repository, theme);
+    let tabs_widget = ModernTabs::new(tab_data, state.main_view.selected_repository, theme);
     f.render_widget(tabs_widget, chunks[0]);
 
-    // Render content with QuadrantOutside border - uses half-block characters
-    // that create a connected appearance with the tab bar
-    let content_block = Block::bordered()
+    // Render PR table for the selected repository
+    render_pr_table(state, chunks[1], f);
+}
+
+/// Render the PR table for the currently selected repository
+fn render_pr_table(state: &AppState, area: Rect, f: &mut Frame) {
+    let theme = &state.theme;
+    let repo_idx = state.main_view.selected_repository;
+
+    // Get current repository and its data
+    let repo = state.main_view.repositories.get(repo_idx);
+    let repo_data = state.main_view.repo_data.get(&repo_idx);
+
+    // Handle empty state
+    if repo.is_none() {
+        let vm = EmptyPrTableViewModel::no_repos();
+        render_empty_state(&vm, area, f, theme);
+        return;
+    }
+
+    let repo = repo.unwrap();
+
+    // Check loading state
+    match repo_data.map(|rd| &rd.loading_state) {
+        None | Some(LoadingState::Idle) => {
+            let vm = EmptyPrTableViewModel::loading();
+            render_empty_state(&vm, area, f, theme);
+            return;
+        }
+        Some(LoadingState::Loading) => {
+            let vm = EmptyPrTableViewModel::loading();
+            render_empty_state(&vm, area, f, theme);
+            return;
+        }
+        Some(LoadingState::Error(err)) => {
+            let vm = EmptyPrTableViewModel::error(err);
+            render_empty_state(&vm, area, f, theme);
+            return;
+        }
+        Some(LoadingState::Loaded) => {
+            // Continue to render the table
+        }
+    }
+
+    let repo_data = repo_data.unwrap();
+
+    // Check if there are any PRs
+    if repo_data.prs.is_empty() {
+        let vm = EmptyPrTableViewModel::no_prs();
+        render_empty_state(&vm, area, f, theme);
+        return;
+    }
+
+    // Build view model
+    let vm = PrTableViewModel::from_repo_data(repo_data, repo, theme);
+
+    // Build block with header
+    let status_line = Line::from(vm.header.status_text.clone())
+        .style(ratatui::style::Style::default().fg(vm.header.status_color))
+        .right_aligned();
+
+    let block = Block::bordered()
+        .border_type(ratatui::widgets::BorderType::QuadrantOutside)
+        .border_style(ratatui::style::Style::default().fg(theme.accent_primary))
+        .title(vm.header.title.clone())
+        .title(status_line);
+
+    // Build header row
+    let header_style = ratatui::style::Style::default()
+        .fg(theme.accent_primary)
+        .add_modifier(Modifier::BOLD);
+
+    let header_cells = ["#PR", "Title", "Author", "Comments", "Status"]
+        .iter()
+        .map(|h| Cell::from(*h).style(header_style));
+
+    let header = Row::new(header_cells).height(1);
+
+    // Build rows from view model
+    let rows: Vec<Row> = vm
+        .rows
+        .iter()
+        .map(|row_vm| {
+            let style = ratatui::style::Style::default()
+                .fg(row_vm.fg_color)
+                .bg(row_vm.bg_color);
+
+            Row::new(vec![
+                Cell::from(row_vm.pr_number.clone()),
+                Cell::from(row_vm.title.clone()),
+                Cell::from(row_vm.author.clone()),
+                Cell::from(row_vm.comments.clone()),
+                Cell::from(row_vm.status_text.clone())
+                    .style(ratatui::style::Style::default().fg(row_vm.status_color)),
+            ])
+            .style(style)
+            .height(1)
+        })
+        .collect();
+
+    let widths = [
+        Constraint::Length(6),      // #PR
+        Constraint::Percentage(50), // Title
+        Constraint::Percentage(15), // Author
+        Constraint::Length(10),     // Comments
+        Constraint::Percentage(15), // Status
+    ];
+
+    // Selected row style
+    let selected_style = ratatui::style::Style::default()
+        .bg(theme.selected_bg)
+        .fg(theme.active_fg)
+        .add_modifier(Modifier::BOLD);
+
+    let table = Table::new(rows, widths)
+        .header(header)
+        .block(block)
+        .row_highlight_style(selected_style)
+        .highlight_symbol("> ");
+
+    // Create a table state for highlighting
+    let mut table_state = ratatui::widgets::TableState::default();
+    table_state.select(Some(vm.selected_index));
+
+    f.render_stateful_widget(table, area, &mut table_state);
+}
+
+/// Render empty/loading state
+fn render_empty_state(vm: &EmptyPrTableViewModel, area: Rect, f: &mut Frame, theme: &Theme) {
+    let block = Block::bordered()
         .border_type(ratatui::widgets::BorderType::QuadrantOutside)
         .border_style(ratatui::style::Style::default().fg(theme.accent_primary));
 
-    // Render repository content based on selected repository
-    let content = if let Some(repo) = state
-        .main_view
-        .repositories
-        .get(state.main_view.selected_repository)
-    {
-        render_repo_content(repo, theme)
-    } else {
-        render_no_repos_content(theme)
-    };
-
-    let paragraph = Paragraph::new(content)
-        .block(content_block)
-        .style(theme.panel_background())
+    let paragraph = Paragraph::new(vm.message.clone())
+        .block(block)
+        .style(theme.muted())
         .alignment(Alignment::Center);
 
-    f.render_widget(paragraph, chunks[1]);
-}
-
-/// Render content for a repository
-fn render_repo_content(repo: &Repository, theme: &crate::theme::Theme) -> Vec<Line<'static>> {
-    let repo_name = format!("{}/{}@{}", repo.org, repo.repo, repo.branch);
-    vec![
-        Line::from(""),
-        Line::from(Span::styled(repo_name, theme.success().bold())),
-        Line::from(""),
-        Line::from(Span::styled(
-            "Repository content will be displayed here",
-            theme.text_secondary(),
-        )),
-        Line::from(""),
-        Line::from(Span::styled("Controls:", theme.section_header())),
-        Line::from(vec![
-            Span::styled("  Tab/Shift+Tab  ", theme.key_hint()),
-            Span::styled("- Switch repositories", theme.key_description()),
-        ]),
-        Line::from(vec![
-            Span::styled("  `              ", theme.key_hint()),
-            Span::styled("- Show debug console", theme.key_description()),
-        ]),
-        Line::from(vec![
-            Span::styled("  Ctrl + p       ", theme.key_hint()),
-            Span::styled("- Show Command Palette", theme.key_description()),
-        ]),
-        Line::from(vec![
-            Span::styled("  q or Esc       ", theme.key_hint()),
-            Span::styled("- Quit", theme.key_description()),
-        ]),
-    ]
-}
-
-/// Render content when no repositories are configured
-fn render_no_repos_content(theme: &crate::theme::Theme) -> Vec<Line<'static>> {
-    vec![
-        Line::from(""),
-        Line::from(Span::styled(
-            "No Repositories",
-            theme.text_secondary().bold(),
-        )),
-        Line::from(""),
-        Line::from(Span::styled(
-            "Press  p → a  to add your first repository",
-            theme.muted(),
-        )),
-        Line::from(""),
-    ]
+    f.render_widget(paragraph, area);
 }
 
 /// Modern background-color style tabs widget
 /// Uses background colors instead of borders - active tab has prominent color,
 /// inactive tabs are subtle. Content frame matches selected tab's color.
 struct ModernTabs<'a> {
-    titles: Vec<String>,
+    /// Tab data: (title, is_loading)
+    tabs: Vec<(String, bool)>,
     selected: usize,
     theme: &'a Theme,
 }
 
+/// Hourglass icon for loading state
+const HOURGLASS_ICON: &str = "⏳";
+
 impl<'a> ModernTabs<'a> {
-    fn new(titles: Vec<String>, selected: usize, theme: &'a Theme) -> Self {
+    fn new(tabs: Vec<(String, bool)>, selected: usize, theme: &'a Theme) -> Self {
         Self {
-            titles,
+            tabs,
             selected,
             theme,
         }
@@ -176,9 +259,17 @@ impl Widget for ModernTabs<'_> {
         let inactive_fg = self.theme.text_muted;
 
         // Render each tab (just 1 row of content with background)
-        for (i, title) in self.titles.iter().enumerate() {
+        for (i, (title, is_loading)) in self.tabs.iter().enumerate() {
             let is_selected = i == self.selected;
-            let tab_width = title.len() as u16 + 4; // 2 chars padding on each side
+
+            // Build the display title with optional loading icon
+            let display_title = if *is_loading {
+                format!("{} {}", HOURGLASS_ICON, title)
+            } else {
+                title.clone()
+            };
+
+            let tab_width = display_title.chars().count() as u16 + 4; // 2 chars padding on each side
 
             if x + tab_width > area.x + area.width {
                 break; // Don't overflow
@@ -197,7 +288,7 @@ impl Widget for ModernTabs<'_> {
             };
 
             // Render tab background and text
-            let padded_title = format!("  {}  ", title);
+            let padded_title = format!("  {}  ", display_title);
             buf.set_string(x, area.y, &padded_title, style);
 
             x += tab_width + 1; // Gap between tabs

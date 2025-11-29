@@ -71,10 +71,7 @@ fn render(form: &AddRepoFormState, theme: &Theme, area: Rect, f: &mut Frame) {
     f.render_widget(Clear, popup_area);
 
     // Render popup background
-    f.render_widget(
-        Block::default().style(theme.panel_background()),
-        popup_area,
-    );
+    f.render_widget(Block::default().style(theme.panel_background()), popup_area);
 
     // Build footer hint for bottom border
     let footer_hint = Line::from(vec![
@@ -221,7 +218,10 @@ fn render_field(
         // When focused with placeholder: cursor at beginning, then placeholder text
         Line::from(vec![
             Span::styled(indicator, theme.accent().bold()),
-            Span::styled(format!("{:width$}", format!("{}:", label), width = label_width), label_style),
+            Span::styled(
+                format!("{:width$}", format!("{}:", label), width = label_width),
+                label_style,
+            ),
             Span::styled("▌", theme.accent()),
             Span::styled(display_value, value_style),
         ])
@@ -229,7 +229,10 @@ fn render_field(
         // Normal case: text (or empty), then cursor if focused
         Line::from(vec![
             Span::styled(indicator, theme.accent().bold()),
-            Span::styled(format!("{:width$}", format!("{}:", label), width = label_width), label_style),
+            Span::styled(
+                format!("{:width$}", format!("{}:", label), width = label_width),
+                label_style,
+            ),
             Span::styled(
                 display_value,
                 if focused {

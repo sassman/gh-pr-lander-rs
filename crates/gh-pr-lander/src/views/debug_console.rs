@@ -74,7 +74,10 @@ fn render(state: &DebugConsoleState, theme: &Theme, keymap: &Keymap, area: Rect,
 
     // Build footer hint for bottom border using pre-computed hints from view model
     let footer_hint = Line::from(vec![
-        Span::styled(format!(" {}", view_model.footer_hints.scroll), theme.key_hint().bold()),
+        Span::styled(
+            format!(" {}", view_model.footer_hints.scroll),
+            theme.key_hint().bold(),
+        ),
         Span::styled(" scroll  ", theme.muted()),
         Span::styled(&view_model.footer_hints.top_bottom, theme.key_hint().bold()),
         Span::styled(" top/bottom  ", theme.muted()),
