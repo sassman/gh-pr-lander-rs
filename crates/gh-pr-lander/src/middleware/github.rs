@@ -107,9 +107,20 @@ impl Middleware for GitHubMiddleware {
             Action::PrOpenInBrowser => {
                 if let Some(url) = self.get_current_pr_url(state) {
                     log::info!("Opening PR in browser: {}", url);
-                    if let Err(e) = open::that(&url) {
-                        log::error!("Failed to open URL in browser: {}", e);
-                    }
+
+                    // Use platform-specific commands (matching gh-pr-tui implementation)
+                    self.runtime.spawn(async move {
+                        #[cfg(target_os = "macos")]
+                        let _ = tokio::process::Command::new("open").arg(&url).spawn();
+
+                        #[cfg(target_os = "linux")]
+                        let _ = tokio::process::Command::new("xdg-open").arg(&url).spawn();
+
+                        #[cfg(target_os = "windows")]
+                        let _ = tokio::process::Command::new("cmd")
+                            .args(["/C", "start", &url])
+                            .spawn();
+                    });
                 }
                 false // Consume action
             }
@@ -329,53 +340,143 @@ impl Middleware for GitHubMiddleware {
             Action::PrOpenBuildLogs => {
                 if let Some(url) = self.build_ci_logs_url(state) {
                     log::info!("Opening CI logs in browser: {}", url);
-                    if let Err(e) = open::that(&url) {
-                        log::error!("Failed to open URL in browser: {}", e);
-                    }
+
+                    // Use platform-specific commands (matching gh-pr-tui implementation)
+                    self.runtime.spawn(async move {
+                        #[cfg(target_os = "macos")]
+                        let _ = tokio::process::Command::new("open").arg(&url).spawn();
+
+                        #[cfg(target_os = "linux")]
+                        let _ = tokio::process::Command::new("xdg-open").arg(&url).spawn();
+
+                        #[cfg(target_os = "windows")]
+                        let _ = tokio::process::Command::new("cmd")
+                            .args(["/C", "start", &url])
+                            .spawn();
+                    });
                 }
                 false // Consume action
             }
 
             Action::PrOpenInIDE => {
-                // Get current PR info for gh CLI command
+                // Get current PR info for IDE opening
                 let repo_idx = state.main_view.selected_repository;
-                if let Some(repo) = state.main_view.repositories.get(repo_idx) {
+                if let Some(repo) = state.main_view.repositories.get(repo_idx).cloned() {
                     if let Some(repo_data) = state.main_view.repo_data.get(&repo_idx) {
-                        if let Some(pr) = repo_data.prs.get(repo_data.selected_pr) {
-                            let repo_full = format!("{}/{}", repo.org, repo.repo);
+                        if let Some(pr) = repo_data.prs.get(repo_data.selected_pr).cloned() {
                             let pr_number = pr.number;
 
-                            log::info!("Opening PR #{} diff in IDE for {}", pr_number, repo_full);
+                            log::info!(
+                                "Opening PR #{} in IDE for {}/{}",
+                                pr_number,
+                                repo.org,
+                                repo.repo
+                            );
 
-                            // Use gh pr diff command to show diff in terminal/editor
-                            // This opens the diff in the default pager or can be piped to an editor
-                            let result = std::process::Command::new("gh")
-                                .args([
-                                    "pr",
-                                    "diff",
-                                    &pr_number.to_string(),
-                                    "--repo",
-                                    &repo_full,
-                                ])
-                                .spawn();
+                            // Spawn blocking task to open in IDE (matching gh-pr-tui implementation)
+                            tokio::task::spawn_blocking(move || {
+                                use std::path::PathBuf;
+                                use std::process::Command;
 
-                            match result {
-                                Ok(mut child) => {
-                                    // Wait for the process in a background thread
-                                    std::thread::spawn(move || {
-                                        if let Err(e) = child.wait() {
-                                            log::error!("Failed to wait for gh pr diff: {}", e);
-                                        }
-                                    });
+                                // Use system temp directory
+                                let temp_dir = std::env::temp_dir().join("gh-pr-lander");
+
+                                // Create temp directory if it doesn't exist
+                                if let Err(err) = std::fs::create_dir_all(&temp_dir) {
+                                    log::error!("Failed to create temp directory: {}", err);
+                                    return;
                                 }
-                                Err(e) => {
+
+                                // Create unique directory for this PR
+                                let dir_name = format!("{}-{}-pr-{}", repo.org, repo.repo, pr_number);
+                                let pr_dir = PathBuf::from(&temp_dir).join(dir_name);
+
+                                // Remove existing directory if present
+                                if pr_dir.exists() {
+                                    if let Err(err) = std::fs::remove_dir_all(&pr_dir) {
+                                        log::error!("Failed to remove existing directory: {}", err);
+                                        return;
+                                    }
+                                }
+
+                                // Clone the repository using gh repo clone
+                                log::info!("Cloning {}/{} to {:?}", repo.org, repo.repo, pr_dir);
+                                let clone_output = Command::new("gh")
+                                    .args([
+                                        "repo",
+                                        "clone",
+                                        &format!("{}/{}", repo.org, repo.repo),
+                                        &pr_dir.to_string_lossy(),
+                                    ])
+                                    .output();
+
+                                match clone_output {
+                                    Err(err) => {
+                                        log::error!("Failed to run gh repo clone: {}", err);
+                                        return;
+                                    }
+                                    Ok(output) if !output.status.success() => {
+                                        let stderr = String::from_utf8_lossy(&output.stderr);
+                                        log::error!("gh repo clone failed: {}", stderr);
+                                        return;
+                                    }
+                                    _ => {}
+                                }
+
+                                // Checkout the PR using gh pr checkout
+                                log::info!("Checking out PR #{}", pr_number);
+                                let checkout_output = Command::new("gh")
+                                    .args(["pr", "checkout", &pr_number.to_string()])
+                                    .current_dir(&pr_dir)
+                                    .output();
+
+                                match checkout_output {
+                                    Err(err) => {
+                                        log::error!("Failed to run gh pr checkout: {}", err);
+                                        return;
+                                    }
+                                    Ok(output) if !output.status.success() => {
+                                        let stderr = String::from_utf8_lossy(&output.stderr);
+                                        log::error!("gh pr checkout failed: {}", stderr);
+                                        return;
+                                    }
+                                    _ => {}
+                                }
+
+                                // Set origin URL to SSH (gh checkout doesn't do this)
+                                let ssh_url =
+                                    format!("git@github.com:{}/{}.git", repo.org, repo.repo);
+                                let set_url_output = Command::new("git")
+                                    .args(["remote", "set-url", "origin", &ssh_url])
+                                    .current_dir(&pr_dir)
+                                    .output();
+
+                                if let Err(err) = set_url_output {
+                                    log::warn!("Failed to set SSH origin URL: {}", err);
+                                    // Continue anyway - HTTPS will still work
+                                }
+
+                                // Open in IDE (try common IDE commands)
+                                // Priority: code (VS Code), cursor, zed, idea, vim
+                                let ide_commands = ["code", "cursor", "zed", "idea", "vim"];
+                                let mut opened = false;
+
+                                for ide in ide_commands {
+                                    if Command::new(ide).arg(&pr_dir).spawn().is_ok() {
+                                        log::info!("Opened PR #{} in {} at {:?}", pr_number, ide, pr_dir);
+                                        opened = true;
+                                        break;
+                                    }
+                                }
+
+                                if !opened {
                                     log::error!(
-                                        "Failed to open PR #{} in IDE: {} (is gh CLI installed?)",
-                                        pr_number,
-                                        e
+                                        "Failed to open IDE. Tried: {:?}. PR cloned at: {:?}",
+                                        ide_commands,
+                                        pr_dir
                                     );
                                 }
-                            }
+                            });
                         }
                     }
                 }

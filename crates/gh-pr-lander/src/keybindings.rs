@@ -317,7 +317,7 @@ pub fn default_keymap() -> Keymap {
         KeyBinding::new("u", "u", PrDeselectAll),
         KeyBinding::new("ctrl+r", "Ctrl+R", PrRefresh),
         // PR Operations
-        KeyBinding::new("o", "o", PrOpenInBrowser),
+        KeyBinding::new("enter", "Enter", PrOpenInBrowser),
         KeyBinding::new("m", "m", PrMerge),
         KeyBinding::new("r", "r", PrRebase),
         KeyBinding::new("a", "a", PrApprove),
@@ -326,7 +326,10 @@ pub fn default_keymap() -> Keymap {
         KeyBinding::new("R", "R", PrRerunFailedJobs),
         KeyBinding::new("b", "b", PrOpenBuildLogs),
         // IDE Integration
-        KeyBinding::new("e", "e", PrOpenInIDE),
+        KeyBinding::new("i", "i", PrOpenInIDE),
+        // Filter & Search
+        KeyBinding::new("f", "f", PrCycleFilter),
+        KeyBinding::new("F", "F", PrClearFilter),
         // Merge Bot
         KeyBinding::new("M", "M", MergeBotStart),
         KeyBinding::new("Q", "Q", MergeBotAddToQueue),

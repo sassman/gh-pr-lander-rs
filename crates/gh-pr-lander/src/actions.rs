@@ -150,6 +150,14 @@ pub enum Action {
     /// Open current PR diff in configured IDE (uses gh CLI under the hood)
     PrOpenInIDE,
 
+    /// ## Filter & Search actions
+    /// Cycle through filter presets (All -> ReadyToMerge -> NeedsRebase -> etc.)
+    PrCycleFilter,
+    /// Set a specific filter
+    PrSetFilter(crate::state::PrFilter),
+    /// Clear the current filter (show all PRs)
+    PrClearFilter,
+
     /// ## Merge Bot actions
     /// Start merge bot for selected PRs (adds them to the merge queue)
     MergeBotStart,
@@ -262,6 +270,9 @@ impl Clone for Action {
             }
             Self::PrOpenBuildLogs => Self::PrOpenBuildLogs,
             Self::PrOpenInIDE => Self::PrOpenInIDE,
+            Self::PrCycleFilter => Self::PrCycleFilter,
+            Self::PrSetFilter(filter) => Self::PrSetFilter(filter.clone()),
+            Self::PrClearFilter => Self::PrClearFilter,
             Self::MergeBotStart => Self::MergeBotStart,
             Self::MergeBotStop => Self::MergeBotStop,
             Self::MergeBotAddToQueue => Self::MergeBotAddToQueue,
@@ -378,6 +389,9 @@ impl std::fmt::Debug for Action {
             }
             Self::PrOpenBuildLogs => write!(f, "PrOpenBuildLogs"),
             Self::PrOpenInIDE => write!(f, "PrOpenInIDE"),
+            Self::PrCycleFilter => write!(f, "PrCycleFilter"),
+            Self::PrSetFilter(filter) => write!(f, "PrSetFilter({:?})", filter),
+            Self::PrClearFilter => write!(f, "PrClearFilter"),
             Self::MergeBotStart => write!(f, "MergeBotStart"),
             Self::MergeBotStop => write!(f, "MergeBotStop"),
             Self::MergeBotAddToQueue => write!(f, "MergeBotAddToQueue"),

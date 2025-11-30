@@ -90,6 +90,12 @@ pub enum CommandId {
     /// Open current PR in configured IDE
     PrOpenInIDE,
 
+    // === Filter & Search ===
+    /// Cycle through filter presets
+    PrCycleFilter,
+    /// Clear the current filter
+    PrClearFilter,
+
     // === Merge Bot ===
     /// Start merge bot for selected PRs
     MergeBotStart,
@@ -162,6 +168,10 @@ impl CommandId {
             // IDE Integration
             Self::PrOpenInIDE => Action::PrOpenInIDE,
 
+            // Filter & Search
+            Self::PrCycleFilter => Action::PrCycleFilter,
+            Self::PrClearFilter => Action::PrClearFilter,
+
             // Merge Bot
             Self::MergeBotStart => Action::MergeBotStart,
             Self::MergeBotStop => Action::MergeBotStop,
@@ -222,6 +232,10 @@ impl CommandId {
 
             // IDE Integration
             Self::PrOpenInIDE => "Open PR diff in IDE",
+
+            // Filter & Search
+            Self::PrCycleFilter => "Cycle PR filter",
+            Self::PrClearFilter => "Clear PR filter",
 
             // Merge Bot
             Self::MergeBotStart => "Start merge bot",
@@ -284,6 +298,10 @@ impl CommandId {
             // IDE Integration
             Self::PrOpenInIDE => "Open the PR diff in your configured IDE (uses gh pr view)",
 
+            // Filter & Search
+            Self::PrCycleFilter => "Cycle through filter presets (All, Ready, Needs Rebase, etc.)",
+            Self::PrClearFilter => "Clear the current filter and show all PRs",
+
             // Merge Bot
             Self::MergeBotStart => "Start automated merge bot for selected PRs",
             Self::MergeBotStop => "Stop the merge bot and clear the queue",
@@ -327,7 +345,9 @@ impl CommandId {
             | Self::PrClose
             | Self::PrRerunFailedJobs
             | Self::PrOpenBuildLogs
-            | Self::PrOpenInIDE => "Pull Request",
+            | Self::PrOpenInIDE
+            | Self::PrCycleFilter
+            | Self::PrClearFilter => "Pull Request",
 
             Self::MergeBotStart | Self::MergeBotStop | Self::MergeBotAddToQueue => "Merge Bot",
 
