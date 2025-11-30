@@ -5,7 +5,7 @@
 
 use crate::client::{CacheMode, GitHubClient};
 use crate::types::{
-    CheckRun, CheckStatus, MergeMethod, MergeResult, PullRequest, ReviewEvent,
+    CheckRun, CheckStatus, MergeMethod, MergeResult, PullRequest, ReviewEvent, WorkflowRun,
 };
 use async_trait::async_trait;
 use gh_api_cache::{ApiCache, CachedResponse};
@@ -277,6 +277,55 @@ impl<C: GitHubClient + Clone> GitHubClient for CachedGitHubClient<C> {
         // Mutations are never cached - pass through directly
         self.inner.close_pull_request(owner, repo, pr_number).await
     }
+
+    async fn rerun_failed_jobs(
+        &self,
+        owner: &str,
+        repo: &str,
+        run_id: u64,
+    ) -> anyhow::Result<()> {
+        // Mutations are never cached - pass through directly
+        self.inner.rerun_failed_jobs(owner, repo, run_id).await
+    }
+
+    async fn fetch_workflow_runs(
+        &self,
+        owner: &str,
+        repo: &str,
+        head_sha: &str,
+    ) -> anyhow::Result<Vec<WorkflowRun>> {
+        let url = format!("/repos/{}/{}/actions/runs", owner, repo);
+        let params: &[(&str, &str)] = &[("head_sha", head_sha)];
+
+        // Try cache first
+        if let Some(cached_body) = self.try_cache_get("GET", &url, params) {
+            match serde_json::from_str::<Vec<WorkflowRun>>(&cached_body) {
+                Ok(runs) => {
+                    debug!(
+                        "Cache HIT for {}/{} @ {}: {} workflow runs",
+                        owner,
+                        repo,
+                        head_sha,
+                        runs.len()
+                    );
+                    return Ok(runs);
+                }
+                Err(e) => {
+                    debug!("Failed to parse cached workflow runs: {}", e);
+                }
+            }
+        }
+
+        // Fetch from API
+        let runs = self.inner.fetch_workflow_runs(owner, repo, head_sha).await?;
+
+        // Cache the result
+        if let Ok(json) = serde_json::to_string(&runs) {
+            self.cache_set("GET", &url, params, &json);
+        }
+
+        Ok(runs)
+    }
 }
 
 #[cfg(test)]
@@ -388,6 +437,26 @@ mod tests {
         ) -> anyhow::Result<()> {
             *self.call_count.lock().unwrap() += 1;
             Ok(())
+        }
+
+        async fn rerun_failed_jobs(
+            &self,
+            _owner: &str,
+            _repo: &str,
+            _run_id: u64,
+        ) -> anyhow::Result<()> {
+            *self.call_count.lock().unwrap() += 1;
+            Ok(())
+        }
+
+        async fn fetch_workflow_runs(
+            &self,
+            _owner: &str,
+            _repo: &str,
+            _head_sha: &str,
+        ) -> anyhow::Result<Vec<WorkflowRun>> {
+            *self.call_count.lock().unwrap() += 1;
+            Ok(vec![])
         }
     }
 

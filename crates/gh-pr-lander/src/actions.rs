@@ -134,6 +134,18 @@ pub enum Action {
     /// Close failed
     PrCloseError(usize, usize, String), // repo_idx, pr_number, error
 
+    /// ## CI/Build Status actions
+    /// Request to rerun failed jobs for the current PR
+    PrRerunFailedJobs,
+    /// Rerun started for a workflow run
+    PrRerunStart(usize, u64, u64), // repo_idx, pr_number, run_id
+    /// Rerun succeeded
+    PrRerunSuccess(usize, u64, u64), // repo_idx, pr_number, run_id
+    /// Rerun failed
+    PrRerunError(usize, u64, u64, String), // repo_idx, pr_number, run_id, error
+    /// Open CI build logs in browser (for current PR)
+    PrOpenBuildLogs,
+
     /// ## Bootstrap actions
     BootstrapStart,
     BootstrapEnd,
@@ -222,6 +234,13 @@ impl Clone for Action {
             Self::PrCloseStart(repo, pr) => Self::PrCloseStart(*repo, *pr),
             Self::PrCloseSuccess(repo, pr) => Self::PrCloseSuccess(*repo, *pr),
             Self::PrCloseError(repo, pr, err) => Self::PrCloseError(*repo, *pr, err.clone()),
+            Self::PrRerunFailedJobs => Self::PrRerunFailedJobs,
+            Self::PrRerunStart(repo, pr, run) => Self::PrRerunStart(*repo, *pr, *run),
+            Self::PrRerunSuccess(repo, pr, run) => Self::PrRerunSuccess(*repo, *pr, *run),
+            Self::PrRerunError(repo, pr, run, err) => {
+                Self::PrRerunError(*repo, *pr, *run, err.clone())
+            }
+            Self::PrOpenBuildLogs => Self::PrOpenBuildLogs,
             Self::BootstrapStart => Self::BootstrapStart,
             Self::BootstrapEnd => Self::BootstrapEnd,
             Self::LoadRecentRepositories => Self::LoadRecentRepositories,
@@ -315,6 +334,17 @@ impl std::fmt::Debug for Action {
             Self::PrCloseError(repo, pr, err) => {
                 write!(f, "PrCloseError({}, #{}, {})", repo, pr, err)
             }
+            Self::PrRerunFailedJobs => write!(f, "PrRerunFailedJobs"),
+            Self::PrRerunStart(repo, pr, run) => {
+                write!(f, "PrRerunStart({}, #{}, run={})", repo, pr, run)
+            }
+            Self::PrRerunSuccess(repo, pr, run) => {
+                write!(f, "PrRerunSuccess({}, #{}, run={})", repo, pr, run)
+            }
+            Self::PrRerunError(repo, pr, run, err) => {
+                write!(f, "PrRerunError({}, #{}, run={}, {})", repo, pr, run, err)
+            }
+            Self::PrOpenBuildLogs => write!(f, "PrOpenBuildLogs"),
             Self::BootstrapStart => write!(f, "BootstrapStart"),
             Self::BootstrapEnd => write!(f, "BootstrapEnd"),
             Self::LoadRecentRepositories => write!(f, "LoadRecentRepositories"),

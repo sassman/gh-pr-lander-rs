@@ -363,6 +363,7 @@ fn convert_to_domain_pr(pr: PullRequest) -> Pr {
         mergeable,
         needs_rebase: matches!(mergeable, MergeableStatus::NeedsRebase),
         head_sha: pr.head_sha,
+        head_branch: pr.head_branch,
         created_at: pr.created_at,
         updated_at: pr.updated_at,
         html_url: pr.html_url,

@@ -80,6 +80,12 @@ pub enum CommandId {
     /// Close selected PRs without merging
     PrClose,
 
+    // === CI/Build Status ===
+    /// Rerun failed CI jobs for current PR
+    PrRerunFailedJobs,
+    /// Open CI build logs in browser
+    PrOpenBuildLogs,
+
     // === General ===
     /// Close the current view/panel
     GlobalClose,
@@ -137,6 +143,10 @@ impl CommandId {
             Self::PrApprove => Action::PrApproveRequest,
             Self::PrClose => Action::PrCloseRequest,
 
+            // CI/Build Status
+            Self::PrRerunFailedJobs => Action::PrRerunFailedJobs,
+            Self::PrOpenBuildLogs => Action::PrOpenBuildLogs,
+
             // General
             Self::GlobalClose => Action::GlobalClose,
             Self::GlobalQuit => Action::GlobalQuit,
@@ -185,6 +195,10 @@ impl CommandId {
             Self::PrRebase => "Rebase PRs",
             Self::PrApprove => "Approve PRs",
             Self::PrClose => "Close PRs",
+
+            // CI/Build Status
+            Self::PrRerunFailedJobs => "Rerun failed CI jobs",
+            Self::PrOpenBuildLogs => "Open CI build logs",
 
             // General
             Self::GlobalClose => "Close",
@@ -235,6 +249,10 @@ impl CommandId {
             Self::PrApprove => "Approve selected PRs with a review",
             Self::PrClose => "Close selected PRs without merging",
 
+            // CI/Build Status
+            Self::PrRerunFailedJobs => "Rerun failed CI workflow jobs for the current PR",
+            Self::PrOpenBuildLogs => "Open CI build logs in your default web browser",
+
             // General
             Self::GlobalClose => "Close the current view or panel",
             Self::GlobalQuit => "Exit the application",
@@ -270,7 +288,9 @@ impl CommandId {
             | Self::PrMerge
             | Self::PrRebase
             | Self::PrApprove
-            | Self::PrClose => "Pull Request",
+            | Self::PrClose
+            | Self::PrRerunFailedJobs
+            | Self::PrOpenBuildLogs => "Pull Request",
 
             Self::GlobalClose | Self::GlobalQuit => "General",
         }

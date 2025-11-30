@@ -69,6 +69,36 @@ impl GitHubMiddleware {
             .get(repo_idx)
             .map(|r| (r.org.clone(), r.repo.clone()))
     }
+
+    /// Get current PR's info for CI operations
+    fn get_current_pr_ci_info(&self, state: &AppState) -> Option<(usize, u64, String, String, String)> {
+        let repo_idx = state.main_view.selected_repository;
+        let repo = state.main_view.repositories.get(repo_idx)?;
+        let repo_data = state.main_view.repo_data.get(&repo_idx)?;
+        let pr = repo_data.prs.get(repo_data.selected_pr)?;
+
+        Some((
+            repo_idx,
+            pr.number as u64,
+            repo.org.clone(),
+            repo.repo.clone(),
+            pr.head_sha.clone(),
+        ))
+    }
+
+    /// Build CI logs URL for current PR (GitHub Actions URL pattern)
+    fn build_ci_logs_url(&self, state: &AppState) -> Option<String> {
+        let repo_idx = state.main_view.selected_repository;
+        let repo = state.main_view.repositories.get(repo_idx)?;
+        let repo_data = state.main_view.repo_data.get(&repo_idx)?;
+        let pr = repo_data.prs.get(repo_data.selected_pr)?;
+
+        // GitHub Actions URL for a specific commit
+        Some(format!(
+            "https://github.com/{}/{}/actions?query=branch%3A{}",
+            repo.org, repo.repo, pr.head_branch
+        ))
+    }
 }
 
 impl Middleware for GitHubMiddleware {
@@ -293,6 +323,101 @@ impl Middleware for GitHubMiddleware {
                         });
                     }
                 }
+                false // Consume action
+            }
+
+            Action::PrOpenBuildLogs => {
+                if let Some(url) = self.build_ci_logs_url(state) {
+                    log::info!("Opening CI logs in browser: {}", url);
+                    if let Err(e) = open::that(&url) {
+                        log::error!("Failed to open URL in browser: {}", e);
+                    }
+                }
+                false // Consume action
+            }
+
+            Action::PrRerunFailedJobs => {
+                let client = match &self.client {
+                    Some(c) => c.clone(),
+                    None => {
+                        log::error!("GitHub client not available");
+                        return false;
+                    }
+                };
+
+                // Get current PR's CI info
+                let (repo_idx, pr_number, owner, repo, head_sha) =
+                    match self.get_current_pr_ci_info(state) {
+                        Some(info) => info,
+                        None => {
+                            log::warn!("No PR selected for rerunning jobs");
+                            return false;
+                        }
+                    };
+
+                let dispatcher = dispatcher.clone();
+                let client = client.clone();
+
+                // First fetch workflow runs, then rerun failed ones
+                self.runtime.spawn(async move {
+                    // Fetch workflow runs for this commit
+                    match client.fetch_workflow_runs(&owner, &repo, &head_sha).await {
+                        Ok(runs) => {
+                            // Filter to failed runs and rerun each
+                            let failed_runs: Vec<_> = runs
+                                .into_iter()
+                                .filter(|r| {
+                                    r.conclusion.as_ref().map_or(false, |c| {
+                                        matches!(
+                                            c,
+                                            gh_client::WorkflowRunConclusion::Failure
+                                                | gh_client::WorkflowRunConclusion::TimedOut
+                                        )
+                                    })
+                                })
+                                .collect();
+
+                            if failed_runs.is_empty() {
+                                log::info!("No failed workflow runs to rerun for PR #{}", pr_number);
+                                return;
+                            }
+
+                            for run in failed_runs {
+                                dispatcher.dispatch(Action::PrRerunStart(repo_idx, pr_number, run.id));
+
+                                match client.rerun_failed_jobs(&owner, &repo, run.id).await {
+                                    Ok(()) => {
+                                        log::info!(
+                                            "Successfully triggered rerun for workflow {} (PR #{})",
+                                            run.name,
+                                            pr_number
+                                        );
+                                        dispatcher.dispatch(Action::PrRerunSuccess(
+                                            repo_idx, pr_number, run.id,
+                                        ));
+                                    }
+                                    Err(e) => {
+                                        log::error!(
+                                            "Failed to rerun workflow {} (PR #{}): {}",
+                                            run.name,
+                                            pr_number,
+                                            e
+                                        );
+                                        dispatcher.dispatch(Action::PrRerunError(
+                                            repo_idx,
+                                            pr_number,
+                                            run.id,
+                                            e.to_string(),
+                                        ));
+                                    }
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            log::error!("Failed to fetch workflow runs: {}", e);
+                        }
+                    }
+                });
                 false // Consume action
             }
 

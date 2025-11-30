@@ -24,6 +24,8 @@ pub struct Pr {
     pub needs_rebase: bool,
     /// HEAD commit SHA (for CI status checks)
     pub head_sha: String,
+    /// HEAD branch name (e.g., "feature/my-branch")
+    pub head_branch: String,
     /// When the PR was created
     pub created_at: DateTime<Utc>,
     /// When the PR was last updated
@@ -49,6 +51,7 @@ impl Pr {
             mergeable: MergeableStatus::Unknown,
             needs_rebase: false,
             head_sha: head_sha.into(),
+            head_branch: String::new(),
             created_at: Utc::now(),
             updated_at: Utc::now(),
             html_url: String::new(),

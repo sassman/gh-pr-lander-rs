@@ -6,7 +6,8 @@
 use crate::client::GitHubClient;
 use crate::types::{
     CheckConclusion, CheckRun, CheckRunStatus, CheckState, CheckStatus, CommitStatus,
-    MergeableState, MergeMethod, MergeResult, PullRequest, ReviewEvent,
+    MergeableState, MergeMethod, MergeResult, PullRequest, ReviewEvent, WorkflowRun,
+    WorkflowRunConclusion, WorkflowRunStatus,
 };
 use async_trait::async_trait;
 use log::debug;
@@ -281,6 +282,106 @@ impl GitHubClient for OctocrabClient {
         let _response: serde_json::Value = self.octocrab.patch(route, Some(&payload)).await?;
 
         Ok(())
+    }
+
+    async fn rerun_failed_jobs(
+        &self,
+        owner: &str,
+        repo: &str,
+        run_id: u64,
+    ) -> anyhow::Result<()> {
+        debug!(
+            "Rerunning failed jobs for workflow run {} in {}/{}",
+            run_id, owner, repo
+        );
+
+        let route = format!(
+            "/repos/{}/{}/actions/runs/{}/rerun-failed-jobs",
+            owner, repo, run_id
+        );
+        let _response: serde_json::Value = self.octocrab.post(route, None::<&()>).await?;
+
+        Ok(())
+    }
+
+    async fn fetch_workflow_runs(
+        &self,
+        owner: &str,
+        repo: &str,
+        head_sha: &str,
+    ) -> anyhow::Result<Vec<WorkflowRun>> {
+        debug!(
+            "Fetching workflow runs for {}/{} @ {}",
+            owner, repo, head_sha
+        );
+
+        let route = format!(
+            "/repos/{}/{}/actions/runs?head_sha={}",
+            owner, repo, head_sha
+        );
+
+        #[derive(serde::Deserialize)]
+        struct WorkflowRunsResponse {
+            workflow_runs: Vec<OctocrabWorkflowRun>,
+        }
+
+        #[derive(serde::Deserialize)]
+        struct OctocrabWorkflowRun {
+            id: u64,
+            name: Option<String>,
+            status: Option<String>,
+            conclusion: Option<String>,
+            head_sha: String,
+            html_url: String,
+            created_at: chrono::DateTime<chrono::Utc>,
+            updated_at: chrono::DateTime<chrono::Utc>,
+        }
+
+        let response: WorkflowRunsResponse = self.octocrab.get(route, None::<&()>).await?;
+
+        let runs = response
+            .workflow_runs
+            .into_iter()
+            .map(|run| WorkflowRun {
+                id: run.id,
+                name: run.name.unwrap_or_else(|| "Unknown".to_string()),
+                status: convert_workflow_status(run.status.as_deref()),
+                conclusion: run.conclusion.as_deref().map(convert_workflow_conclusion),
+                head_sha: run.head_sha,
+                html_url: run.html_url,
+                created_at: run.created_at,
+                updated_at: run.updated_at,
+            })
+            .collect();
+
+        Ok(runs)
+    }
+}
+
+/// Convert workflow run status string to enum
+fn convert_workflow_status(status: Option<&str>) -> WorkflowRunStatus {
+    match status {
+        Some("queued") => WorkflowRunStatus::Queued,
+        Some("waiting") => WorkflowRunStatus::Waiting,
+        Some("in_progress") => WorkflowRunStatus::InProgress,
+        Some("completed") => WorkflowRunStatus::Completed,
+        Some("pending") => WorkflowRunStatus::Pending,
+        _ => WorkflowRunStatus::Pending,
+    }
+}
+
+/// Convert workflow run conclusion string to enum
+fn convert_workflow_conclusion(conclusion: &str) -> WorkflowRunConclusion {
+    match conclusion {
+        "success" => WorkflowRunConclusion::Success,
+        "failure" => WorkflowRunConclusion::Failure,
+        "neutral" => WorkflowRunConclusion::Neutral,
+        "cancelled" => WorkflowRunConclusion::Cancelled,
+        "skipped" => WorkflowRunConclusion::Skipped,
+        "timed_out" => WorkflowRunConclusion::TimedOut,
+        "action_required" => WorkflowRunConclusion::ActionRequired,
+        "stale" => WorkflowRunConclusion::Stale,
+        _ => WorkflowRunConclusion::Neutral,
     }
 }
 

@@ -61,7 +61,8 @@ pub use cached_client::CachedGitHubClient;
 pub use client::{CacheMode, GitHubClient};
 pub use octocrab_client::OctocrabClient;
 pub use types::{
-    CheckRun, CheckStatus, MergeMethod, MergeResult, PullRequest, ReviewEvent,
+    CheckRun, CheckStatus, MergeMethod, MergeResult, PullRequest, ReviewEvent, WorkflowRun,
+    WorkflowRunConclusion, WorkflowRunStatus,
 };
 
 // Re-export cache types for convenience

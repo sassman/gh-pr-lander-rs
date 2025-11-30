@@ -322,6 +322,9 @@ pub fn default_keymap() -> Keymap {
         KeyBinding::new("r", "r", PrRebase),
         KeyBinding::new("a", "a", PrApprove),
         KeyBinding::new("c", "c", PrClose),
+        // CI/Build Status
+        KeyBinding::new("R", "R", PrRerunFailedJobs),
+        KeyBinding::new("b", "b", PrOpenBuildLogs),
         // General
         KeyBinding::new("q", "q", GlobalClose),
         KeyBinding::new("esc", "Esc", GlobalClose),

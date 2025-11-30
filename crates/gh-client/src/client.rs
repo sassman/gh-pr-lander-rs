@@ -4,7 +4,9 @@
 //! implementations must satisfy, as well as the `CacheMode` enum for
 //! controlling caching behavior.
 
-use crate::types::{CheckRun, CheckStatus, MergeMethod, MergeResult, PullRequest, ReviewEvent};
+use crate::types::{
+    CheckRun, CheckStatus, MergeMethod, MergeResult, PullRequest, ReviewEvent, WorkflowRun,
+};
 use async_trait::async_trait;
 
 /// Cache behavior mode for GitHub API clients
@@ -208,6 +210,44 @@ pub trait GitHubClient: Send + Sync {
         repo: &str,
         pr_number: u64,
     ) -> anyhow::Result<()>;
+
+    // === CI Operations ===
+
+    /// Rerun failed workflow jobs for a specific run
+    ///
+    /// # Arguments
+    ///
+    /// * `owner` - Repository owner
+    /// * `repo` - Repository name
+    /// * `run_id` - Workflow run ID
+    ///
+    /// # Returns
+    ///
+    /// Ok(()) on success, error on failure
+    async fn rerun_failed_jobs(
+        &self,
+        owner: &str,
+        repo: &str,
+        run_id: u64,
+    ) -> anyhow::Result<()>;
+
+    /// Fetch workflow runs for a commit
+    ///
+    /// # Arguments
+    ///
+    /// * `owner` - Repository owner
+    /// * `repo` - Repository name
+    /// * `head_sha` - The commit SHA to get workflow runs for
+    ///
+    /// # Returns
+    ///
+    /// List of workflow runs for the commit
+    async fn fetch_workflow_runs(
+        &self,
+        owner: &str,
+        repo: &str,
+        head_sha: &str,
+    ) -> anyhow::Result<Vec<WorkflowRun>>;
 }
 
 #[cfg(test)]

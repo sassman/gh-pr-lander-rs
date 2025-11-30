@@ -207,6 +207,65 @@ pub enum ReviewEvent {
     Comment,
 }
 
+/// A GitHub Actions workflow run
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkflowRun {
+    /// Workflow run ID
+    pub id: u64,
+    /// Name of the workflow
+    pub name: String,
+    /// Status of the run
+    pub status: WorkflowRunStatus,
+    /// Conclusion (only set when completed)
+    pub conclusion: Option<WorkflowRunConclusion>,
+    /// HEAD SHA the workflow ran on
+    pub head_sha: String,
+    /// URL to view the workflow run
+    pub html_url: String,
+    /// When the run was created
+    pub created_at: DateTime<Utc>,
+    /// When the run was last updated
+    pub updated_at: DateTime<Utc>,
+}
+
+/// Status of a workflow run
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkflowRunStatus {
+    /// Workflow is queued
+    Queued,
+    /// Workflow is waiting
+    Waiting,
+    /// Workflow is in progress
+    InProgress,
+    /// Workflow has completed
+    Completed,
+    /// Workflow is pending
+    Pending,
+}
+
+/// Conclusion of a completed workflow run
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkflowRunConclusion {
+    /// Workflow succeeded
+    Success,
+    /// Workflow failed
+    Failure,
+    /// Workflow was neutral
+    Neutral,
+    /// Workflow was cancelled
+    Cancelled,
+    /// Workflow was skipped
+    Skipped,
+    /// Workflow timed out
+    TimedOut,
+    /// Action required
+    ActionRequired,
+    /// Workflow is stale
+    Stale,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
