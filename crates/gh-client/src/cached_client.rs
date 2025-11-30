@@ -123,7 +123,9 @@ impl<C: GitHubClient + Clone> GitHubClient for CachedGitHubClient<C> {
         // Try cache first
         if let Some(cached_body) = self.try_cache_get("GET", &url, &params) {
             match serde_json::from_str::<Vec<PullRequest>>(&cached_body) {
-                Ok(prs) => {
+                Ok(mut prs) => {
+                    // Always sort for stable ordering (descending by PR number)
+                    prs.sort_by(|a, b| b.number.cmp(&a.number));
                     debug!(
                         "Cache HIT for {}/{}: {} PRs",
                         owner,
