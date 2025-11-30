@@ -4,7 +4,7 @@
 //! implementations must satisfy, as well as the `CacheMode` enum for
 //! controlling caching behavior.
 
-use crate::types::{CheckRun, CheckStatus, PullRequest};
+use crate::types::{CheckRun, CheckStatus, MergeMethod, MergeResult, PullRequest, ReviewEvent};
 use async_trait::async_trait;
 
 /// Cache behavior mode for GitHub API clients
@@ -122,6 +122,92 @@ pub trait GitHubClient: Send + Sync {
         repo: &str,
         commit_sha: &str,
     ) -> anyhow::Result<CheckStatus>;
+
+    // === PR Operations ===
+
+    /// Merge a pull request
+    ///
+    /// # Arguments
+    ///
+    /// * `owner` - Repository owner
+    /// * `repo` - Repository name
+    /// * `pr_number` - Pull request number
+    /// * `merge_method` - How to merge (merge commit, squash, or rebase)
+    /// * `commit_title` - Optional custom commit title
+    /// * `commit_message` - Optional custom commit message
+    ///
+    /// # Returns
+    ///
+    /// Result of the merge operation
+    async fn merge_pull_request(
+        &self,
+        owner: &str,
+        repo: &str,
+        pr_number: u64,
+        merge_method: MergeMethod,
+        commit_title: Option<&str>,
+        commit_message: Option<&str>,
+    ) -> anyhow::Result<MergeResult>;
+
+    /// Update a PR's head branch with the latest from base branch (rebase)
+    ///
+    /// This is equivalent to clicking "Update branch" in the GitHub UI.
+    ///
+    /// # Arguments
+    ///
+    /// * `owner` - Repository owner
+    /// * `repo` - Repository name
+    /// * `pr_number` - Pull request number
+    ///
+    /// # Returns
+    ///
+    /// Ok(()) on success, error on failure
+    async fn update_pull_request_branch(
+        &self,
+        owner: &str,
+        repo: &str,
+        pr_number: u64,
+    ) -> anyhow::Result<()>;
+
+    /// Create a review on a pull request
+    ///
+    /// # Arguments
+    ///
+    /// * `owner` - Repository owner
+    /// * `repo` - Repository name
+    /// * `pr_number` - Pull request number
+    /// * `event` - Review event (approve, request changes, or comment)
+    /// * `body` - Optional review comment body
+    ///
+    /// # Returns
+    ///
+    /// Ok(()) on success, error on failure
+    async fn create_review(
+        &self,
+        owner: &str,
+        repo: &str,
+        pr_number: u64,
+        event: ReviewEvent,
+        body: Option<&str>,
+    ) -> anyhow::Result<()>;
+
+    /// Close a pull request without merging
+    ///
+    /// # Arguments
+    ///
+    /// * `owner` - Repository owner
+    /// * `repo` - Repository name
+    /// * `pr_number` - Pull request number
+    ///
+    /// # Returns
+    ///
+    /// Ok(()) on success, error on failure
+    async fn close_pull_request(
+        &self,
+        owner: &str,
+        repo: &str,
+        pr_number: u64,
+    ) -> anyhow::Result<()>;
 }
 
 #[cfg(test)]

@@ -316,6 +316,12 @@ pub fn default_keymap() -> Keymap {
         KeyBinding::new("ctrl+a", "Ctrl+A", PrSelectAll),
         KeyBinding::new("u", "u", PrDeselectAll),
         KeyBinding::new("ctrl+r", "Ctrl+R", PrRefresh),
+        // PR Operations
+        KeyBinding::new("o", "o", PrOpenInBrowser),
+        KeyBinding::new("m", "m", PrMerge),
+        KeyBinding::new("r", "r", PrRebase),
+        KeyBinding::new("a", "a", PrApprove),
+        KeyBinding::new("c", "c", PrClose),
         // General
         KeyBinding::new("q", "q", GlobalClose),
         KeyBinding::new("esc", "Esc", GlobalClose),

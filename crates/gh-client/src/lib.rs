@@ -60,7 +60,9 @@ pub mod types;
 pub use cached_client::CachedGitHubClient;
 pub use client::{CacheMode, GitHubClient};
 pub use octocrab_client::OctocrabClient;
-pub use types::{CheckRun, CheckStatus, PullRequest};
+pub use types::{
+    CheckRun, CheckStatus, MergeMethod, MergeResult, PullRequest, ReviewEvent,
+};
 
 // Re-export cache types for convenience
 pub use gh_api_cache::{ApiCache, CacheStats, CachedResponse};

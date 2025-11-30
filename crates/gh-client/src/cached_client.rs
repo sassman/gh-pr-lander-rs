@@ -4,7 +4,9 @@
 //! The cache mode determines whether to read from cache, write to cache, or both.
 
 use crate::client::{CacheMode, GitHubClient};
-use crate::types::{CheckRun, CheckStatus, PullRequest};
+use crate::types::{
+    CheckRun, CheckStatus, MergeMethod, MergeResult, PullRequest, ReviewEvent,
+};
 use async_trait::async_trait;
 use gh_api_cache::{ApiCache, CachedResponse};
 use log::debug;
@@ -226,6 +228,55 @@ impl<C: GitHubClient + Clone> GitHubClient for CachedGitHubClient<C> {
 
         Ok(status)
     }
+
+    // PR operations are mutations - pass through to inner client without caching
+
+    async fn merge_pull_request(
+        &self,
+        owner: &str,
+        repo: &str,
+        pr_number: u64,
+        merge_method: MergeMethod,
+        commit_title: Option<&str>,
+        commit_message: Option<&str>,
+    ) -> anyhow::Result<MergeResult> {
+        // Mutations are never cached - pass through directly
+        self.inner
+            .merge_pull_request(owner, repo, pr_number, merge_method, commit_title, commit_message)
+            .await
+    }
+
+    async fn update_pull_request_branch(
+        &self,
+        owner: &str,
+        repo: &str,
+        pr_number: u64,
+    ) -> anyhow::Result<()> {
+        // Mutations are never cached - pass through directly
+        self.inner.update_pull_request_branch(owner, repo, pr_number).await
+    }
+
+    async fn create_review(
+        &self,
+        owner: &str,
+        repo: &str,
+        pr_number: u64,
+        event: ReviewEvent,
+        body: Option<&str>,
+    ) -> anyhow::Result<()> {
+        // Mutations are never cached - pass through directly
+        self.inner.create_review(owner, repo, pr_number, event, body).await
+    }
+
+    async fn close_pull_request(
+        &self,
+        owner: &str,
+        repo: &str,
+        pr_number: u64,
+    ) -> anyhow::Result<()> {
+        // Mutations are never cached - pass through directly
+        self.inner.close_pull_request(owner, repo, pr_number).await
+    }
 }
 
 #[cfg(test)]
@@ -288,6 +339,55 @@ mod tests {
                 total_count: 0,
                 statuses: vec![],
             })
+        }
+
+        async fn merge_pull_request(
+            &self,
+            _owner: &str,
+            _repo: &str,
+            _pr_number: u64,
+            _merge_method: MergeMethod,
+            _commit_title: Option<&str>,
+            _commit_message: Option<&str>,
+        ) -> anyhow::Result<MergeResult> {
+            *self.call_count.lock().unwrap() += 1;
+            Ok(MergeResult {
+                merged: true,
+                sha: Some("abc123".to_string()),
+                message: "Merged".to_string(),
+            })
+        }
+
+        async fn update_pull_request_branch(
+            &self,
+            _owner: &str,
+            _repo: &str,
+            _pr_number: u64,
+        ) -> anyhow::Result<()> {
+            *self.call_count.lock().unwrap() += 1;
+            Ok(())
+        }
+
+        async fn create_review(
+            &self,
+            _owner: &str,
+            _repo: &str,
+            _pr_number: u64,
+            _event: ReviewEvent,
+            _body: Option<&str>,
+        ) -> anyhow::Result<()> {
+            *self.call_count.lock().unwrap() += 1;
+            Ok(())
+        }
+
+        async fn close_pull_request(
+            &self,
+            _owner: &str,
+            _repo: &str,
+            _pr_number: u64,
+        ) -> anyhow::Result<()> {
+            *self.call_count.lock().unwrap() += 1;
+            Ok(())
         }
     }
 

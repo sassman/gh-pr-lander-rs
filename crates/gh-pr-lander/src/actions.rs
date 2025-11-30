@@ -98,6 +98,42 @@ pub enum Action {
     /// Deselect all PRs in the current repository
     PrDeselectAll,
 
+    /// ## PR Operations
+    /// Open current PR in browser
+    PrOpenInBrowser,
+    /// Request to merge selected PRs (or cursor PR if none selected)
+    PrMergeRequest,
+    /// Merge started for a PR
+    PrMergeStart(usize, usize), // repo_idx, pr_number
+    /// Merge succeeded
+    PrMergeSuccess(usize, usize), // repo_idx, pr_number
+    /// Merge failed
+    PrMergeError(usize, usize, String), // repo_idx, pr_number, error
+    /// Request to rebase/update selected PRs
+    PrRebaseRequest,
+    /// Rebase started for a PR
+    PrRebaseStart(usize, usize), // repo_idx, pr_number
+    /// Rebase succeeded
+    PrRebaseSuccess(usize, usize), // repo_idx, pr_number
+    /// Rebase failed
+    PrRebaseError(usize, usize, String), // repo_idx, pr_number, error
+    /// Request to approve selected PRs
+    PrApproveRequest,
+    /// Approve started for a PR
+    PrApproveStart(usize, usize), // repo_idx, pr_number
+    /// Approve succeeded
+    PrApproveSuccess(usize, usize), // repo_idx, pr_number
+    /// Approve failed
+    PrApproveError(usize, usize, String), // repo_idx, pr_number, error
+    /// Request to close selected PRs
+    PrCloseRequest,
+    /// Close started for a PR
+    PrCloseStart(usize, usize), // repo_idx, pr_number
+    /// Close succeeded
+    PrCloseSuccess(usize, usize), // repo_idx, pr_number
+    /// Close failed
+    PrCloseError(usize, usize, String), // repo_idx, pr_number, error
+
     /// ## Bootstrap actions
     BootstrapStart,
     BootstrapEnd,
@@ -169,6 +205,23 @@ impl Clone for Action {
             Self::PrToggleSelection => Self::PrToggleSelection,
             Self::PrSelectAll => Self::PrSelectAll,
             Self::PrDeselectAll => Self::PrDeselectAll,
+            Self::PrOpenInBrowser => Self::PrOpenInBrowser,
+            Self::PrMergeRequest => Self::PrMergeRequest,
+            Self::PrMergeStart(repo, pr) => Self::PrMergeStart(*repo, *pr),
+            Self::PrMergeSuccess(repo, pr) => Self::PrMergeSuccess(*repo, *pr),
+            Self::PrMergeError(repo, pr, err) => Self::PrMergeError(*repo, *pr, err.clone()),
+            Self::PrRebaseRequest => Self::PrRebaseRequest,
+            Self::PrRebaseStart(repo, pr) => Self::PrRebaseStart(*repo, *pr),
+            Self::PrRebaseSuccess(repo, pr) => Self::PrRebaseSuccess(*repo, *pr),
+            Self::PrRebaseError(repo, pr, err) => Self::PrRebaseError(*repo, *pr, err.clone()),
+            Self::PrApproveRequest => Self::PrApproveRequest,
+            Self::PrApproveStart(repo, pr) => Self::PrApproveStart(*repo, *pr),
+            Self::PrApproveSuccess(repo, pr) => Self::PrApproveSuccess(*repo, *pr),
+            Self::PrApproveError(repo, pr, err) => Self::PrApproveError(*repo, *pr, err.clone()),
+            Self::PrCloseRequest => Self::PrCloseRequest,
+            Self::PrCloseStart(repo, pr) => Self::PrCloseStart(*repo, *pr),
+            Self::PrCloseSuccess(repo, pr) => Self::PrCloseSuccess(*repo, *pr),
+            Self::PrCloseError(repo, pr, err) => Self::PrCloseError(*repo, *pr, err.clone()),
             Self::BootstrapStart => Self::BootstrapStart,
             Self::BootstrapEnd => Self::BootstrapEnd,
             Self::LoadRecentRepositories => Self::LoadRecentRepositories,
@@ -237,6 +290,31 @@ impl std::fmt::Debug for Action {
             Self::PrToggleSelection => write!(f, "PrToggleSelection"),
             Self::PrSelectAll => write!(f, "PrSelectAll"),
             Self::PrDeselectAll => write!(f, "PrDeselectAll"),
+            Self::PrOpenInBrowser => write!(f, "PrOpenInBrowser"),
+            Self::PrMergeRequest => write!(f, "PrMergeRequest"),
+            Self::PrMergeStart(repo, pr) => write!(f, "PrMergeStart({}, #{})", repo, pr),
+            Self::PrMergeSuccess(repo, pr) => write!(f, "PrMergeSuccess({}, #{})", repo, pr),
+            Self::PrMergeError(repo, pr, err) => {
+                write!(f, "PrMergeError({}, #{}, {})", repo, pr, err)
+            }
+            Self::PrRebaseRequest => write!(f, "PrRebaseRequest"),
+            Self::PrRebaseStart(repo, pr) => write!(f, "PrRebaseStart({}, #{})", repo, pr),
+            Self::PrRebaseSuccess(repo, pr) => write!(f, "PrRebaseSuccess({}, #{})", repo, pr),
+            Self::PrRebaseError(repo, pr, err) => {
+                write!(f, "PrRebaseError({}, #{}, {})", repo, pr, err)
+            }
+            Self::PrApproveRequest => write!(f, "PrApproveRequest"),
+            Self::PrApproveStart(repo, pr) => write!(f, "PrApproveStart({}, #{})", repo, pr),
+            Self::PrApproveSuccess(repo, pr) => write!(f, "PrApproveSuccess({}, #{})", repo, pr),
+            Self::PrApproveError(repo, pr, err) => {
+                write!(f, "PrApproveError({}, #{}, {})", repo, pr, err)
+            }
+            Self::PrCloseRequest => write!(f, "PrCloseRequest"),
+            Self::PrCloseStart(repo, pr) => write!(f, "PrCloseStart({}, #{})", repo, pr),
+            Self::PrCloseSuccess(repo, pr) => write!(f, "PrCloseSuccess({}, #{})", repo, pr),
+            Self::PrCloseError(repo, pr, err) => {
+                write!(f, "PrCloseError({}, #{}, {})", repo, pr, err)
+            }
             Self::BootstrapStart => write!(f, "BootstrapStart"),
             Self::BootstrapEnd => write!(f, "BootstrapEnd"),
             Self::LoadRecentRepositories => write!(f, "LoadRecentRepositories"),

@@ -6,7 +6,7 @@
 use crate::client::GitHubClient;
 use crate::types::{
     CheckConclusion, CheckRun, CheckRunStatus, CheckState, CheckStatus, CommitStatus,
-    MergeableState, PullRequest,
+    MergeableState, MergeMethod, MergeResult, PullRequest, ReviewEvent,
 };
 use async_trait::async_trait;
 use log::debug;
@@ -164,6 +164,123 @@ impl GitHubClient for OctocrabClient {
             total_count: status.total_count as u64,
             statuses,
         })
+    }
+
+    async fn merge_pull_request(
+        &self,
+        owner: &str,
+        repo: &str,
+        pr_number: u64,
+        merge_method: MergeMethod,
+        commit_title: Option<&str>,
+        commit_message: Option<&str>,
+    ) -> anyhow::Result<MergeResult> {
+        debug!(
+            "Merging PR #{} in {}/{} with method {:?}",
+            pr_number, owner, repo, merge_method
+        );
+
+        let octocrab_method = match merge_method {
+            MergeMethod::Merge => octocrab::params::pulls::MergeMethod::Merge,
+            MergeMethod::Squash => octocrab::params::pulls::MergeMethod::Squash,
+            MergeMethod::Rebase => octocrab::params::pulls::MergeMethod::Rebase,
+        };
+
+        // Store the pulls handler to extend lifetime
+        let pulls = self.octocrab.pulls(owner, repo);
+        let mut merge_builder = pulls.merge(pr_number);
+        merge_builder = merge_builder.method(octocrab_method);
+
+        if let Some(title) = commit_title {
+            merge_builder = merge_builder.title(title);
+        }
+
+        if let Some(message) = commit_message {
+            merge_builder = merge_builder.message(message);
+        }
+
+        let response = merge_builder.send().await?;
+
+        Ok(MergeResult {
+            merged: response.merged,
+            sha: response.sha,
+            message: response.message.unwrap_or_default(),
+        })
+    }
+
+    async fn update_pull_request_branch(
+        &self,
+        owner: &str,
+        repo: &str,
+        pr_number: u64,
+    ) -> anyhow::Result<()> {
+        debug!(
+            "Updating branch for PR #{} in {}/{}",
+            pr_number, owner, repo
+        );
+
+        // Use raw PUT request since octocrab doesn't have a method for this
+        let route = format!("/repos/{}/{}/pulls/{}/update-branch", owner, repo, pr_number);
+        let _response: serde_json::Value = self
+            .octocrab
+            .put(route, None::<&()>)
+            .await?;
+
+        Ok(())
+    }
+
+    async fn create_review(
+        &self,
+        owner: &str,
+        repo: &str,
+        pr_number: u64,
+        event: ReviewEvent,
+        body: Option<&str>,
+    ) -> anyhow::Result<()> {
+        debug!(
+            "Creating {:?} review for PR #{} in {}/{}",
+            event, pr_number, owner, repo
+        );
+
+        // Use raw POST request since octocrab's review API is limited
+        let route = format!("/repos/{}/{}/pulls/{}/reviews", owner, repo, pr_number);
+
+        let event_str = match event {
+            ReviewEvent::Approve => "APPROVE",
+            ReviewEvent::RequestChanges => "REQUEST_CHANGES",
+            ReviewEvent::Comment => "COMMENT",
+        };
+
+        let mut payload = serde_json::json!({
+            "event": event_str,
+        });
+
+        if let Some(b) = body {
+            payload["body"] = serde_json::Value::String(b.to_string());
+        }
+
+        let _response: serde_json::Value = self.octocrab.post(route, Some(&payload)).await?;
+
+        Ok(())
+    }
+
+    async fn close_pull_request(
+        &self,
+        owner: &str,
+        repo: &str,
+        pr_number: u64,
+    ) -> anyhow::Result<()> {
+        debug!("Closing PR #{} in {}/{}", pr_number, owner, repo);
+
+        // Use raw PATCH request since octocrab's State enum doesn't match
+        let route = format!("/repos/{}/{}/pulls/{}", owner, repo, pr_number);
+        let payload = serde_json::json!({
+            "state": "closed"
+        });
+
+        let _response: serde_json::Value = self.octocrab.patch(route, Some(&payload)).await?;
+
+        Ok(())
     }
 }
 

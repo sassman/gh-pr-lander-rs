@@ -4,6 +4,7 @@ use crate::state::AppState;
 
 pub mod bootstrap;
 pub mod command_palette;
+pub mod github;
 pub mod keyboard;
 pub mod logging;
 pub mod pull_request;

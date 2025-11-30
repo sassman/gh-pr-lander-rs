@@ -28,6 +28,8 @@ pub struct Pr {
     pub created_at: DateTime<Utc>,
     /// When the PR was last updated
     pub updated_at: DateTime<Utc>,
+    /// HTML URL for viewing the PR in browser
+    pub html_url: String,
 }
 
 impl Pr {
@@ -49,7 +51,14 @@ impl Pr {
             head_sha: head_sha.into(),
             created_at: Utc::now(),
             updated_at: Utc::now(),
+            html_url: String::new(),
         }
+    }
+
+    /// Set the HTML URL
+    pub fn with_html_url(mut self, url: impl Into<String>) -> Self {
+        self.html_url = url.into();
+        self
     }
 }
 

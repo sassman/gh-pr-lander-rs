@@ -365,5 +365,6 @@ fn convert_to_domain_pr(pr: PullRequest) -> Pr {
         head_sha: pr.head_sha,
         created_at: pr.created_at,
         updated_at: pr.updated_at,
+        html_url: pr.html_url,
     }
 }

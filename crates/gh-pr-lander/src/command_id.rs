@@ -68,6 +68,18 @@ pub enum CommandId {
     /// Refresh PRs for current repository
     PrRefresh,
 
+    // === PR Operations ===
+    /// Open current PR in browser
+    PrOpenInBrowser,
+    /// Merge selected PRs
+    PrMerge,
+    /// Rebase/update selected PRs
+    PrRebase,
+    /// Approve selected PRs
+    PrApprove,
+    /// Close selected PRs without merging
+    PrClose,
+
     // === General ===
     /// Close the current view/panel
     GlobalClose,
@@ -118,6 +130,13 @@ impl CommandId {
             Self::PrDeselectAll => Action::PrDeselectAll,
             Self::PrRefresh => Action::PrRefresh,
 
+            // PR Operations
+            Self::PrOpenInBrowser => Action::PrOpenInBrowser,
+            Self::PrMerge => Action::PrMergeRequest,
+            Self::PrRebase => Action::PrRebaseRequest,
+            Self::PrApprove => Action::PrApproveRequest,
+            Self::PrClose => Action::PrCloseRequest,
+
             // General
             Self::GlobalClose => Action::GlobalClose,
             Self::GlobalQuit => Action::GlobalQuit,
@@ -159,6 +178,13 @@ impl CommandId {
             Self::PrSelectAll => "Select all PRs",
             Self::PrDeselectAll => "Deselect all PRs",
             Self::PrRefresh => "Refresh PRs",
+
+            // PR Operations
+            Self::PrOpenInBrowser => "Open PR in browser",
+            Self::PrMerge => "Merge PRs",
+            Self::PrRebase => "Rebase PRs",
+            Self::PrApprove => "Approve PRs",
+            Self::PrClose => "Close PRs",
 
             // General
             Self::GlobalClose => "Close",
@@ -202,6 +228,13 @@ impl CommandId {
             Self::PrDeselectAll => "Clear all PR selections",
             Self::PrRefresh => "Refresh PRs for the current repository",
 
+            // PR Operations
+            Self::PrOpenInBrowser => "Open the current PR in your default web browser",
+            Self::PrMerge => "Merge selected PRs (or current PR if none selected)",
+            Self::PrRebase => "Update selected PRs with latest from base branch",
+            Self::PrApprove => "Approve selected PRs with a review",
+            Self::PrClose => "Close selected PRs without merging",
+
             // General
             Self::GlobalClose => "Close the current view or panel",
             Self::GlobalQuit => "Exit the application",
@@ -229,9 +262,15 @@ impl CommandId {
 
             Self::CommandPaletteOpen => "Command Palette",
 
-            Self::PrToggleSelection | Self::PrSelectAll | Self::PrDeselectAll | Self::PrRefresh => {
-                "Pull Request"
-            }
+            Self::PrToggleSelection
+            | Self::PrSelectAll
+            | Self::PrDeselectAll
+            | Self::PrRefresh
+            | Self::PrOpenInBrowser
+            | Self::PrMerge
+            | Self::PrRebase
+            | Self::PrApprove
+            | Self::PrClose => "Pull Request",
 
             Self::GlobalClose | Self::GlobalQuit => "General",
         }

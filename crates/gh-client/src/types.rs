@@ -171,6 +171,42 @@ pub struct CommitStatus {
     pub target_url: Option<String>,
 }
 
+/// Merge method for pull requests
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MergeMethod {
+    /// Create a merge commit
+    #[default]
+    Merge,
+    /// Squash all commits into one
+    Squash,
+    /// Rebase commits onto the base branch
+    Rebase,
+}
+
+/// Result of a merge operation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MergeResult {
+    /// Whether the merge was successful
+    pub merged: bool,
+    /// Commit SHA of the merge commit (if successful)
+    pub sha: Option<String>,
+    /// Message from the merge operation
+    pub message: String,
+}
+
+/// Review event type for PR reviews
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum ReviewEvent {
+    /// Approve the PR
+    Approve,
+    /// Request changes
+    RequestChanges,
+    /// Comment only (no approval/rejection)
+    Comment,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
