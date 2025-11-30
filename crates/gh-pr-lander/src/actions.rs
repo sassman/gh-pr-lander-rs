@@ -94,6 +94,12 @@ pub enum Action {
     BootstrapStart,
     BootstrapEnd,
 
+    /// ## Repository loading actions
+    /// Load recent repositories from config (dispatched by bootstrap)
+    LoadRecentRepositories,
+    /// Recent repositories loaded (dispatched by repository middleware)
+    LoadRecentRepositoriesDone,
+
     /// ## Animation/Timer actions
     Tick, // Periodic tick for animations (500ms interval)
 
@@ -154,6 +160,8 @@ impl Clone for Action {
             Self::PrRefresh => Self::PrRefresh,
             Self::BootstrapStart => Self::BootstrapStart,
             Self::BootstrapEnd => Self::BootstrapEnd,
+            Self::LoadRecentRepositories => Self::LoadRecentRepositories,
+            Self::LoadRecentRepositoriesDone => Self::LoadRecentRepositoriesDone,
             Self::Tick => Self::Tick,
             Self::None => Self::None,
         }
@@ -217,6 +225,8 @@ impl std::fmt::Debug for Action {
             Self::PrRefresh => write!(f, "PrRefresh"),
             Self::BootstrapStart => write!(f, "BootstrapStart"),
             Self::BootstrapEnd => write!(f, "BootstrapEnd"),
+            Self::LoadRecentRepositories => write!(f, "LoadRecentRepositories"),
+            Self::LoadRecentRepositoriesDone => write!(f, "LoadRecentRepositoriesDone"),
             Self::Tick => write!(f, "Tick"),
             Self::None => write!(f, "None"),
         }

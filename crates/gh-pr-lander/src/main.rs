@@ -27,10 +27,9 @@ mod views;
 
 use actions::Action;
 use middleware::{
-    add_repository::AddRepositoryMiddleware, bootstrap::BootstrapMiddleware,
-    command_palette::CommandPaletteMiddleware, keyboard::KeyboardMiddleware,
-    logging::LoggingMiddleware, pull_request::PullRequestMiddleware,
-    repository::RepositoryMiddleware,
+    bootstrap::BootstrapMiddleware, command_palette::CommandPaletteMiddleware,
+    keyboard::KeyboardMiddleware, logging::LoggingMiddleware,
+    pull_request::PullRequestMiddleware, repository::RepositoryMiddleware,
 };
 use state::AppState;
 use store::Store;
@@ -56,7 +55,6 @@ fn main() -> io::Result<()> {
     store.add_middleware(Box::new(BootstrapMiddleware::new()));
     store.add_middleware(Box::new(KeyboardMiddleware::new()));
     store.add_middleware(Box::new(CommandPaletteMiddleware::new()));
-    store.add_middleware(Box::new(AddRepositoryMiddleware::new()));
     store.add_middleware(Box::new(RepositoryMiddleware::new()));
     store.add_middleware(Box::new(PullRequestMiddleware::new()));
 

@@ -5,6 +5,7 @@
 //! - Triggers PR loading when repositories are added
 //! - Makes API calls to fetch PRs (with caching support)
 //! - Dispatches PrLoaded/PrLoadError actions with results
+//! - Tracks bulk loading and dispatches LoadRecentRepositoriesDone when complete
 //!
 //! # Caching
 //!
@@ -23,6 +24,7 @@ use gh_client::{
     octocrab::Octocrab, ApiCache, CacheMode, CachedGitHubClient, GitHubClient, OctocrabClient,
     PullRequest,
 };
+use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 use tokio::runtime::Runtime;
 
@@ -34,6 +36,9 @@ pub struct PullRequestMiddleware {
     client: Option<CachedGitHubClient<OctocrabClient>>,
     /// Shared cache instance
     cache: Arc<Mutex<ApiCache>>,
+    /// Track pending bulk load repository indices
+    /// When all are loaded, we dispatch LoadRecentRepositoriesDone
+    pending_bulk_load: HashSet<usize>,
 }
 
 impl PullRequestMiddleware {
@@ -51,6 +56,7 @@ impl PullRequestMiddleware {
             runtime,
             client: None,
             cache,
+            pending_bulk_load: HashSet::new(),
         }
     }
 
@@ -79,6 +85,22 @@ impl PullRequestMiddleware {
             .as_ref()
             .map(|c| c.with_mode(CacheMode::WriteOnly))
     }
+
+    /// Mark a repository as done loading and check if bulk load is complete
+    fn mark_bulk_load_done(&mut self, repo_idx: usize, dispatcher: &Dispatcher) {
+        if self.pending_bulk_load.remove(&repo_idx) {
+            log::debug!(
+                "PullRequestMiddleware: Repo {} done, {} remaining in bulk load",
+                repo_idx,
+                self.pending_bulk_load.len()
+            );
+
+            if self.pending_bulk_load.is_empty() {
+                log::info!("PullRequestMiddleware: All bulk repositories loaded");
+                dispatcher.dispatch(Action::LoadRecentRepositoriesDone);
+            }
+        }
+    }
 }
 
 impl Default for PullRequestMiddleware {
@@ -106,6 +128,8 @@ impl Middleware for PullRequestMiddleware {
 
                 if self.client.is_none() {
                     log::warn!("Cannot load PRs: GitHub client not initialized");
+                    // Still signal done even if we can't load
+                    dispatcher.dispatch(Action::LoadRecentRepositoriesDone);
                     return true;
                 }
 
@@ -117,6 +141,11 @@ impl Middleware for PullRequestMiddleware {
                     start_idx,
                     start_idx + repos.len()
                 );
+
+                // Track all repos we're about to load
+                for i in 0..repos.len() {
+                    self.pending_bulk_load.insert(start_idx + i);
+                }
 
                 // Dispatch PrLoadStart for each new repository
                 for (i, _repo) in repos.iter().enumerate() {
@@ -146,6 +175,18 @@ impl Middleware for PullRequestMiddleware {
             // Handle PR load start - actually fetch the PRs
             Action::PrLoadStart(repo_idx) => {
                 self.handle_pr_load(*repo_idx, state, dispatcher, false)
+            }
+
+            // Handle PR loaded - check if bulk load is complete
+            Action::PrLoaded(repo_idx, _) => {
+                self.mark_bulk_load_done(*repo_idx, dispatcher);
+                true // Let action pass through to reducer
+            }
+
+            // Handle PR load error - still counts as "done" for bulk tracking
+            Action::PrLoadError(repo_idx, _) => {
+                self.mark_bulk_load_done(*repo_idx, dispatcher);
+                true // Let action pass through to reducer
             }
 
             // Handle PR refresh request (force refresh - bypass cache)

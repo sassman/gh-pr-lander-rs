@@ -1,9 +1,15 @@
+//! Bootstrap Middleware
+//!
+//! Manages application startup sequence:
+//! - Starts tick thread for animations on BootstrapStart
+//! - Dispatches LoadRecentRepositories to trigger repository loading
+//! - Listens for LoadRecentRepositoriesDone to dispatch BootstrapEnd
+//! - Stops tick thread on BootstrapEnd
+
 use crate::actions::Action;
 use crate::dispatcher::Dispatcher;
-use crate::domain_models::Repository;
 use crate::middleware::Middleware;
 use crate::state::AppState;
-use gh_pr_config::load_recent_repositories;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -21,19 +27,17 @@ impl BootstrapMiddleware {
     }
 }
 
+impl Default for BootstrapMiddleware {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Middleware for BootstrapMiddleware {
     fn handle(&mut self, action: &Action, _state: &AppState, dispatcher: &Dispatcher) -> bool {
         match action {
             Action::BootstrapStart => {
-                // Load recent repositories from config file
-                let recent_repos = load_recent_repositories();
-                if !recent_repos.is_empty() {
-                    let repositories: Vec<Repository> = recent_repos
-                        .into_iter()
-                        .map(|r| Repository::new(r.org, r.repo, r.branch))
-                        .collect();
-                    dispatcher.dispatch(Action::RepositoryAddBulk(repositories));
-                }
+                log::info!("BootstrapMiddleware: Bootstrap starting");
 
                 // Start tick thread if not already started
                 let mut started = self.tick_thread_started.lock().unwrap();
@@ -70,18 +74,29 @@ impl Middleware for BootstrapMiddleware {
                     log::debug!("Bootstrap: Tick thread started");
                 }
 
-                // Pass through
-                true
-            }
-            Action::BootstrapEnd => {
-                // Stop the tick thread
-                let mut started = self.tick_thread_started.lock().unwrap();
-                *started = false;
-                log::debug!("Bootstrap: Received BootstrapEnd, stopping tick thread");
+                // Trigger loading of recent repositories
+                dispatcher.dispatch(Action::LoadRecentRepositories);
 
                 // Pass through
                 true
             }
+
+            Action::LoadRecentRepositoriesDone => {
+                log::info!("BootstrapMiddleware: Repository loading done, ending bootstrap");
+                dispatcher.dispatch(Action::BootstrapEnd);
+                true
+            }
+
+            Action::BootstrapEnd => {
+                // Stop the tick thread
+                let mut started = self.tick_thread_started.lock().unwrap();
+                *started = false;
+                log::info!("BootstrapMiddleware: Bootstrap ended, stopping tick thread");
+
+                // Pass through
+                true
+            }
+
             _ => {
                 // All other actions pass through
                 true
