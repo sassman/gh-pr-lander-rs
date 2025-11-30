@@ -327,6 +327,9 @@ pub fn default_keymap() -> Keymap {
         KeyBinding::new("b", "b", PrOpenBuildLogs),
         // IDE Integration
         KeyBinding::new("e", "e", PrOpenInIDE),
+        // Merge Bot
+        KeyBinding::new("M", "M", MergeBotStart),
+        KeyBinding::new("Q", "Q", MergeBotAddToQueue),
         // General
         KeyBinding::new("q", "q", GlobalClose),
         KeyBinding::new("esc", "Esc", GlobalClose),

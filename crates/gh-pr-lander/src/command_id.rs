@@ -90,6 +90,14 @@ pub enum CommandId {
     /// Open current PR in configured IDE
     PrOpenInIDE,
 
+    // === Merge Bot ===
+    /// Start merge bot for selected PRs
+    MergeBotStart,
+    /// Stop the merge bot
+    MergeBotStop,
+    /// Add PRs to merge queue
+    MergeBotAddToQueue,
+
     // === General ===
     /// Close the current view/panel
     GlobalClose,
@@ -154,6 +162,11 @@ impl CommandId {
             // IDE Integration
             Self::PrOpenInIDE => Action::PrOpenInIDE,
 
+            // Merge Bot
+            Self::MergeBotStart => Action::MergeBotStart,
+            Self::MergeBotStop => Action::MergeBotStop,
+            Self::MergeBotAddToQueue => Action::MergeBotAddToQueue,
+
             // General
             Self::GlobalClose => Action::GlobalClose,
             Self::GlobalQuit => Action::GlobalQuit,
@@ -209,6 +222,11 @@ impl CommandId {
 
             // IDE Integration
             Self::PrOpenInIDE => "Open PR diff in IDE",
+
+            // Merge Bot
+            Self::MergeBotStart => "Start merge bot",
+            Self::MergeBotStop => "Stop merge bot",
+            Self::MergeBotAddToQueue => "Add to merge queue",
 
             // General
             Self::GlobalClose => "Close",
@@ -266,6 +284,11 @@ impl CommandId {
             // IDE Integration
             Self::PrOpenInIDE => "Open the PR diff in your configured IDE (uses gh pr view)",
 
+            // Merge Bot
+            Self::MergeBotStart => "Start automated merge bot for selected PRs",
+            Self::MergeBotStop => "Stop the merge bot and clear the queue",
+            Self::MergeBotAddToQueue => "Add selected PRs to the merge queue",
+
             // General
             Self::GlobalClose => "Close the current view or panel",
             Self::GlobalQuit => "Exit the application",
@@ -305,6 +328,8 @@ impl CommandId {
             | Self::PrRerunFailedJobs
             | Self::PrOpenBuildLogs
             | Self::PrOpenInIDE => "Pull Request",
+
+            Self::MergeBotStart | Self::MergeBotStop | Self::MergeBotAddToQueue => "Merge Bot",
 
             Self::GlobalClose | Self::GlobalQuit => "General",
         }

@@ -150,6 +150,22 @@ pub enum Action {
     /// Open current PR diff in configured IDE (uses gh CLI under the hood)
     PrOpenInIDE,
 
+    /// ## Merge Bot actions
+    /// Start merge bot for selected PRs (adds them to the merge queue)
+    MergeBotStart,
+    /// Stop the merge bot
+    MergeBotStop,
+    /// Add current/selected PRs to merge queue
+    MergeBotAddToQueue,
+    /// Remove PR from merge queue
+    MergeBotRemoveFromQueue(usize, usize), // repo_idx, pr_number
+    /// Periodic tick for merge bot processing
+    MergeBotTick,
+    /// PR CI check completed
+    MergeBotCheckComplete(usize, usize, bool), // repo_idx, pr_number, passed
+    /// PR merge completed
+    MergeBotMergeComplete(usize, usize, bool, String), // repo_idx, pr_number, success, message
+
     /// ## Bootstrap actions
     BootstrapStart,
     BootstrapEnd,
@@ -246,6 +262,17 @@ impl Clone for Action {
             }
             Self::PrOpenBuildLogs => Self::PrOpenBuildLogs,
             Self::PrOpenInIDE => Self::PrOpenInIDE,
+            Self::MergeBotStart => Self::MergeBotStart,
+            Self::MergeBotStop => Self::MergeBotStop,
+            Self::MergeBotAddToQueue => Self::MergeBotAddToQueue,
+            Self::MergeBotRemoveFromQueue(repo, pr) => Self::MergeBotRemoveFromQueue(*repo, *pr),
+            Self::MergeBotTick => Self::MergeBotTick,
+            Self::MergeBotCheckComplete(repo, pr, passed) => {
+                Self::MergeBotCheckComplete(*repo, *pr, *passed)
+            }
+            Self::MergeBotMergeComplete(repo, pr, success, msg) => {
+                Self::MergeBotMergeComplete(*repo, *pr, *success, msg.clone())
+            }
             Self::BootstrapStart => Self::BootstrapStart,
             Self::BootstrapEnd => Self::BootstrapEnd,
             Self::LoadRecentRepositories => Self::LoadRecentRepositories,
@@ -351,6 +378,23 @@ impl std::fmt::Debug for Action {
             }
             Self::PrOpenBuildLogs => write!(f, "PrOpenBuildLogs"),
             Self::PrOpenInIDE => write!(f, "PrOpenInIDE"),
+            Self::MergeBotStart => write!(f, "MergeBotStart"),
+            Self::MergeBotStop => write!(f, "MergeBotStop"),
+            Self::MergeBotAddToQueue => write!(f, "MergeBotAddToQueue"),
+            Self::MergeBotRemoveFromQueue(repo, pr) => {
+                write!(f, "MergeBotRemoveFromQueue({}, #{})", repo, pr)
+            }
+            Self::MergeBotTick => write!(f, "MergeBotTick"),
+            Self::MergeBotCheckComplete(repo, pr, passed) => {
+                write!(f, "MergeBotCheckComplete({}, #{}, {})", repo, pr, passed)
+            }
+            Self::MergeBotMergeComplete(repo, pr, success, msg) => {
+                write!(
+                    f,
+                    "MergeBotMergeComplete({}, #{}, {}, {})",
+                    repo, pr, success, msg
+                )
+            }
             Self::BootstrapStart => write!(f, "BootstrapStart"),
             Self::BootstrapEnd => write!(f, "BootstrapEnd"),
             Self::LoadRecentRepositories => write!(f, "LoadRecentRepositories"),
