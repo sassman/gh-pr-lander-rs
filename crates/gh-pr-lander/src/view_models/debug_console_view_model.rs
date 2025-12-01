@@ -2,7 +2,7 @@ use crate::command_id::CommandId;
 use crate::keybindings::Keymap;
 use crate::logger::OwnedLogRecord;
 use crate::state::DebugConsoleState;
-use crate::theme::Theme;
+use gh_pr_lander_theme::Theme;
 use ratatui::style::Stylize;
 use ratatui::text::{Line, Span};
 

@@ -51,6 +51,13 @@ pub struct Theme {
     pub table_row_fg: Color,
     pub table_row_bg_normal: Color,
     pub table_row_bg_alt: Color,
+
+    // Tab bar colors
+    pub tab_line_bg: Color,     // Background for the entire tab line
+    pub tab_active_bg: Color,   // Background for active/selected tab
+    pub tab_active_fg: Color,   // Text color for active tab
+    pub tab_inactive_fg: Color, // Text color for inactive tabs (bg is tab_line_bg)
+    pub tab_hint_fg: Color,     // Text color for hint at end of tab bar
 }
 
 impl Default for Theme {
@@ -99,18 +106,25 @@ impl Theme {
 
             // Selection (Space key) - lighter magenta
             selected_bg: tailwind::FUCHSIA.c400,
-            selected_fg: tailwind::CYAN.c100,
+            selected_fg: tailwind::YELLOW.c200,
 
             // Active/focused row - darker magenta with yellow text
             active_bg: tailwind::FUCHSIA.c500,
             active_fg: tailwind::YELLOW.c200,
 
             // Table - cyan header with magenta accents
-            table_header_bg: tailwind::CYAN.c700,
+            table_header_bg: tailwind::SLATE.c950,
             table_header_fg: tailwind::SLATE.c50,
             table_row_fg: tailwind::CYAN.c100,
             table_row_bg_normal: tailwind::SLATE.c950,
             table_row_bg_alt: tailwind::SLATE.c900,
+
+            // Tab bar - active tab pops with accent, inactive blends into line
+            tab_line_bg: tailwind::SLATE.c950,
+            tab_active_bg: tailwind::CYAN.c400,
+            tab_active_fg: tailwind::SLATE.c950,
+            tab_inactive_fg: tailwind::CYAN.c700,
+            tab_hint_fg: tailwind::CYAN.c700,
         }
     }
 
@@ -167,6 +181,7 @@ impl Theme {
         Style::default()
             .fg(self.table_header_fg)
             .bg(self.table_header_bg)
+            .add_modifier(Modifier::BOLD)
     }
 
     /// Style for selected table rows

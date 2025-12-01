@@ -339,7 +339,7 @@ pub struct AppState {
     pub command_palette: CommandPaletteState,
     pub add_repo_form: AddRepoFormState,
     pub merge_bot: MergeBotState,
-    pub theme: crate::theme::Theme,
+    pub theme: gh_pr_lander_theme::Theme,
     /// The keymap containing all keybindings
     pub keymap: Keymap,
 }
@@ -398,7 +398,7 @@ impl Default for AppState {
             command_palette: CommandPaletteState::default(),
             add_repo_form: AddRepoFormState::default(),
             merge_bot: MergeBotState::default(),
-            theme: crate::theme::Theme::default(),
+            theme: gh_pr_lander_theme::Theme::default(),
             keymap: default_keymap(),
         }
     }

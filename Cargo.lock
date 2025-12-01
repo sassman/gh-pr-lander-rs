@@ -900,10 +900,18 @@ dependencies = [
  "figlet-rs",
  "gh-client",
  "gh-pr-config",
+ "gh-pr-lander-theme",
  "log",
  "ratatui",
  "serde",
  "tokio",
+]
+
+[[package]]
+name = "gh-pr-lander-theme"
+version = "0.1.0"
+dependencies = [
+ "ratatui",
 ]
 
 [[package]]

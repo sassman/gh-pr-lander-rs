@@ -7,13 +7,12 @@ use crate::state::AppState;
 use crate::view_models::{
     determine_main_content, MainContentViewModel, PrTableViewModel, RepositoryTabsViewModel,
 };
+use crate::views::repository_tabs::RepositoryTabsWidget;
 use crate::views::View;
 use ratatui::{
-    buffer::Buffer,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::Modifier,
     text::Line,
-    widgets::{Block, Cell, Paragraph, Row, Table, Widget},
+    widgets::{Block, Cell, Paragraph, Row, Table},
     Frame,
 };
 
@@ -94,15 +93,13 @@ fn render_pr_table(state: &AppState, area: Rect, f: &mut Frame) {
         .title(status_line);
 
     // Build header row
-    let header_style = ratatui::style::Style::default()
-        .fg(theme.accent_primary)
-        .add_modifier(Modifier::BOLD);
+    let header_style = theme.table_header();
 
     let header_cells = ["#PR", "Title", "Author", "Comments", "Status"]
         .iter()
         .map(|h| Cell::from(*h).style(header_style));
 
-    let header = Row::new(header_cells).height(1);
+    let header = Row::new(header_cells).style(header_style).height(1);
 
     // Build rows from view model
     let rows: Vec<Row> = vm
@@ -134,16 +131,10 @@ fn render_pr_table(state: &AppState, area: Rect, f: &mut Frame) {
         Constraint::Percentage(15), // Status
     ];
 
-    // Selected row style
-    let selected_style = ratatui::style::Style::default()
-        .bg(theme.selected_bg)
-        .fg(theme.active_fg)
-        .add_modifier(Modifier::BOLD);
-
     let table = Table::new(rows, widths)
         .header(header)
         .block(block)
-        .row_highlight_style(selected_style)
+        .row_highlight_style(theme.table_selected())
         .highlight_symbol("> ");
 
     // Create a table state for highlighting
@@ -154,11 +145,7 @@ fn render_pr_table(state: &AppState, area: Rect, f: &mut Frame) {
 }
 
 /// Render empty/loading state
-fn render_empty_state(
-    vm: &crate::view_models::EmptyStateViewModel,
-    area: Rect,
-    f: &mut Frame,
-) {
+fn render_empty_state(vm: &crate::view_models::EmptyStateViewModel, area: Rect, f: &mut Frame) {
     let block = Block::bordered()
         .border_type(ratatui::widgets::BorderType::QuadrantOutside)
         .border_style(ratatui::style::Style::default().fg(vm.border_color));
@@ -169,36 +156,4 @@ fn render_empty_state(
         .alignment(Alignment::Center);
 
     f.render_widget(paragraph, area);
-}
-
-/// Widget wrapper for rendering repository tabs from view model
-struct RepositoryTabsWidget<'a>(&'a RepositoryTabsViewModel);
-
-impl Widget for RepositoryTabsWidget<'_> {
-    fn render(self, area: Rect, buf: &mut Buffer) {
-        if area.height < 1 || area.width < 10 {
-            return;
-        }
-
-        let vm = self.0;
-        let mut x = area.x + 1; // Start with a small margin
-
-        // Render each tab
-        for tab in &vm.tabs {
-            if x + tab.width > area.x + area.width {
-                break; // Don't overflow
-            }
-
-            // Render tab with padding
-            let padded_text = format!("  {}  ", tab.display_text);
-            buf.set_string(x, area.y, &padded_text, tab.style);
-
-            x += tab.width + 1; // Gap between tabs
-        }
-
-        // Render hint at the end
-        if x + vm.hint.width <= area.x + area.width {
-            buf.set_string(x, area.y, &vm.hint.text, vm.hint.style);
-        }
-    }
 }

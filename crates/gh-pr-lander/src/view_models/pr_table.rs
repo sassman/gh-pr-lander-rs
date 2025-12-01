@@ -5,7 +5,7 @@
 
 use crate::domain_models::{LoadingState, MergeableStatus, Pr, Repository};
 use crate::state::RepositoryData;
-use crate::theme::Theme;
+use gh_pr_lander_theme::Theme;
 use ratatui::style::Color;
 
 /// View model for the entire PR table

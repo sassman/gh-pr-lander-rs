@@ -1,6 +1,6 @@
 use crate::capabilities::PanelCapabilities;
 use crate::state::AppState;
-use crate::theme::Theme;
+use gh_pr_lander_theme::Theme;
 use crate::views::View;
 use figlet_rs::FIGfont;
 use ratatui::{

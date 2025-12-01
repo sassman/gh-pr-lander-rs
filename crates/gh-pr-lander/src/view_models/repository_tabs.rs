@@ -20,6 +20,8 @@ pub struct RepositoryTabsViewModel {
     pub selected_index: usize,
     /// Hint text shown at the end (e.g., "p → a" for add repo)
     pub hint: TabHintViewModel,
+    /// Background color for the entire tab line
+    pub line_bg: Color,
 }
 
 /// View model for a single tab
@@ -27,9 +29,13 @@ pub struct RepositoryTabsViewModel {
 pub struct TabViewModel {
     /// Display text (includes loading icon if applicable)
     pub display_text: String,
-    /// Style to apply to this tab
+    /// Style to apply to this tab content
     pub style: Style,
-    /// Width of the tab in characters (for layout)
+    /// Style for the left powerline separator (fg=tab_bg, bg=prev_bg)
+    pub left_sep_style: Style,
+    /// Style for the right powerline separator (fg=tab_bg, bg=next_bg)
+    pub right_sep_style: Style,
+    /// Width of the tab in characters (content + separators)
     pub width: u16,
 }
 
@@ -50,16 +56,18 @@ impl RepositoryTabsViewModel {
         let theme = &state.theme;
         let selected_index = state.main_view.selected_repository;
 
-        // Pre-compute styles
-        let active_style = Style::default()
-            .fg(theme.bg_primary)
-            .bg(theme.accent_primary)
+        // Pre-compute styles using semantic theme colors
+        let style_tab_active = Style::default()
+            .fg(theme.tab_active_fg)
+            .bg(theme.tab_active_bg)
             .add_modifier(Modifier::BOLD);
 
-        let inactive_style = Style::default().fg(theme.text_muted).bg(theme.bg_tertiary);
+        let style_tab_inactive = Style::default()
+            .fg(theme.tab_inactive_fg)
+            .bg(theme.tab_line_bg);
 
-        // Build tabs from repositories
-        let tabs: Vec<TabViewModel> = state
+        // First pass: collect tab data with background colors
+        let tab_data: Vec<_> = state
             .main_view
             .repositories
             .iter()
@@ -78,18 +86,31 @@ impl RepositoryTabsViewModel {
                     title
                 };
 
-                // Calculate width: text + 4 chars padding (2 on each side)
-                let width = display_text.chars().count() as u16 + 4;
-
-                let style = if is_selected {
-                    active_style
+                let (style, tab_bg) = if is_selected {
+                    (style_tab_active, theme.tab_active_bg)
                 } else {
-                    inactive_style
+                    (style_tab_inactive, theme.tab_line_bg)
                 };
 
+                (display_text, style, tab_bg)
+            })
+            .collect();
+
+        // Second pass: build tabs with separator styles
+        let tabs: Vec<TabViewModel> = tab_data
+            .iter()
+            .map(|(display_text, style, tab_bg)| {
+                // Separator: triangle in tab color against line background
+                let style_separator = Style::default().fg(*tab_bg).bg(theme.tab_line_bg);
+
+                // Width: left_sep(1) + padding(2) + text + padding(2) + right_sep(1)
+                let width = display_text.chars().count() as u16 + 6;
+
                 TabViewModel {
-                    display_text,
-                    style,
+                    display_text: display_text.clone(),
+                    style: *style,
+                    left_sep_style: style_separator,
+                    right_sep_style: style_separator,
                     width,
                 }
             })
@@ -99,7 +120,7 @@ impl RepositoryTabsViewModel {
         let hint = TabHintViewModel {
             text: " p → a ".to_string(),
             style: Style::default()
-                .fg(theme.text_muted)
+                .fg(theme.tab_hint_fg)
                 .add_modifier(Modifier::DIM),
             width: 7, // " p → a " is 7 chars
         };
@@ -108,6 +129,7 @@ impl RepositoryTabsViewModel {
             tabs,
             selected_index,
             hint,
+            line_bg: theme.tab_line_bg,
         }
     }
 

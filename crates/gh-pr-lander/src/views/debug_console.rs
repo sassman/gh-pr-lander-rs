@@ -2,7 +2,7 @@ use crate::capabilities::{PanelCapabilities, PanelCapabilityProvider};
 use crate::keybindings::Keymap;
 use crate::state::AppState;
 use crate::state::DebugConsoleState;
-use crate::theme::Theme;
+use gh_pr_lander_theme::Theme;
 use crate::view_models::debug_console_view_model::DebugConsoleViewModel;
 use crate::views::View;
 use ratatui::{

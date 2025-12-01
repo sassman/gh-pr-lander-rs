@@ -7,6 +7,7 @@ pub mod add_repository;
 pub mod command_palette;
 pub mod debug_console;
 pub mod main;
+pub mod repository_tabs;
 pub mod splash;
 
 // Re-export concrete view types for convenience
