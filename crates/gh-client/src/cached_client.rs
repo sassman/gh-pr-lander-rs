@@ -128,6 +128,7 @@ impl<C: GitHubClient + Clone> GitHubClient for CachedGitHubClient<C> {
                 Ok(mut prs) => {
                     // Always sort for stable ordering (descending by PR number)
                     prs.sort_by(|a, b| b.number.cmp(&a.number));
+                    prs.dedup_by_key(|pr| pr.number);
                     debug!("Cache HIT for {}/{}: {} PRs", owner, repo, prs.len());
                     return Ok(prs);
                 }

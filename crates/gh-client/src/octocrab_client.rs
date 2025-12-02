@@ -59,7 +59,8 @@ impl GitHubClient for OctocrabClient {
                 .page(page_num);
 
             if let Some(branch) = base_branch {
-                request = request.head(branch);
+                // .base() filters by target branch (where PR merges INTO)
+                request = request.base(branch);
             }
 
             let page = request.send().await?;
@@ -81,6 +82,7 @@ impl GitHubClient for OctocrabClient {
 
         // Sort by PR number (descending) for stable ordering
         prs.sort_by(|a, b| b.number.cmp(&a.number));
+        prs.dedup_by_key(|pr| pr.number);
 
         debug!("Fetched {} PRs for {}/{}", prs.len(), owner, repo);
         Ok(prs)
