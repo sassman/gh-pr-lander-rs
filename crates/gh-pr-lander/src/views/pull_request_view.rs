@@ -95,7 +95,7 @@ fn render_pr_table(state: &AppState, area: Rect, f: &mut Frame) {
     // Build header row
     let header_style = theme.table_header();
 
-    let header_cells = ["#PR", "Title", "Author", "Comments", "Status"]
+    let header_cells = ["  #PR", "Title", "Author", "Comments", "Status"]
         .iter()
         .map(|h| Cell::from(*h).style(header_style));
 
@@ -123,12 +123,22 @@ fn render_pr_table(state: &AppState, area: Rect, f: &mut Frame) {
         })
         .collect();
 
+    // Calculate PR number column width based on longest PR number
+    // Format is "● #12345" or "  #12345" - find max length across all rows
+    let pr_number_width = vm
+        .rows
+        .iter()
+        .map(|row| row.pr_number.chars().count())
+        .max()
+        .unwrap_or(6) // fallback to 6 if no rows
+        .max(5) as u16; // minimum width for "  #PR" header
+
     let widths = [
-        Constraint::Length(6),      // #PR
-        Constraint::Percentage(50), // Title
-        Constraint::Percentage(15), // Author
-        Constraint::Length(10),     // Comments
-        Constraint::Percentage(15), // Status
+        Constraint::Length(pr_number_width), // #PR - dynamic width
+        Constraint::Percentage(50),          // Title
+        Constraint::Percentage(15),          // Author
+        Constraint::Length(10),              // Comments
+        Constraint::Percentage(15),          // Status
     ];
 
     let table = Table::new(rows, widths)
