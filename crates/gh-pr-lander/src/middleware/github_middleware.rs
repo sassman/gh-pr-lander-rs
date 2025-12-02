@@ -12,6 +12,7 @@ use crate::dispatcher::Dispatcher;
 use crate::domain_models::{MergeableStatus, Pr};
 use crate::middleware::Middleware;
 use crate::state::AppState;
+use crate::utils::browser::open_url;
 use gh_client::{
     octocrab::Octocrab, ApiCache, CacheMode, CachedGitHubClient, GitHubClient, MergeMethod,
     OctocrabClient, PullRequest, ReviewEvent,
@@ -332,20 +333,8 @@ impl Middleware for GitHubMiddleware {
 
                 log::info!("Opening {} PR(s) in browser", urls.len());
 
-                // Use platform-specific commands (matching gh-pr-tui implementation)
                 for url in urls {
-                    self.runtime.spawn(async move {
-                        #[cfg(target_os = "macos")]
-                        let _ = tokio::process::Command::new("open").arg(&url).spawn();
-
-                        #[cfg(target_os = "linux")]
-                        let _ = tokio::process::Command::new("xdg-open").arg(&url).spawn();
-
-                        #[cfg(target_os = "windows")]
-                        let _ = tokio::process::Command::new("cmd")
-                            .args(["/C", "start", &url])
-                            .spawn();
-                    });
+                    self.runtime.spawn(open_url(url));
                 }
                 false // Consume action
             }
@@ -574,26 +563,12 @@ impl Middleware for GitHubMiddleware {
 
                 log::info!("Opening build logs for {} PR(s)", targets.len());
 
-                // Build CI logs URLs and open them
                 for (_repo_idx, _pr_number, owner, repo, _head_sha, head_branch) in targets {
                     let url = format!(
                         "https://github.com/{}/{}/actions?query=branch%3A{}",
                         owner, repo, head_branch
                     );
-
-                    // Use platform-specific commands (matching gh-pr-tui implementation)
-                    self.runtime.spawn(async move {
-                        #[cfg(target_os = "macos")]
-                        let _ = tokio::process::Command::new("open").arg(&url).spawn();
-
-                        #[cfg(target_os = "linux")]
-                        let _ = tokio::process::Command::new("xdg-open").arg(&url).spawn();
-
-                        #[cfg(target_os = "windows")]
-                        let _ = tokio::process::Command::new("cmd")
-                            .args(["/C", "start", &url])
-                            .spawn();
-                    });
+                    self.runtime.spawn(open_url(url));
                 }
                 false // Consume action
             }
@@ -692,7 +667,7 @@ impl Middleware for GitHubMiddleware {
 
                         // Open in IDE (try common IDE commands)
                         // Priority: code (VS Code), cursor, zed, idea, vim
-                        let ide_commands = ["code", "cursor", "zed", "idea", "vim"];
+                        let ide_commands = ["zed", "code", "cursor", "idea", "vim"];
                         let mut opened = false;
 
                         for ide in ide_commands {

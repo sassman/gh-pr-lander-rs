@@ -21,6 +21,7 @@ mod middleware;
 mod reducers;
 mod state;
 mod store;
+mod utils;
 mod view_models;
 mod views;
 
