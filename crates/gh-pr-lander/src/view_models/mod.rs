@@ -1,13 +1,13 @@
 pub mod command_palette_view_model;
 pub mod debug_console_view_model;
 pub mod key_bindings_view_model;
-pub mod pr_table_view_model;
+pub mod pull_request_view_model;
 pub mod repository_tabs_view_model;
 
 pub use command_palette_view_model::CommandPaletteViewModel;
 pub use key_bindings_view_model::KeyBindingsPanelViewModel;
 #[allow(unused_imports)]
-pub use pr_table_view_model::{EmptyPrTableViewModel, PrTableViewModel};
+pub use pull_request_view_model::{EmptyPrTableViewModel, PrTableViewModel};
 pub use repository_tabs_view_model::{
     determine_main_content, EmptyStateViewModel, MainContentViewModel, RepositoryTabsViewModel,
 };

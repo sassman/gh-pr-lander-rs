@@ -46,8 +46,6 @@ pub struct PrRowViewModel {
     pub status_color: Color, // Status-specific color
 
     /// Metadata for interactions (not displayed)
-    #[allow(dead_code)]
-    pub pr_number_raw: usize, // For opening PR (future use)
     /// Is this row at the cursor position
     pub is_cursor: bool,
     /// Is this PR selected for bulk operations
@@ -83,7 +81,7 @@ impl PrTableViewModel {
         repo: &Repository,
         theme: &Theme,
     ) -> PrTableHeaderViewModel {
-        let title = format!(" PRs: {}/{}@{} ", repo.org, repo.repo, repo.branch);
+        let title = format!("  {}/{}@{} ", repo.org, repo.repo, repo.branch);
 
         let (status_text, status_color) = Self::format_loading_state(
             &repo_data.loading_state,
@@ -146,7 +144,6 @@ impl PrTableViewModel {
             bg_color,
             fg_color,
             status_color,
-            pr_number_raw: pr.number,
             is_cursor,
             is_multi_selected,
         }

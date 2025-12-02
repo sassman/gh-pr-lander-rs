@@ -35,32 +35,6 @@ pub fn reduce(mut state: MainViewState, action: &Action) -> MainViewState {
             log::error!("Failed to load PRs for repository {}: {}", repo_idx, error);
         }
 
-        Action::PrNavigateNext => {
-            // Navigate to next PR in the current repository
-            let repo_idx = state.selected_repository;
-            if let Some(repo_data) = state.repo_data.get_mut(&repo_idx) {
-                if !repo_data.prs.is_empty() {
-                    repo_data.selected_pr = (repo_data.selected_pr + 1) % repo_data.prs.len();
-                    log::debug!("PR navigation: selected PR {}", repo_data.selected_pr);
-                }
-            }
-        }
-
-        Action::PrNavigatePrevious => {
-            // Navigate to previous PR in the current repository
-            let repo_idx = state.selected_repository;
-            if let Some(repo_data) = state.repo_data.get_mut(&repo_idx) {
-                if !repo_data.prs.is_empty() {
-                    repo_data.selected_pr = if repo_data.selected_pr == 0 {
-                        repo_data.prs.len() - 1
-                    } else {
-                        repo_data.selected_pr - 1
-                    };
-                    log::debug!("PR navigation: selected PR {}", repo_data.selected_pr);
-                }
-            }
-        }
-
         // NavigateNext/NavigatePrevious can also be used for PR navigation
         // when the main view has focus (handled by keyboard middleware)
         Action::NavigateNext => {
@@ -97,6 +71,7 @@ pub fn reduce(mut state: MainViewState, action: &Action) -> MainViewState {
                         repo_data.selected_pr_numbers.insert(pr_number);
                         log::debug!("Selected PR #{}", pr_number);
                     }
+                    repo_data.selected_pr = (repo_data.selected_pr + 1) % repo_data.prs.len();
                 }
             }
         }
