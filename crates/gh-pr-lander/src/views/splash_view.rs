@@ -1,8 +1,8 @@
 use crate::capabilities::PanelCapabilities;
 use crate::state::AppState;
-use gh_pr_lander_theme::Theme;
 use crate::views::View;
 use figlet_rs::FIGfont;
+use gh_pr_lander_theme::Theme;
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::Stylize,

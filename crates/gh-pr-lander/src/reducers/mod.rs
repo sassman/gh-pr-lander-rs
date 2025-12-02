@@ -2,5 +2,6 @@ pub mod add_repo_reducer;
 pub mod app_reducer;
 pub mod command_palette_reducer;
 pub mod debug_console_reducer;
-pub mod pr_reducer;
+pub mod key_bindings_reducer;
+pub mod pull_request_reducer;
 pub mod splash_reducer;

@@ -5,9 +5,9 @@
 
 use crate::client::GitHubClient;
 use crate::types::{
-    CheckConclusion, CheckRun, CheckRunStatus, CheckState, CheckStatus, CommitStatus,
-    MergeableState, MergeMethod, MergeResult, PullRequest, ReviewEvent, WorkflowRun,
-    WorkflowRunConclusion, WorkflowRunStatus,
+    CheckConclusion, CheckRun, CheckRunStatus, CheckState, CheckStatus, CommitStatus, MergeMethod,
+    MergeResult, MergeableState, PullRequest, ReviewEvent, WorkflowRun, WorkflowRunConclusion,
+    WorkflowRunStatus,
 };
 use async_trait::async_trait;
 use log::debug;
@@ -121,7 +121,10 @@ impl GitHubClient for OctocrabClient {
                     id: run.id.0,
                     name: run.name,
                     status,
-                    conclusion: run.conclusion.as_ref().map(|c| convert_conclusion_string(c)),
+                    conclusion: run
+                        .conclusion
+                        .as_ref()
+                        .map(|c| convert_conclusion_string(c)),
                     details_url: run.details_url,
                     started_at: run.started_at,
                     completed_at: run.completed_at,
@@ -221,11 +224,11 @@ impl GitHubClient for OctocrabClient {
         );
 
         // Use raw PUT request since octocrab doesn't have a method for this
-        let route = format!("/repos/{}/{}/pulls/{}/update-branch", owner, repo, pr_number);
-        let _response: serde_json::Value = self
-            .octocrab
-            .put(route, None::<&()>)
-            .await?;
+        let route = format!(
+            "/repos/{}/{}/pulls/{}/update-branch",
+            owner, repo, pr_number
+        );
+        let _response: serde_json::Value = self.octocrab.put(route, None::<&()>).await?;
 
         Ok(())
     }
@@ -284,12 +287,7 @@ impl GitHubClient for OctocrabClient {
         Ok(())
     }
 
-    async fn rerun_failed_jobs(
-        &self,
-        owner: &str,
-        repo: &str,
-        run_id: u64,
-    ) -> anyhow::Result<()> {
+    async fn rerun_failed_jobs(&self, owner: &str, repo: &str, run_id: u64) -> anyhow::Result<()> {
         debug!(
             "Rerunning failed jobs for workflow run {} in {}/{}",
             run_id, owner, repo
@@ -401,10 +399,7 @@ fn convert_pull_request(pr: &octocrab::models::pulls::PullRequest) -> PullReques
         base_branch: pr.base.ref_field.clone(),
         head_branch: pr.head.ref_field.clone(),
         mergeable: pr.mergeable,
-        mergeable_state: pr
-            .mergeable_state
-            .as_ref()
-            .map(convert_mergeable_state),
+        mergeable_state: pr.mergeable_state.as_ref().map(convert_mergeable_state),
         created_at: pr.created_at.unwrap_or_else(chrono::Utc::now),
         updated_at: pr.updated_at.unwrap_or_else(chrono::Utc::now),
         html_url: pr
@@ -461,18 +456,42 @@ mod tests {
 
     #[test]
     fn test_convert_conclusion_string() {
-        assert_eq!(convert_conclusion_string("success"), CheckConclusion::Success);
-        assert_eq!(convert_conclusion_string("SUCCESS"), CheckConclusion::Success);
-        assert_eq!(convert_conclusion_string("failure"), CheckConclusion::Failure);
-        assert_eq!(convert_conclusion_string("neutral"), CheckConclusion::Neutral);
-        assert_eq!(convert_conclusion_string("cancelled"), CheckConclusion::Cancelled);
-        assert_eq!(convert_conclusion_string("skipped"), CheckConclusion::Skipped);
-        assert_eq!(convert_conclusion_string("timed_out"), CheckConclusion::TimedOut);
+        assert_eq!(
+            convert_conclusion_string("success"),
+            CheckConclusion::Success
+        );
+        assert_eq!(
+            convert_conclusion_string("SUCCESS"),
+            CheckConclusion::Success
+        );
+        assert_eq!(
+            convert_conclusion_string("failure"),
+            CheckConclusion::Failure
+        );
+        assert_eq!(
+            convert_conclusion_string("neutral"),
+            CheckConclusion::Neutral
+        );
+        assert_eq!(
+            convert_conclusion_string("cancelled"),
+            CheckConclusion::Cancelled
+        );
+        assert_eq!(
+            convert_conclusion_string("skipped"),
+            CheckConclusion::Skipped
+        );
+        assert_eq!(
+            convert_conclusion_string("timed_out"),
+            CheckConclusion::TimedOut
+        );
         assert_eq!(
             convert_conclusion_string("action_required"),
             CheckConclusion::ActionRequired
         );
         assert_eq!(convert_conclusion_string("stale"), CheckConclusion::Stale);
-        assert_eq!(convert_conclusion_string("unknown"), CheckConclusion::Neutral);
+        assert_eq!(
+            convert_conclusion_string("unknown"),
+            CheckConclusion::Neutral
+        );
     }
 }

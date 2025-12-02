@@ -23,7 +23,11 @@ impl Widget for RepositoryTabsWidget<'_> {
             buf[(x, area.y)].set_bg(vm.line_bg);
         }
 
-        let mut x = area.x + 1; // Start with a small margin
+        let mut x = area.x;
+
+        // Render help hint on the far left
+        buf.set_string(x, area.y, &vm.help_hint.text, vm.help_hint.style);
+        x += vm.help_hint.width;
 
         // Render each tab with powerline separators
         for tab in &vm.tabs {
@@ -45,7 +49,7 @@ impl Widget for RepositoryTabsWidget<'_> {
             x += 1;
         }
 
-        // Render hint at the end
+        // Render add repo hint at the end
         if x + vm.hint.width <= area.x + area.width {
             buf.set_string(x + 1, area.y, &vm.hint.text, vm.hint.style);
         }

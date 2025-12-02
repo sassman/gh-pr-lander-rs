@@ -3,28 +3,31 @@ use crate::state::AppState;
 use ratatui::{layout::Rect, Frame};
 
 // New view modules (concrete view types)
-pub mod add_repository;
-pub mod command_palette;
-pub mod debug_console;
-pub mod main;
-pub mod repository_tabs;
-pub mod splash;
+pub mod add_repository_view;
+pub mod command_palette_view;
+pub mod debug_console_view;
+pub mod key_bindings_view;
+pub mod pull_request_view;
+pub mod repository_tabs_view;
+pub mod splash_view;
 
 // Re-export concrete view types for convenience
-pub use add_repository::AddRepositoryView;
-pub use command_palette::CommandPaletteView;
-pub use debug_console::DebugConsoleView;
-pub use main::MainView;
-pub use splash::SplashView;
+pub use add_repository_view::AddRepositoryView;
+pub use command_palette_view::CommandPaletteView;
+pub use debug_console_view::DebugConsoleView;
+pub use key_bindings_view::KeyBindingsView;
+pub use pull_request_view::MainView;
+pub use splash_view::SplashView;
 
 /// View identifier - allows comparing which view is active
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ViewId {
     Splash,
-    Main,
+    PullRequestView,
     DebugConsole,
     CommandPalette,
     AddRepository,
+    KeyBindings,
 }
 
 /// View trait - defines the interface that all views must implement

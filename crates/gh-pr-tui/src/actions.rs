@@ -66,16 +66,8 @@ pub enum Action {
     NavigateRight,    // vim: l, arrow right - right/expand in active panel
 
     // Semantic scroll actions (vim-style, capability-based)
-    ScrollToTop,        // vim: gg - scroll to top of current panel
-    ScrollToBottom,     // vim: G - scroll to bottom of current panel
-    ScrollPageUp,       // Page up in current panel
-    ScrollPageDown,     // Page down in current panel
-    ScrollHalfPageUp,   // Half page up (vim: Ctrl+u)
-    ScrollHalfPageDown, // Half page down (vim: Ctrl+d)
-    ScrollLineUp,       // Scroll up one line
-    ScrollLineDown,     // Scroll down one line
-    ScrollLeft,         // Scroll left (horizontal)
-    ScrollRight,        // Scroll right (horizontal)
+    ScrollToTop,    // vim: gg - scroll to top of current panel
+    ScrollToBottom, // vim: G - scroll to bottom of current panel
 
     // Add repository popup
     ShowAddRepoPopup,

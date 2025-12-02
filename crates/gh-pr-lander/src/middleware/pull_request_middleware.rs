@@ -55,10 +55,7 @@ impl Middleware for PullRequestMiddleware {
         match action {
             // When repositories are added in bulk, start loading PRs for each
             Action::RepositoryAddBulk(repos) => {
-                log::info!(
-                    "RepositoryAddBulk received with {} repos",
-                    repos.len(),
-                );
+                log::info!("RepositoryAddBulk received with {} repos", repos.len(),);
 
                 // Calculate starting index (after existing repos)
                 let start_idx = state.main_view.repositories.len();

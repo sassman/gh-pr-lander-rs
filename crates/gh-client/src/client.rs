@@ -224,12 +224,7 @@ pub trait GitHubClient: Send + Sync {
     /// # Returns
     ///
     /// Ok(()) on success, error on failure
-    async fn rerun_failed_jobs(
-        &self,
-        owner: &str,
-        repo: &str,
-        run_id: u64,
-    ) -> anyhow::Result<()>;
+    async fn rerun_failed_jobs(&self, owner: &str, repo: &str, run_id: u64) -> anyhow::Result<()>;
 
     /// Fetch workflow runs for a commit
     ///

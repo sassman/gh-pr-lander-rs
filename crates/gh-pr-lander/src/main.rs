@@ -26,9 +26,11 @@ mod views;
 
 use actions::Action;
 use middleware::{
-    bootstrap::BootstrapMiddleware, command_palette::CommandPaletteMiddleware,
-    github::GitHubMiddleware, keyboard::KeyboardMiddleware, logging::LoggingMiddleware,
-    pull_request::PullRequestMiddleware, repository::RepositoryMiddleware,
+    bootstrap_middleware::BootstrapMiddleware,
+    command_palette_middleware::CommandPaletteMiddleware,
+    github_middleware::GitHubMiddleware, keyboard_middleware::KeyboardMiddleware,
+    logging_middleware::LoggingMiddleware, pull_request_middleware::PullRequestMiddleware,
+    repository_middleware::RepositoryMiddleware,
 };
 use state::AppState;
 use store::Store;

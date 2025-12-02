@@ -11,6 +11,12 @@ pub struct DebugConsoleState {
     pub scroll_offset: usize, // Current scroll position (0 = bottom/latest)
 }
 
+/// Key bindings help panel state
+#[derive(Debug, Clone, Default)]
+pub struct KeyBindingsPanelState {
+    pub scroll_offset: usize,
+}
+
 /// Splash screen state
 #[derive(Debug, Clone)]
 pub struct SplashState {
@@ -339,6 +345,7 @@ pub struct AppState {
     pub command_palette: CommandPaletteState,
     pub add_repo_form: AddRepoFormState,
     pub merge_bot: MergeBotState,
+    pub key_bindings_panel: KeyBindingsPanelState,
     pub theme: gh_pr_lander_theme::Theme,
     /// The keymap containing all keybindings
     pub keymap: Keymap,
@@ -365,6 +372,7 @@ impl std::fmt::Debug for AppState {
             .field("command_palette", &self.command_palette)
             .field("add_repo_form", &self.add_repo_form)
             .field("merge_bot", &self.merge_bot)
+            .field("key_bindings_panel", &self.key_bindings_panel)
             .field("theme", &"<theme>")
             .finish()
     }
@@ -381,6 +389,7 @@ impl Clone for AppState {
             command_palette: self.command_palette.clone(),
             add_repo_form: self.add_repo_form.clone(),
             merge_bot: self.merge_bot.clone(),
+            key_bindings_panel: self.key_bindings_panel.clone(),
             theme: self.theme.clone(),
             keymap: self.keymap.clone(),
         }
@@ -398,6 +407,7 @@ impl Default for AppState {
             command_palette: CommandPaletteState::default(),
             add_repo_form: AddRepoFormState::default(),
             merge_bot: MergeBotState::default(),
+            key_bindings_panel: KeyBindingsPanelState::default(),
             theme: gh_pr_lander_theme::Theme::default(),
             keymap: default_keymap(),
         }

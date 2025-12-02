@@ -1,13 +1,15 @@
-pub mod command_palette;
+pub mod command_palette_view_model;
 pub mod debug_console_view_model;
-pub mod pr_table;
-pub mod repository_tabs;
+pub mod key_bindings_view_model;
+pub mod pr_table_view_model;
+pub mod repository_tabs_view_model;
 
-pub use command_palette::CommandPaletteViewModel;
+pub use command_palette_view_model::CommandPaletteViewModel;
+pub use key_bindings_view_model::KeyBindingsPanelViewModel;
 #[allow(unused_imports)]
-pub use pr_table::{EmptyPrTableViewModel, PrTableViewModel};
-pub use repository_tabs::{
+pub use pr_table_view_model::{EmptyPrTableViewModel, PrTableViewModel};
+pub use repository_tabs_view_model::{
     determine_main_content, EmptyStateViewModel, MainContentViewModel, RepositoryTabsViewModel,
 };
 #[allow(unused_imports)]
-pub use repository_tabs::{TabHintViewModel, TabViewModel};
+pub use repository_tabs_view_model::{TabHintViewModel, TabViewModel};

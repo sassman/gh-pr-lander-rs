@@ -1,9 +1,10 @@
 use crate::actions::Action;
 use crate::reducers::{
-    add_repo_reducer, command_palette_reducer, debug_console_reducer, pr_reducer, splash_reducer,
+    add_repo_reducer, command_palette_reducer, debug_console_reducer, key_bindings_reducer,
+    pull_request_reducer, splash_reducer,
 };
 use crate::state::AppState;
-use crate::views::MainView;
+use crate::views::{KeyBindingsView, MainView};
 
 /// Reducer - pure function that produces new state from current state + action
 ///
@@ -44,7 +45,10 @@ pub fn reduce(mut state: AppState, action: &Action) -> AppState {
             state.view_stack.push(new_view.clone());
         }
 
-        Action::GlobalClose | Action::CommandPaletteClose | Action::CommandPaletteExecute => {
+        Action::GlobalClose
+        | Action::CommandPaletteClose
+        | Action::CommandPaletteExecute
+        | Action::KeyBindingsViewClose => {
             // Close the top-most view
             if state.view_stack.len() > 1 {
                 let popped = state.view_stack.pop();
@@ -136,7 +140,10 @@ pub fn reduce(mut state: AppState, action: &Action) -> AppState {
     state.add_repo_form = add_repo_reducer::reduce(state.add_repo_form, action);
 
     // PR reducer (handles PR* actions and navigation)
-    state.main_view = pr_reducer::reduce(state.main_view, action);
+    state.main_view = pull_request_reducer::reduce(state.main_view, action);
+
+    // Key bindings panel reducer (handles scroll actions)
+    state.key_bindings_panel = key_bindings_reducer::reduce(state.key_bindings_panel, action);
 
     state
 }

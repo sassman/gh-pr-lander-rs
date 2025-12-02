@@ -18,6 +18,8 @@ pub struct RepositoryTabsViewModel {
     /// Index of the selected tab
     #[allow(dead_code)]
     pub selected_index: usize,
+    /// Help hint shown at the far left (e.g., "?" for key bindings)
+    pub help_hint: TabHintViewModel,
     /// Hint text shown at the end (e.g., "p → a" for add repo)
     pub hint: TabHintViewModel,
     /// Background color for the entire tab line
@@ -116,18 +118,26 @@ impl RepositoryTabsViewModel {
             })
             .collect();
 
-        // Build hint
-        let hint = TabHintViewModel {
-            text: " p → a ".to_string(),
+        // Build help hint (left side)
+        let help_hint = TabHintViewModel {
+            text: " ? ".to_string(),
             style: Style::default()
                 .fg(theme.tab_hint_fg)
                 .add_modifier(Modifier::DIM),
+            width: 3, // " ? " is 3 chars
+        };
+
+        // Build add repo hint (right side)
+        let hint = TabHintViewModel {
+            text: " p → a ".to_string(),
+            style: help_hint.style.clone(),
             width: 7, // " p → a " is 7 chars
         };
 
         Self {
             tabs,
             selected_index,
+            help_hint,
             hint,
             line_bg: theme.tab_line_bg,
         }

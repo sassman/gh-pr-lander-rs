@@ -29,23 +29,20 @@ pub enum Action {
     NavigatePrevious, // k, up arrow
     NavigateLeft,     // h, left arrow
     NavigateRight,    // l, right arrow
+    NavigateToTop,    // gg
+    NavigateToBottom, // G
 
     /// ## Repository navigation actions
     RepositoryNext, // Switch to next repository
     RepositoryPrevious, // Switch to previous repository
 
-    /// ## Scroll actions
-    ScrollToTop, // gg
-    ScrollToBottom,     // G
-    ScrollPageDown,     // Page Down
-    ScrollPageUp,       // Page Up
-    ScrollHalfPageDown, // Ctrl+d
-    ScrollHalfPageUp,   // Ctrl+u
-
     /// ## Debug console actions
     DebugConsoleClear, // Clear debug console logs
     DebugConsoleLogAdded(OwnedLogRecord), // New log record added
     DebugConsoleDumpLogs,
+
+    /// ## Key bindings panel actions
+    KeyBindingsViewClose, // Close key bindings panel
 
     /// ## Text input actions (generic, for any view with TEXT_INPUT capability)
     TextInputChar(char), // Character typed into input field
@@ -206,15 +203,13 @@ impl Clone for Action {
             Self::NavigateRight => Self::NavigateRight,
             Self::RepositoryNext => Self::RepositoryNext,
             Self::RepositoryPrevious => Self::RepositoryPrevious,
-            Self::ScrollToTop => Self::ScrollToTop,
-            Self::ScrollToBottom => Self::ScrollToBottom,
-            Self::ScrollPageDown => Self::ScrollPageDown,
-            Self::ScrollPageUp => Self::ScrollPageUp,
-            Self::ScrollHalfPageDown => Self::ScrollHalfPageDown,
-            Self::ScrollHalfPageUp => Self::ScrollHalfPageUp,
+            Self::NavigateToTop => Self::NavigateToTop,
+            Self::NavigateToBottom => Self::NavigateToBottom,
+
             Self::DebugConsoleClear => Self::DebugConsoleClear,
             Self::DebugConsoleLogAdded(record) => Self::DebugConsoleLogAdded(record.clone()),
             Self::DebugConsoleDumpLogs => Self::DebugConsoleDumpLogs,
+            Self::KeyBindingsViewClose => Self::KeyBindingsViewClose,
             Self::TextInputChar(c) => Self::TextInputChar(*c),
             Self::TextInputBackspace => Self::TextInputBackspace,
             Self::TextInputClearLine => Self::TextInputClearLine,
@@ -309,17 +304,15 @@ impl std::fmt::Debug for Action {
             Self::NavigateRight => write!(f, "NavigateRight"),
             Self::RepositoryNext => write!(f, "RepositoryNext"),
             Self::RepositoryPrevious => write!(f, "RepositoryPrevious"),
-            Self::ScrollToTop => write!(f, "ScrollToTop"),
-            Self::ScrollToBottom => write!(f, "ScrollToBottom"),
-            Self::ScrollPageDown => write!(f, "ScrollPageDown"),
-            Self::ScrollPageUp => write!(f, "ScrollPageUp"),
-            Self::ScrollHalfPageDown => write!(f, "ScrollHalfPageDown"),
-            Self::ScrollHalfPageUp => write!(f, "ScrollHalfPageUp"),
+            Self::NavigateToTop => write!(f, "ScrollToTop"),
+            Self::NavigateToBottom => write!(f, "ScrollToBottom"),
+
             Self::DebugConsoleClear => write!(f, "DebugConsoleClear"),
             Self::DebugConsoleLogAdded(record) => {
                 f.debug_tuple("DebugConsoleLogAdded").field(record).finish()
             }
             Self::DebugConsoleDumpLogs => write!(f, "DebugConsoleDumpLogs"),
+            Self::KeyBindingsViewClose => write!(f, "KeyBindingsViewClose"),
             Self::TextInputChar(c) => f.debug_tuple("TextInputChar").field(c).finish(),
             Self::TextInputBackspace => write!(f, "TextInputBackspace"),
             Self::TextInputClearLine => write!(f, "TextInputClearLine"),

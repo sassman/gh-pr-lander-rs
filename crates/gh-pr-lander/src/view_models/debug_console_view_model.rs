@@ -39,14 +39,14 @@ impl<'a> DebugConsoleViewModel<'a> {
             top_bottom: format!(
                 "{}/{}",
                 keymap
-                    .compact_hint_for_command(CommandId::ScrollToTop)
+                    .compact_hint_for_command(CommandId::NavigateToTop)
                     .unwrap_or_else(|| "gg".to_string()),
                 keymap
-                    .compact_hint_for_command(CommandId::ScrollToBottom)
+                    .compact_hint_for_command(CommandId::NavigateToBottom)
                     .unwrap_or_else(|| "G".to_string()),
             ),
             close: keymap
-                .compact_hint_for_command(CommandId::DebugToggleConsole)
+                .compact_hint_for_command(CommandId::DebugToggleConsoleView)
                 .unwrap_or_else(|| "`".to_string()),
         };
 

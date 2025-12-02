@@ -5,6 +5,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::views::KeyBindingsView;
+
 /// Unique identifier for each command in the application.
 ///
 /// Commands are the semantic actions users can trigger. Each command
@@ -31,24 +33,14 @@ pub enum CommandId {
     NavigateLeft,
     /// Navigate right
     NavigateRight,
-
-    // === Scrolling ===
-    /// Scroll to the top (gg in vim)
-    ScrollToTop,
-    /// Scroll to the bottom (G in vim)
-    ScrollToBottom,
-    /// Scroll down one page
-    ScrollPageDown,
-    /// Scroll up one page
-    ScrollPageUp,
-    /// Scroll down half a page (Ctrl+d in vim)
-    ScrollHalfPageDown,
-    /// Scroll up half a page (Ctrl+u in vim)
-    ScrollHalfPageUp,
+    /// Navigate to the top (gg in vim)
+    NavigateToTop,
+    /// Navigate to the bottom (G in vim)
+    NavigateToBottom,
 
     // === Debug ===
     /// Toggle the debug console visibility
-    DebugToggleConsole,
+    DebugToggleConsoleView,
     /// Clear the debug console logs
     DebugClearLogs,
     /// Dumps the debug logs to file
@@ -104,6 +96,10 @@ pub enum CommandId {
     /// Add PRs to merge queue
     MergeBotAddToQueue,
 
+    // === Help ===
+    /// Toggle key bindings help panel
+    KeyBindingsToggleView,
+
     // === General ===
     /// Close the current view/panel
     GlobalClose,
@@ -131,17 +127,11 @@ impl CommandId {
             Self::NavigatePrevious => Action::NavigatePrevious,
             Self::NavigateLeft => Action::NavigateLeft,
             Self::NavigateRight => Action::NavigateRight,
-
-            // Scrolling
-            Self::ScrollToTop => Action::ScrollToTop,
-            Self::ScrollToBottom => Action::ScrollToBottom,
-            Self::ScrollPageDown => Action::ScrollPageDown,
-            Self::ScrollPageUp => Action::ScrollPageUp,
-            Self::ScrollHalfPageDown => Action::ScrollHalfPageDown,
-            Self::ScrollHalfPageUp => Action::ScrollHalfPageUp,
+            Self::NavigateToTop => Action::NavigateToTop,
+            Self::NavigateToBottom => Action::NavigateToBottom,
 
             // Debug
-            Self::DebugToggleConsole => Action::PushView(Box::new(DebugConsoleView::new())),
+            Self::DebugToggleConsoleView => Action::PushView(Box::new(DebugConsoleView::new())),
             Self::DebugClearLogs => Action::DebugConsoleClear,
             Self::DebugLogDump => Action::DebugConsoleDumpLogs,
 
@@ -177,6 +167,9 @@ impl CommandId {
             Self::MergeBotStop => Action::MergeBotStop,
             Self::MergeBotAddToQueue => Action::MergeBotAddToQueue,
 
+            // Help
+            Self::KeyBindingsToggleView => Action::PushView(Box::new(KeyBindingsView::new())),
+
             // General
             Self::GlobalClose => Action::GlobalClose,
             Self::GlobalQuit => Action::GlobalQuit,
@@ -196,17 +189,11 @@ impl CommandId {
             Self::NavigatePrevious => "Navigate up",
             Self::NavigateLeft => "Navigate left",
             Self::NavigateRight => "Navigate right",
-
-            // Scrolling
-            Self::ScrollToTop => "Scroll to top",
-            Self::ScrollToBottom => "Scroll to bottom",
-            Self::ScrollPageDown => "Page down",
-            Self::ScrollPageUp => "Page up",
-            Self::ScrollHalfPageDown => "Half page down",
-            Self::ScrollHalfPageUp => "Half page up",
+            Self::NavigateToTop => "Navigate to top",
+            Self::NavigateToBottom => "Navigate to bottom",
 
             // Debug
-            Self::DebugToggleConsole => "Toggle debug console",
+            Self::DebugToggleConsoleView => "Toggle debug console",
             Self::DebugClearLogs => "Clear debug logs",
             Self::DebugLogDump => "Dump debug logs to file",
 
@@ -242,6 +229,9 @@ impl CommandId {
             Self::MergeBotStop => "Stop merge bot",
             Self::MergeBotAddToQueue => "Add to merge queue",
 
+            // Help
+            Self::KeyBindingsToggleView => "Show key bindings",
+
             // General
             Self::GlobalClose => "Close",
             Self::GlobalQuit => "Quit",
@@ -257,21 +247,15 @@ impl CommandId {
             Self::RepositoryPrevious => "Switch to the previous repository",
 
             // Navigation
-            Self::NavigateNext => "Move selection down",
-            Self::NavigatePrevious => "Move selection up",
-            Self::NavigateLeft => "Move selection or scroll left",
-            Self::NavigateRight => "Move selection or scroll right",
-
-            // Scrolling
-            Self::ScrollToTop => "Jump to the first item",
-            Self::ScrollToBottom => "Jump to the last item",
-            Self::ScrollPageDown => "Scroll down by one page",
-            Self::ScrollPageUp => "Scroll up by one page",
-            Self::ScrollHalfPageDown => "Scroll down by half a page",
-            Self::ScrollHalfPageUp => "Scroll up by half a page",
+            Self::NavigateNext => "Move selection or navigate down",
+            Self::NavigatePrevious => "Move selection or navigate up",
+            Self::NavigateLeft => "Move selection or navigate left",
+            Self::NavigateRight => "Move selection or navigate right",
+            Self::NavigateToTop => "Jump to the first item",
+            Self::NavigateToBottom => "Jump to the last item",
 
             // Debug
-            Self::DebugToggleConsole => "Show or hide the debug console",
+            Self::DebugToggleConsoleView => "Show or hide the debug console",
             Self::DebugClearLogs => "Clear all debug console logs",
             Self::DebugLogDump => "Save debug logs to a file",
 
@@ -307,6 +291,9 @@ impl CommandId {
             Self::MergeBotStop => "Stop the merge bot and clear the queue",
             Self::MergeBotAddToQueue => "Add selected PRs to the merge queue",
 
+            // Help
+            Self::KeyBindingsToggleView => "Show or hide the key bindings help panel",
+
             // General
             Self::GlobalClose => "Close the current view or panel",
             Self::GlobalQuit => "Exit the application",
@@ -323,14 +310,9 @@ impl CommandId {
             | Self::NavigateLeft
             | Self::NavigateRight => "Navigation",
 
-            Self::ScrollToTop
-            | Self::ScrollToBottom
-            | Self::ScrollPageDown
-            | Self::ScrollPageUp
-            | Self::ScrollHalfPageDown
-            | Self::ScrollHalfPageUp => "Scroll",
+            Self::NavigateToTop | Self::NavigateToBottom => "Scroll",
 
-            Self::DebugToggleConsole | Self::DebugClearLogs | Self::DebugLogDump => "Debug",
+            Self::DebugToggleConsoleView | Self::DebugClearLogs | Self::DebugLogDump => "Debug",
 
             Self::CommandPaletteOpen => "Command Palette",
 
@@ -351,6 +333,8 @@ impl CommandId {
 
             Self::MergeBotStart | Self::MergeBotStop | Self::MergeBotAddToQueue => "Merge Bot",
 
+            Self::KeyBindingsToggleView => "Help",
+
             Self::GlobalClose | Self::GlobalQuit => "General",
         }
     }
@@ -364,12 +348,8 @@ impl CommandId {
             | Self::NavigatePrevious
             | Self::NavigateLeft
             | Self::NavigateRight
-            | Self::ScrollToTop
-            | Self::ScrollToBottom
-            | Self::ScrollPageDown
-            | Self::ScrollPageUp
-            | Self::ScrollHalfPageDown
-            | Self::ScrollHalfPageUp
+            | Self::NavigateToTop
+            | Self::NavigateToBottom
             | Self::CommandPaletteOpen => false,
 
             // All others are shown

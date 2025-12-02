@@ -6,7 +6,7 @@ members = [
     "crates/gh-pr-config",
     "crates/gh-pr-lander",
     "crates/gh-pr-lander-theme",
-    "crates/gh-pr-tui",
+    # "crates/gh-pr-tui",
     "crates/gh-pr-tui-command-palette",
 ]
 resolver = "2"

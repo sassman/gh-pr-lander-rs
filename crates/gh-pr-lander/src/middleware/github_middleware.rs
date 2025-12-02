@@ -37,9 +37,7 @@ impl GitHubMiddleware {
         // Initialize cache from config path
         let cache_file = gh_pr_config::get_cache_file_path()
             .unwrap_or_else(|_| std::env::temp_dir().join("gh-api-cache.json"));
-        let cache = Arc::new(Mutex::new(
-            ApiCache::new(cache_file).unwrap_or_default(),
-        ));
+        let cache = Arc::new(Mutex::new(ApiCache::new(cache_file).unwrap_or_default()));
 
         Self {
             runtime,
@@ -310,7 +308,9 @@ impl Middleware for GitHubMiddleware {
             }
 
             // Handle PR load start - actually fetch the PRs
-            Action::PrLoadStart(repo_idx) => self.handle_pr_load(*repo_idx, state, dispatcher, false),
+            Action::PrLoadStart(repo_idx) => {
+                self.handle_pr_load(*repo_idx, state, dispatcher, false)
+            }
 
             // Handle PR refresh request (force refresh - bypass cache)
             Action::PrRefresh => {

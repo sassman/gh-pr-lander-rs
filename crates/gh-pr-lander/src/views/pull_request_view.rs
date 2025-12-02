@@ -7,7 +7,7 @@ use crate::state::AppState;
 use crate::view_models::{
     determine_main_content, MainContentViewModel, PrTableViewModel, RepositoryTabsViewModel,
 };
-use crate::views::repository_tabs::RepositoryTabsWidget;
+use crate::views::repository_tabs_view::RepositoryTabsWidget;
 use crate::views::View;
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
@@ -28,7 +28,7 @@ impl MainView {
 
 impl View for MainView {
     fn view_id(&self) -> crate::views::ViewId {
-        crate::views::ViewId::Main
+        crate::views::ViewId::PullRequestView
     }
 
     fn render(&self, state: &AppState, area: Rect, f: &mut Frame) {

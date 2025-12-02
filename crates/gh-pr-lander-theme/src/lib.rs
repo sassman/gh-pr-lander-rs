@@ -124,7 +124,7 @@ impl Theme {
             tab_active_bg: tailwind::CYAN.c400,
             tab_active_fg: tailwind::SLATE.c950,
             tab_inactive_fg: tailwind::CYAN.c700,
-            tab_hint_fg: tailwind::CYAN.c700,
+            tab_hint_fg: tailwind::YELLOW.c200,
         }
     }
 
@@ -153,7 +153,7 @@ impl Theme {
     pub fn section_header(&self) -> Style {
         Style::default()
             .fg(self.status_warning)
-            .add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
+            .add_modifier(Modifier::BOLD)
     }
 
     /// Style for key hints (e.g., "Space" in "Press Space to...")

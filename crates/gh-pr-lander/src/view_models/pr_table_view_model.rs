@@ -123,7 +123,10 @@ impl PrTableViewModel {
             (theme.active_fg, theme.selected_bg)
         } else if is_multi_selected {
             // Multi-selected but not cursor: subtle highlight
-            (theme.text().fg.unwrap_or(Color::White), Color::Rgb(40, 50, 60))
+            (
+                theme.text().fg.unwrap_or(Color::White),
+                Color::Rgb(40, 50, 60),
+            )
         } else {
             // Alternating row colors
             let bg = if index.is_multiple_of(2) {

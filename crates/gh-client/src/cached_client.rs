@@ -128,12 +128,7 @@ impl<C: GitHubClient + Clone> GitHubClient for CachedGitHubClient<C> {
                 Ok(mut prs) => {
                     // Always sort for stable ordering (descending by PR number)
                     prs.sort_by(|a, b| b.number.cmp(&a.number));
-                    debug!(
-                        "Cache HIT for {}/{}: {} PRs",
-                        owner,
-                        repo,
-                        prs.len()
-                    );
+                    debug!("Cache HIT for {}/{}: {} PRs", owner, repo, prs.len());
                     return Ok(prs);
                 }
                 Err(e) => {
@@ -144,7 +139,10 @@ impl<C: GitHubClient + Clone> GitHubClient for CachedGitHubClient<C> {
         }
 
         // Fetch from API
-        let prs = self.inner.fetch_pull_requests(owner, repo, base_branch).await?;
+        let prs = self
+            .inner
+            .fetch_pull_requests(owner, repo, base_branch)
+            .await?;
 
         // Cache the result
         if let Ok(json) = serde_json::to_string(&prs) {
@@ -160,7 +158,10 @@ impl<C: GitHubClient + Clone> GitHubClient for CachedGitHubClient<C> {
         repo: &str,
         commit_sha: &str,
     ) -> anyhow::Result<Vec<CheckRun>> {
-        let url = format!("/repos/{}/{}/commits/{}/check-runs", owner, repo, commit_sha);
+        let url = format!(
+            "/repos/{}/{}/commits/{}/check-runs",
+            owner, repo, commit_sha
+        );
         let params: &[(&str, &str)] = &[];
 
         // Try cache first
@@ -219,7 +220,10 @@ impl<C: GitHubClient + Clone> GitHubClient for CachedGitHubClient<C> {
         }
 
         // Fetch from API
-        let status = self.inner.fetch_commit_status(owner, repo, commit_sha).await?;
+        let status = self
+            .inner
+            .fetch_commit_status(owner, repo, commit_sha)
+            .await?;
 
         // Cache the result
         if let Ok(json) = serde_json::to_string(&status) {
@@ -242,7 +246,14 @@ impl<C: GitHubClient + Clone> GitHubClient for CachedGitHubClient<C> {
     ) -> anyhow::Result<MergeResult> {
         // Mutations are never cached - pass through directly
         self.inner
-            .merge_pull_request(owner, repo, pr_number, merge_method, commit_title, commit_message)
+            .merge_pull_request(
+                owner,
+                repo,
+                pr_number,
+                merge_method,
+                commit_title,
+                commit_message,
+            )
             .await
     }
 
@@ -253,7 +264,9 @@ impl<C: GitHubClient + Clone> GitHubClient for CachedGitHubClient<C> {
         pr_number: u64,
     ) -> anyhow::Result<()> {
         // Mutations are never cached - pass through directly
-        self.inner.update_pull_request_branch(owner, repo, pr_number).await
+        self.inner
+            .update_pull_request_branch(owner, repo, pr_number)
+            .await
     }
 
     async fn create_review(
@@ -265,7 +278,9 @@ impl<C: GitHubClient + Clone> GitHubClient for CachedGitHubClient<C> {
         body: Option<&str>,
     ) -> anyhow::Result<()> {
         // Mutations are never cached - pass through directly
-        self.inner.create_review(owner, repo, pr_number, event, body).await
+        self.inner
+            .create_review(owner, repo, pr_number, event, body)
+            .await
     }
 
     async fn close_pull_request(
@@ -278,12 +293,7 @@ impl<C: GitHubClient + Clone> GitHubClient for CachedGitHubClient<C> {
         self.inner.close_pull_request(owner, repo, pr_number).await
     }
 
-    async fn rerun_failed_jobs(
-        &self,
-        owner: &str,
-        repo: &str,
-        run_id: u64,
-    ) -> anyhow::Result<()> {
+    async fn rerun_failed_jobs(&self, owner: &str, repo: &str, run_id: u64) -> anyhow::Result<()> {
         // Mutations are never cached - pass through directly
         self.inner.rerun_failed_jobs(owner, repo, run_id).await
     }
@@ -317,7 +327,10 @@ impl<C: GitHubClient + Clone> GitHubClient for CachedGitHubClient<C> {
         }
 
         // Fetch from API
-        let runs = self.inner.fetch_workflow_runs(owner, repo, head_sha).await?;
+        let runs = self
+            .inner
+            .fetch_workflow_runs(owner, repo, head_sha)
+            .await?;
 
         // Cache the result
         if let Ok(json) = serde_json::to_string(&runs) {
@@ -485,12 +498,18 @@ mod tests {
         let client = CachedGitHubClient::new(mock.clone(), cache, CacheMode::None);
 
         // First call
-        let prs1 = client.fetch_pull_requests("owner", "repo", None).await.unwrap();
+        let prs1 = client
+            .fetch_pull_requests("owner", "repo", None)
+            .await
+            .unwrap();
         assert_eq!(prs1.len(), 1);
         assert_eq!(mock.call_count(), 1);
 
         // Second call - should NOT use cache (mode is None)
-        let prs2 = client.fetch_pull_requests("owner", "repo", None).await.unwrap();
+        let prs2 = client
+            .fetch_pull_requests("owner", "repo", None)
+            .await
+            .unwrap();
         assert_eq!(prs2.len(), 1);
         assert_eq!(mock.call_count(), 2); // Called again, not cached
     }
@@ -502,12 +521,18 @@ mod tests {
         let client = CachedGitHubClient::new(mock.clone(), cache, CacheMode::ReadWrite);
 
         // First call - cache miss, calls mock
-        let prs1 = client.fetch_pull_requests("owner", "repo", None).await.unwrap();
+        let prs1 = client
+            .fetch_pull_requests("owner", "repo", None)
+            .await
+            .unwrap();
         assert_eq!(prs1.len(), 1);
         assert_eq!(mock.call_count(), 1);
 
         // Second call - should use cache
-        let prs2 = client.fetch_pull_requests("owner", "repo", None).await.unwrap();
+        let prs2 = client
+            .fetch_pull_requests("owner", "repo", None)
+            .await
+            .unwrap();
         assert_eq!(prs2.len(), 1);
         assert_eq!(mock.call_count(), 1); // Still 1, used cache
     }
@@ -519,18 +544,27 @@ mod tests {
         let client = CachedGitHubClient::new(mock.clone(), cache.clone(), CacheMode::WriteOnly);
 
         // First call - writes to cache
-        let prs1 = client.fetch_pull_requests("owner", "repo", None).await.unwrap();
+        let prs1 = client
+            .fetch_pull_requests("owner", "repo", None)
+            .await
+            .unwrap();
         assert_eq!(prs1.len(), 1);
         assert_eq!(mock.call_count(), 1);
 
         // Second call - should NOT read from cache (WriteOnly mode)
-        let prs2 = client.fetch_pull_requests("owner", "repo", None).await.unwrap();
+        let prs2 = client
+            .fetch_pull_requests("owner", "repo", None)
+            .await
+            .unwrap();
         assert_eq!(prs2.len(), 1);
         assert_eq!(mock.call_count(), 2); // Called again
 
         // But cache should have the data (verify with ReadWrite mode)
         let read_client = CachedGitHubClient::new(mock.clone(), cache, CacheMode::ReadWrite);
-        let prs3 = read_client.fetch_pull_requests("owner", "repo", None).await.unwrap();
+        let prs3 = read_client
+            .fetch_pull_requests("owner", "repo", None)
+            .await
+            .unwrap();
         assert_eq!(prs3.len(), 1);
         assert_eq!(mock.call_count(), 2); // Still 2, used cache
     }
@@ -543,7 +577,10 @@ mod tests {
         // First, populate cache with ReadWrite
         let write_client =
             CachedGitHubClient::new(mock.clone(), cache.clone(), CacheMode::ReadWrite);
-        write_client.fetch_pull_requests("owner", "repo", None).await.unwrap();
+        write_client
+            .fetch_pull_requests("owner", "repo", None)
+            .await
+            .unwrap();
         assert_eq!(mock.call_count(), 1);
 
         // Create new mock with different data
@@ -551,7 +588,10 @@ mod tests {
 
         // ReadOnly client should read from cache
         let read_client = CachedGitHubClient::new(mock2.clone(), cache, CacheMode::ReadOnly);
-        let prs = read_client.fetch_pull_requests("owner", "repo", None).await.unwrap();
+        let prs = read_client
+            .fetch_pull_requests("owner", "repo", None)
+            .await
+            .unwrap();
 
         // Should get cached data (PR #1), not new mock data (PR #2)
         assert_eq!(prs.len(), 1);

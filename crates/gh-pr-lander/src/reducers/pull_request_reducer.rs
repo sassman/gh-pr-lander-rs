@@ -104,11 +104,7 @@ pub fn reduce(mut state: MainViewState, action: &Action) -> MainViewState {
         Action::PrSelectAll => {
             let repo_idx = state.selected_repository;
             if let Some(repo_data) = state.repo_data.get_mut(&repo_idx) {
-                repo_data.selected_pr_numbers = repo_data
-                    .prs
-                    .iter()
-                    .map(|pr| pr.number)
-                    .collect();
+                repo_data.selected_pr_numbers = repo_data.prs.iter().map(|pr| pr.number).collect();
                 log::debug!("Selected all {} PRs", repo_data.selected_pr_numbers.len());
             }
         }

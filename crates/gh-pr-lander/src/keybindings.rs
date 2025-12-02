@@ -300,15 +300,11 @@ pub fn default_keymap() -> Keymap {
         KeyBinding::new("backtab", "Shift+Tab", RepositoryPrevious),
         KeyBinding::new("p a", "p → a", RepositoryAdd),
         // Scrolling
-        KeyBinding::new("ctrl+d", "Ctrl+D", ScrollHalfPageDown),
-        KeyBinding::new("ctrl+u", "Ctrl+U", ScrollHalfPageUp),
-        KeyBinding::new("pagedown", "PgDn", ScrollPageDown),
-        KeyBinding::new("pageup", "PgUp", ScrollPageUp),
         // Note: "gg" and "G" are handled specially in keyboard middleware
-        KeyBinding::new("g g", "g g", ScrollToTop),
-        KeyBinding::new("G", "G", ScrollToBottom),
+        KeyBinding::new("g g", "g g", NavigateToTop),
+        KeyBinding::new("G", "G", NavigateToBottom),
         // Debug
-        KeyBinding::new("`", "`", DebugToggleConsole),
+        KeyBinding::new("`", "`", DebugToggleConsoleView),
         // Command palette
         KeyBinding::new("ctrl+p", "Ctrl+P", CommandPaletteOpen),
         // PR Selection
@@ -333,6 +329,8 @@ pub fn default_keymap() -> Keymap {
         // Merge Bot
         KeyBinding::new("M", "M", MergeBotStart),
         // KeyBinding::new("Q", "Q", MergeBotAddToQueue),
+        // Help
+        KeyBinding::new("?", "?", KeyBindingsToggleView),
         // General
         KeyBinding::new("q", "q", GlobalClose),
         KeyBinding::new("esc", "Esc", GlobalClose),
@@ -357,7 +355,7 @@ mod tests {
             KeyBinding::new("backtab", "Shift+Tab", RepositoryPrevious), // Duplicate hint
             KeyBinding::new("q", "q", GlobalClose),
             KeyBinding::new("esc", "Esc", GlobalClose),
-            KeyBinding::new("`", "`", DebugToggleConsole),
+            KeyBinding::new("`", "`", DebugToggleConsoleView),
         ])
     }
 
@@ -446,7 +444,7 @@ mod tests {
 
         // DebugToggleConsole has only one binding
         assert_eq!(
-            keymap.compact_hint_for_command(CommandId::DebugToggleConsole),
+            keymap.compact_hint_for_command(CommandId::DebugToggleConsoleView),
             Some("`".to_string())
         );
     }

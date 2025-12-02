@@ -5,8 +5,8 @@
 
 use crate::capabilities::PanelCapabilities;
 use crate::state::{AddRepoField, AddRepoFormState, AppState};
-use gh_pr_lander_theme::Theme;
 use crate::views::View;
+use gh_pr_lander_theme::Theme;
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Margin, Rect},
     style::{Modifier, Stylize},
