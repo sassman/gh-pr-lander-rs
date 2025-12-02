@@ -175,6 +175,9 @@ pub enum Action {
     BootstrapStart,
     BootstrapEnd,
 
+    /// ## App configuration actions
+    AppConfigLoaded(gh_pr_config::AppConfig),
+
     /// ## Repository loading actions
     /// Load recent repositories from config (dispatched by bootstrap)
     LoadRecentRepositories,
@@ -281,6 +284,7 @@ impl Clone for Action {
             }
             Self::BootstrapStart => Self::BootstrapStart,
             Self::BootstrapEnd => Self::BootstrapEnd,
+            Self::AppConfigLoaded(config) => Self::AppConfigLoaded(config.clone()),
             Self::LoadRecentRepositories => Self::LoadRecentRepositories,
             Self::LoadRecentRepositoriesDone => Self::LoadRecentRepositoriesDone,
             Self::Tick => Self::Tick,
@@ -404,6 +408,9 @@ impl std::fmt::Debug for Action {
             }
             Self::BootstrapStart => write!(f, "BootstrapStart"),
             Self::BootstrapEnd => write!(f, "BootstrapEnd"),
+            Self::AppConfigLoaded(config) => {
+                write!(f, "AppConfigLoaded(ide={})", config.ide_command)
+            }
             Self::LoadRecentRepositories => write!(f, "LoadRecentRepositories"),
             Self::LoadRecentRepositoriesDone => write!(f, "LoadRecentRepositoriesDone"),
             Self::Tick => write!(f, "Tick"),

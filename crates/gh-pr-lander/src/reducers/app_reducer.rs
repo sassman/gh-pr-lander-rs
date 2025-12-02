@@ -4,7 +4,7 @@ use crate::reducers::{
     pull_request_reducer, splash_reducer,
 };
 use crate::state::AppState;
-use crate::views::{KeyBindingsView, MainView};
+use crate::views::{KeyBindingsView, MainView, ViewId};
 
 /// Reducer - pure function that produces new state from current state + action
 ///
@@ -39,6 +39,56 @@ pub fn reduce(mut state: AppState, action: &Action) -> AppState {
             }
         }
 
+        // All navigation actions, should be handled only by the top (active) view
+        Action::NavigateLeft
+        | Action::NavigateRight
+        | Action::NavigateNext
+        | Action::NavigatePrevious
+        | Action::NavigateToBottom
+        | Action::NavigateToTop => {
+            if let Some(top_view) = state.view_stack.last() {
+                // Some remarks on why this is not generic yet:
+                // For now we have to match the top view id against the enum variants
+                // Later we need a system that tells which reducer and which sub-state belong together, so that we can write it generically without any special case.
+                // Then the naviagtion action is only send to the right reducer, for the active view.
+
+                match top_view.view_id() {
+                    ViewId::KeyBindings => {
+                        // Delegate navigation to KeyBindingsView reducer
+                        state.key_bindings_panel =
+                            key_bindings_reducer::reduce(state.key_bindings_panel, action);
+                    }
+                    ViewId::AddRepository => {
+                        // Delegate navigation to AddRepoForm reducer
+                        state.add_repo_form = add_repo_reducer::reduce(state.add_repo_form, action);
+                    }
+                    ViewId::CommandPalette => {
+                        // Delegate navigation to CommandPalette reducer
+                        state.command_palette = command_palette_reducer::reduce(
+                            state.command_palette,
+                            action,
+                            &state.keymap,
+                        );
+                    }
+                    ViewId::DebugConsole => {
+                        // Delegate navigation to DebugConsole reducer
+                        state.debug_console =
+                            debug_console_reducer::reduce(state.debug_console, action);
+                    }
+                    ViewId::PullRequestView => {
+                        // Delegate navigation to PullRequest reducer
+                        state.main_view = pull_request_reducer::reduce(state.main_view, action);
+                    }
+                    ViewId::Splash => {
+                        // Delegate navigation to Splash reducer
+                        state.splash = splash_reducer::reduce(state.splash, action);
+                    }
+                }
+                // Return early since we've handled the action
+                return state;
+            }
+        }
+
         Action::ReplaceView(new_view) => {
             log::debug!("Replacing view stack with: {:?}", new_view.view_id());
             state.view_stack.clear();
@@ -59,16 +109,19 @@ pub fn reduce(mut state: AppState, action: &Action) -> AppState {
             }
         }
 
+        // todo: this has nothing to do here, move to add_repo_reducer
         Action::RepositoryAdd => {
             // Reset form when opening (view push handled by middleware)
             state.add_repo_form.reset();
         }
 
+        // todo: this has nothing to do here, move to add_repo_reducer
         Action::AddRepoClose => {
             // Reset form when closing (view pop handled by middleware via GlobalClose)
             state.add_repo_form.reset();
         }
 
+        // todo: this has nothing to do here, move to add_repo_reducer
         Action::RepositoryAddBulk(repos) => {
             // Add multiple repositories at once (from config file)
             let count = repos.len();
@@ -76,6 +129,7 @@ pub fn reduce(mut state: AppState, action: &Action) -> AppState {
             state.main_view.repositories.extend(repos.clone());
         }
 
+        // todo: this has nothing to do here, move to add_repo_reducer
         Action::AddRepoConfirm => {
             // Add the repository if valid (view closing handled by middleware)
             if state.add_repo_form.is_valid() {
@@ -93,6 +147,12 @@ pub fn reduce(mut state: AppState, action: &Action) -> AppState {
             state.view_stack.push(Box::new(MainView::new()));
         }
 
+        Action::AppConfigLoaded(config) => {
+            state.app_config = config.clone();
+            log::info!("App config loaded into state");
+        }
+
+        // todo: this has nothing to do here, move to repository reducer (that is probably the add_repo_reducer)
         Action::RepositoryNext => {
             let num_repos = state.main_view.repositories.len();
             if num_repos > 0 {
@@ -105,6 +165,7 @@ pub fn reduce(mut state: AppState, action: &Action) -> AppState {
             }
         }
 
+        // todo: this has nothing to do here, move to repository reducer (that is probably the add_repo_reducer)
         Action::RepositoryPrevious => {
             let num_repos = state.main_view.repositories.len();
             if num_repos > 0 {

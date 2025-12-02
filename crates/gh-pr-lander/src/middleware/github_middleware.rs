@@ -582,14 +582,20 @@ impl Middleware for GitHubMiddleware {
 
                 log::info!("Opening {} PR(s) in IDE", targets.len());
 
+                // Get config values before spawning (they need to be moved into the closure)
+                let ide_command = state.app_config.ide_command.clone();
+                let temp_dir_base = state.app_config.temp_dir.clone();
+
                 // Spawn blocking task for each PR to open in IDE
                 for (pr_number, org, repo_name) in targets {
+                    let ide_command = ide_command.clone();
+                    let temp_dir_base = temp_dir_base.clone();
+
                     self.runtime.spawn_blocking(move || {
                         use std::path::PathBuf;
                         use std::process::Command;
 
-                        // Use system temp directory
-                        let temp_dir = std::env::temp_dir().join("gh-pr-lander");
+                        let temp_dir = PathBuf::from(&temp_dir_base);
 
                         // Create temp directory if it doesn't exist
                         if let Err(err) = std::fs::create_dir_all(&temp_dir) {
@@ -599,7 +605,7 @@ impl Middleware for GitHubMiddleware {
 
                         // Create unique directory for this PR
                         let dir_name = format!("{}-{}-pr-{}", org, repo_name, pr_number);
-                        let pr_dir = PathBuf::from(&temp_dir).join(dir_name);
+                        let pr_dir = temp_dir.join(dir_name);
 
                         // Remove existing directory if present
                         if pr_dir.exists() {
@@ -665,23 +671,18 @@ impl Middleware for GitHubMiddleware {
                             // Continue anyway - HTTPS will still work
                         }
 
-                        // Open in IDE (try common IDE commands)
-                        // Priority: code (VS Code), cursor, zed, idea, vim
-                        let ide_commands = ["zed", "code", "cursor", "idea", "vim"];
-                        let mut opened = false;
-
-                        for ide in ide_commands {
-                            if Command::new(ide).arg(&pr_dir).spawn().is_ok() {
-                                log::info!("Opened PR #{} in {} at {:?}", pr_number, ide, pr_dir);
-                                opened = true;
-                                break;
-                            }
-                        }
-
-                        if !opened {
+                        // Open in configured IDE
+                        if Command::new(&ide_command).arg(&pr_dir).spawn().is_ok() {
+                            log::info!(
+                                "Opened PR #{} in {} at {:?}",
+                                pr_number,
+                                ide_command,
+                                pr_dir
+                            );
+                        } else {
                             log::error!(
-                                "Failed to open IDE. Tried: {:?}. PR cloned at: {:?}",
-                                ide_commands,
+                                "Failed to open IDE '{}'. PR cloned at: {:?}",
+                                ide_command,
                                 pr_dir
                             );
                         }

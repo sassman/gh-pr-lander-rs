@@ -2,6 +2,7 @@ use crate::actions::Action;
 use crate::dispatcher::Dispatcher;
 use crate::state::AppState;
 
+pub mod app_config_middleware;
 pub mod bootstrap_middleware;
 pub mod command_palette_middleware;
 pub mod github_middleware;

@@ -27,7 +27,7 @@ mod views;
 
 use actions::Action;
 use middleware::{
-    bootstrap_middleware::BootstrapMiddleware,
+    app_config_middleware::AppConfigMiddleware, bootstrap_middleware::BootstrapMiddleware,
     command_palette_middleware::CommandPaletteMiddleware,
     github_middleware::GitHubMiddleware, keyboard_middleware::KeyboardMiddleware,
     logging_middleware::LoggingMiddleware, pull_request_middleware::PullRequestMiddleware,
@@ -55,6 +55,7 @@ fn main() -> io::Result<()> {
     // Add middleware in order (they execute in this order)
     store.add_middleware(Box::new(LoggingMiddleware::new()));
     store.add_middleware(Box::new(BootstrapMiddleware::new()));
+    store.add_middleware(Box::new(AppConfigMiddleware::new())); // Load app config early
     store.add_middleware(Box::new(GitHubMiddleware::new())); // GitHub client & API operations
     store.add_middleware(Box::new(KeyboardMiddleware::new()));
     store.add_middleware(Box::new(CommandPaletteMiddleware::new()));

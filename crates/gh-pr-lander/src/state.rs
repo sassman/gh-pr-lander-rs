@@ -349,6 +349,8 @@ pub struct AppState {
     pub theme: gh_pr_lander_theme::Theme,
     /// The keymap containing all keybindings
     pub keymap: Keymap,
+    /// Application configuration
+    pub app_config: gh_pr_config::AppConfig,
 }
 
 impl AppState {
@@ -374,6 +376,7 @@ impl std::fmt::Debug for AppState {
             .field("merge_bot", &self.merge_bot)
             .field("key_bindings_panel", &self.key_bindings_panel)
             .field("theme", &"<theme>")
+            .field("app_config", &self.app_config)
             .finish()
     }
 }
@@ -392,6 +395,7 @@ impl Clone for AppState {
             key_bindings_panel: self.key_bindings_panel.clone(),
             theme: self.theme.clone(),
             keymap: self.keymap.clone(),
+            app_config: self.app_config.clone(),
         }
     }
 }
@@ -410,6 +414,7 @@ impl Default for AppState {
             key_bindings_panel: KeyBindingsPanelState::default(),
             theme: gh_pr_lander_theme::Theme::default(),
             keymap: default_keymap(),
+            app_config: gh_pr_config::AppConfig::default(),
         }
     }
 }
