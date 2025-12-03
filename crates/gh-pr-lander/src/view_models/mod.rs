@@ -3,6 +3,7 @@ pub mod debug_console_view_model;
 pub mod key_bindings_view_model;
 pub mod pull_request_view_model;
 pub mod repository_tabs_view_model;
+pub mod status_bar;
 
 pub use command_palette_view_model::CommandPaletteViewModel;
 pub use key_bindings_view_model::KeyBindingsPanelViewModel;
@@ -13,3 +14,4 @@ pub use repository_tabs_view_model::{
 };
 #[allow(unused_imports)]
 pub use repository_tabs_view_model::{TabHintViewModel, TabViewModel};
+pub use status_bar::StatusBarViewModel;

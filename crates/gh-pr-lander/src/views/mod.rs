@@ -11,6 +11,7 @@ pub mod key_bindings_view;
 pub mod pull_request_view;
 pub mod repository_tabs_view;
 pub mod splash_view;
+pub mod status_bar;
 
 // Re-export concrete view types for convenience
 pub use add_repository_view::AddRepositoryView;

@@ -7,8 +7,10 @@ use crate::capabilities::PanelCapabilities;
 use crate::state::AppState;
 use crate::view_models::{
     determine_main_content, MainContentViewModel, PrTableViewModel, RepositoryTabsViewModel,
+    StatusBarViewModel,
 };
 use crate::views::repository_tabs_view::RepositoryTabsWidget;
+use crate::views::status_bar::StatusBarWidget;
 use crate::views::View;
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
@@ -58,12 +60,13 @@ impl View for MainView {
 
 /// Render the main view
 fn render(state: &AppState, area: Rect, f: &mut Frame) {
-    // Split into repository tabs area and content area
+    // Split into repository tabs, content area, and status bar
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(1), // Repository tab bar (single row)
             Constraint::Min(0),    // Content area
+            Constraint::Length(1), // Status bar (single row)
         ])
         .split(area);
 
@@ -80,6 +83,10 @@ fn render(state: &AppState, area: Rect, f: &mut Frame) {
             render_pr_table(state, chunks[1], f);
         }
     }
+
+    // Render status bar at the bottom
+    let status_vm = StatusBarViewModel::from_state(state);
+    f.render_widget(StatusBarWidget(&status_vm), chunks[2]);
 }
 
 /// Render the PR table for the currently selected repository

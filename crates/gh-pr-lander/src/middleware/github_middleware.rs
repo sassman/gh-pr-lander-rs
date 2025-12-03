@@ -7,7 +7,7 @@
 //! - CI operations (rerun failed jobs)
 //! - Browser/IDE integration
 
-use crate::actions::{Action, BootstrapAction, PullRequestAction};
+use crate::actions::{Action, BootstrapAction, PullRequestAction, StatusBarAction};
 use crate::dispatcher::Dispatcher;
 use crate::domain_models::{MergeableStatus, Pr};
 use crate::middleware::Middleware;
@@ -280,12 +280,20 @@ impl GitHubMiddleware {
                 Ok(prs) => {
                     let domain_prs: Vec<Pr> = prs.into_iter().map(convert_to_domain_pr).collect();
                     log::info!("Loaded {} PRs for {}/{}", domain_prs.len(), org, repo_name);
+                    dispatcher.dispatch(Action::StatusBar(StatusBarAction::info(
+                        format!("Loaded {} PRs from {}/{}", domain_prs.len(), org, repo_name),
+                        "Load",
+                    )));
                     dispatcher.dispatch(Action::PullRequest(PullRequestAction::Loaded(
                         repo_idx, domain_prs,
                     )));
                 }
                 Err(e) => {
                     log::error!("Failed to load PRs for {}/{}: {}", org, repo_name, e);
+                    dispatcher.dispatch(Action::StatusBar(StatusBarAction::error(
+                        format!("Failed to load PRs: {}", e),
+                        "Load",
+                    )));
                     dispatcher.dispatch(Action::PullRequest(PullRequestAction::LoadError(
                         repo_idx,
                         e.to_string(),
@@ -367,6 +375,10 @@ impl Middleware for GitHubMiddleware {
                         dispatcher.dispatch(Action::PullRequest(PullRequestAction::MergeStart(
                             repo_idx, pr_number,
                         )));
+                        dispatcher.dispatch(Action::StatusBar(StatusBarAction::running(
+                            format!("Merging PR #{}...", pr_number),
+                            "Merge",
+                        )));
 
                         self.runtime.spawn(async move {
                             match client
@@ -382,6 +394,12 @@ impl Middleware for GitHubMiddleware {
                             {
                                 Ok(result) if result.merged => {
                                     log::info!("Successfully merged PR #{}", pr_number);
+                                    dispatcher.dispatch(Action::StatusBar(
+                                        StatusBarAction::success(
+                                            format!("PR #{} merged", pr_number),
+                                            "Merge",
+                                        ),
+                                    ));
                                     dispatcher.dispatch(Action::PullRequest(
                                         PullRequestAction::MergeSuccess(repo_idx, pr_number),
                                     ));
@@ -391,6 +409,10 @@ impl Middleware for GitHubMiddleware {
                                 }
                                 Ok(result) => {
                                     log::error!("Merge failed: {}", result.message);
+                                    dispatcher.dispatch(Action::StatusBar(StatusBarAction::error(
+                                        format!("Merge failed: {}", result.message),
+                                        "Merge",
+                                    )));
                                     dispatcher.dispatch(Action::PullRequest(
                                         PullRequestAction::MergeError(
                                             repo_idx,
@@ -401,6 +423,10 @@ impl Middleware for GitHubMiddleware {
                                 }
                                 Err(e) => {
                                     log::error!("Merge error: {}", e);
+                                    dispatcher.dispatch(Action::StatusBar(StatusBarAction::error(
+                                        format!("Merge error: {}", e),
+                                        "Merge",
+                                    )));
                                     dispatcher.dispatch(Action::PullRequest(
                                         PullRequestAction::MergeError(
                                             repo_idx,
@@ -439,6 +465,10 @@ impl Middleware for GitHubMiddleware {
                         dispatcher.dispatch(Action::PullRequest(PullRequestAction::RebaseStart(
                             repo_idx, pr_number,
                         )));
+                        dispatcher.dispatch(Action::StatusBar(StatusBarAction::running(
+                            format!("Updating branch for PR #{}...", pr_number),
+                            "Rebase",
+                        )));
 
                         self.runtime.spawn(async move {
                             match client
@@ -447,6 +477,12 @@ impl Middleware for GitHubMiddleware {
                             {
                                 Ok(()) => {
                                     log::info!("Successfully rebased PR #{}", pr_number);
+                                    dispatcher.dispatch(Action::StatusBar(
+                                        StatusBarAction::success(
+                                            format!("PR #{} branch updated", pr_number),
+                                            "Rebase",
+                                        ),
+                                    ));
                                     dispatcher.dispatch(Action::PullRequest(
                                         PullRequestAction::RebaseSuccess(repo_idx, pr_number),
                                     ));
@@ -456,6 +492,10 @@ impl Middleware for GitHubMiddleware {
                                 }
                                 Err(e) => {
                                     log::error!("Rebase error: {}", e);
+                                    dispatcher.dispatch(Action::StatusBar(StatusBarAction::error(
+                                        format!("Rebase failed: {}", e),
+                                        "Rebase",
+                                    )));
                                     dispatcher.dispatch(Action::PullRequest(
                                         PullRequestAction::RebaseError(
                                             repo_idx,
@@ -494,6 +534,10 @@ impl Middleware for GitHubMiddleware {
                         dispatcher.dispatch(Action::PullRequest(PullRequestAction::ApproveStart(
                             repo_idx, pr_number,
                         )));
+                        dispatcher.dispatch(Action::StatusBar(StatusBarAction::running(
+                            format!("Approving PR #{}...", pr_number),
+                            "Approve",
+                        )));
 
                         self.runtime.spawn(async move {
                             match client
@@ -508,12 +552,22 @@ impl Middleware for GitHubMiddleware {
                             {
                                 Ok(()) => {
                                     log::info!("Successfully approved PR #{}", pr_number);
+                                    dispatcher.dispatch(Action::StatusBar(
+                                        StatusBarAction::success(
+                                            format!("PR #{} approved", pr_number),
+                                            "Approve",
+                                        ),
+                                    ));
                                     dispatcher.dispatch(Action::PullRequest(
                                         PullRequestAction::ApproveSuccess(repo_idx, pr_number),
                                     ));
                                 }
                                 Err(e) => {
                                     log::error!("Approve error: {}", e);
+                                    dispatcher.dispatch(Action::StatusBar(StatusBarAction::error(
+                                        format!("Approve failed: {}", e),
+                                        "Approve",
+                                    )));
                                     dispatcher.dispatch(Action::PullRequest(
                                         PullRequestAction::ApproveError(
                                             repo_idx,
@@ -552,6 +606,10 @@ impl Middleware for GitHubMiddleware {
                         dispatcher.dispatch(Action::PullRequest(PullRequestAction::CloseStart(
                             repo_idx, pr_number,
                         )));
+                        dispatcher.dispatch(Action::StatusBar(StatusBarAction::running(
+                            format!("Closing PR #{}...", pr_number),
+                            "Close",
+                        )));
 
                         self.runtime.spawn(async move {
                             match client
@@ -560,6 +618,12 @@ impl Middleware for GitHubMiddleware {
                             {
                                 Ok(()) => {
                                     log::info!("Successfully closed PR #{}", pr_number);
+                                    dispatcher.dispatch(Action::StatusBar(
+                                        StatusBarAction::success(
+                                            format!("PR #{} closed", pr_number),
+                                            "Close",
+                                        ),
+                                    ));
                                     dispatcher.dispatch(Action::PullRequest(
                                         PullRequestAction::CloseSuccess(repo_idx, pr_number),
                                     ));
@@ -569,6 +633,10 @@ impl Middleware for GitHubMiddleware {
                                 }
                                 Err(e) => {
                                     log::error!("Close error: {}", e);
+                                    dispatcher.dispatch(Action::StatusBar(StatusBarAction::error(
+                                        format!("Close failed: {}", e),
+                                        "Close",
+                                    )));
                                     dispatcher.dispatch(Action::PullRequest(
                                         PullRequestAction::CloseError(
                                             repo_idx,

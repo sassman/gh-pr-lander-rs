@@ -5,3 +5,4 @@ pub mod debug_console_reducer;
 pub mod key_bindings_reducer;
 pub mod pull_request_reducer;
 pub mod splash_reducer;
+pub mod status_bar_reducer;

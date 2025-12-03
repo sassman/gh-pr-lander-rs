@@ -11,7 +11,7 @@ use crate::actions::{
 };
 use crate::reducers::{
     add_repo_reducer, command_palette_reducer, debug_console_reducer, key_bindings_reducer,
-    pull_request_reducer, splash_reducer,
+    pull_request_reducer, splash_reducer, status_bar_reducer,
 };
 use crate::state::AppState;
 use crate::views::MainView;
@@ -213,6 +213,12 @@ pub fn reduce(mut state: AppState, action: &Action) -> AppState {
 
         // MergeBot actions - currently handled by middlewares (no state changes in reducer)
         Action::MergeBot(_) => state,
+
+        // Status bar actions
+        Action::StatusBar(sub) => {
+            state.status_bar = status_bar_reducer::reduce_status_bar(state.status_bar, sub);
+            state
+        }
 
         // No-op action
         Action::None => state,

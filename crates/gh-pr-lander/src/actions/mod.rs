@@ -20,6 +20,7 @@ pub mod key_bindings;
 pub mod merge_bot;
 pub mod pull_request;
 pub mod splash;
+pub mod status_bar;
 
 // Re-export all action types for convenience
 pub use add_repository::AddRepositoryAction;
@@ -32,6 +33,7 @@ pub use merge_bot::MergeBotAction;
 pub use navigation::NavigationAction;
 pub use pull_request::PullRequestAction;
 pub use splash::SplashAction;
+pub use status_bar::StatusBarAction;
 pub use text_input::TextInputAction;
 
 /// Root action enum - tagged by screen/domain
@@ -69,6 +71,8 @@ pub enum Action {
     Bootstrap(BootstrapAction),
     /// Merge Bot actions
     MergeBot(MergeBotAction),
+    /// Status Bar actions
+    StatusBar(StatusBarAction),
 
     /// No-op action
     None,

@@ -5,7 +5,7 @@ use crate::views::{SplashView, View};
 
 use super::{
     AddRepoFormState, CommandPaletteState, DebugConsoleState, KeyBindingsPanelState, MainViewState,
-    MergeBotState, SplashState,
+    MergeBotState, SplashState, StatusBarState,
 };
 
 /// Application state
@@ -21,6 +21,7 @@ pub struct AppState {
     pub add_repo_form: AddRepoFormState,
     pub merge_bot: MergeBotState,
     pub key_bindings_panel: KeyBindingsPanelState,
+    pub status_bar: StatusBarState,
     pub theme: gh_pr_lander_theme::Theme,
     /// The keymap containing all keybindings
     pub keymap: Keymap,
@@ -50,6 +51,7 @@ impl std::fmt::Debug for AppState {
             .field("add_repo_form", &self.add_repo_form)
             .field("merge_bot", &self.merge_bot)
             .field("key_bindings_panel", &self.key_bindings_panel)
+            .field("status_bar", &self.status_bar)
             .field("theme", &"<theme>")
             .field("app_config", &self.app_config)
             .finish()
@@ -68,6 +70,7 @@ impl Clone for AppState {
             add_repo_form: self.add_repo_form.clone(),
             merge_bot: self.merge_bot.clone(),
             key_bindings_panel: self.key_bindings_panel.clone(),
+            status_bar: self.status_bar.clone(),
             theme: self.theme.clone(),
             keymap: self.keymap.clone(),
             app_config: self.app_config.clone(),
@@ -87,6 +90,7 @@ impl Default for AppState {
             add_repo_form: AddRepoFormState::default(),
             merge_bot: MergeBotState::default(),
             key_bindings_panel: KeyBindingsPanelState::default(),
+            status_bar: StatusBarState::default(),
             theme: gh_pr_lander_theme::Theme::default(),
             keymap: default_keymap(),
             app_config: gh_pr_config::AppConfig::default(),
