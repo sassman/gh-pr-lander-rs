@@ -201,37 +201,3 @@ impl PrTableViewModel {
         }
     }
 }
-
-/// View model for when there's no repository data
-#[allow(dead_code)]
-#[derive(Debug, Clone)]
-pub struct EmptyPrTableViewModel {
-    pub message: String,
-}
-
-#[allow(dead_code)]
-impl EmptyPrTableViewModel {
-    pub fn loading() -> Self {
-        Self {
-            message: "Loading pull requests...".to_string(),
-        }
-    }
-
-    pub fn no_repos() -> Self {
-        Self {
-            message: "No repositories configured. Press 'p → a' to add one.".to_string(),
-        }
-    }
-
-    pub fn no_prs() -> Self {
-        Self {
-            message: "No open pull requests found.".to_string(),
-        }
-    }
-
-    pub fn error(msg: &str) -> Self {
-        Self {
-            message: format!("Error: {}. Press Ctrl+r to retry.", msg),
-        }
-    }
-}

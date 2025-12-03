@@ -209,8 +209,12 @@ impl EmptyStateViewModel {
     /// Create view model for "no repositories" state
     pub fn no_repos(state: &AppState) -> Self {
         let theme = &state.theme;
+        let key = state
+            .keymap
+            .compact_hint_for_command(crate::keymap::CommandId::RepositoryAdd)
+            .unwrap_or("p → a".to_string());
         Self {
-            message: "No repositories configured. Press 'p → a' to add one.".to_string(),
+            message: format!("No repositories configured. Press '{key}' to add one."),
             border_color: theme.accent_primary,
             text_style: theme.muted(),
         }

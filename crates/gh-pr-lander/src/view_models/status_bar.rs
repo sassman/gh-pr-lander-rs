@@ -54,7 +54,7 @@ impl StatusBarViewModel {
             Self {
                 has_message: true,
                 emoji: "👋",
-                message: "Welcome to gh-pr-lander".to_string(),
+                message: "Welcome to GitHub PR Lander".to_string(),
                 timestamp: String::new(),
                 source: String::new(),
                 message_style: Style::default()

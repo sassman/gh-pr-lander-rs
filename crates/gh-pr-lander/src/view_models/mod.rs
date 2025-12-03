@@ -15,7 +15,7 @@ pub use command_palette_view_model::CommandPaletteViewModel;
 pub use confirmation_popup_view_model::ConfirmationPopupViewModel;
 pub use key_bindings_view_model::KeyBindingsPanelViewModel;
 #[allow(unused_imports)]
-pub use pull_request_view_model::{EmptyPrTableViewModel, PrTableViewModel};
+pub use pull_request_view_model::PrTableViewModel;
 pub use repository_tabs_view_model::{
     determine_main_content, EmptyStateViewModel, MainContentViewModel, RepositoryTabsViewModel,
 };
