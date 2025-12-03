@@ -202,6 +202,9 @@ pub fn reduce_pull_request(mut state: MainViewState, action: &PullRequestAction)
         PullRequestAction::RerunError(_repo_idx, _check_suite_id, _check_run_id, error) => {
             log::error!("Rerun failed: {}", error);
         }
+
+        // Open repository in browser - handled by middleware
+        PullRequestAction::OpenRepositoryInBrowser => {}
     }
 
     state

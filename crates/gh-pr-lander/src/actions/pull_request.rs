@@ -50,6 +50,9 @@ pub enum PullRequestAction {
     /// Refresh PRs for the current repository
     Refresh,
 
+    /// Open the current repository in the browser
+    OpenRepositoryInBrowser,
+
     // Merge operations
     /// Request to merge selected PRs (or cursor PR if none selected)
     MergeRequest,

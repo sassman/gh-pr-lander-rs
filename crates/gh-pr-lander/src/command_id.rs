@@ -19,6 +19,8 @@ pub enum CommandId {
     // === Repository management ===
     /// Add a new repository to track
     RepositoryAdd,
+    /// Open the current repository in the browser
+    RepositoryOpenInBrowser,
     /// Switch to the next repository
     RepositoryNext,
     /// Switch to the previous repository
@@ -124,6 +126,9 @@ impl CommandId {
             Self::RepositoryAdd => {
                 Action::Global(GlobalAction::PushView(Box::new(AddRepositoryView::new())))
             }
+            Self::RepositoryOpenInBrowser => {
+                Action::PullRequest(PullRequestAction::OpenRepositoryInBrowser)
+            }
             Self::RepositoryNext => Action::PullRequest(PullRequestAction::RepositoryNext),
             Self::RepositoryPrevious => Action::PullRequest(PullRequestAction::RepositoryPrevious),
 
@@ -192,6 +197,7 @@ impl CommandId {
         match self {
             // Repository
             Self::RepositoryAdd => "Add repository",
+            Self::RepositoryOpenInBrowser => "Open repository in browser",
             Self::RepositoryNext => "Next repository",
             Self::RepositoryPrevious => "Previous repository",
 
@@ -254,6 +260,7 @@ impl CommandId {
         match self {
             // Repository
             Self::RepositoryAdd => "Add a new repository to track",
+            Self::RepositoryOpenInBrowser => "Open the current repository in your browser",
             Self::RepositoryNext => "Switch to the next repository",
             Self::RepositoryPrevious => "Switch to the previous repository",
 
@@ -314,7 +321,10 @@ impl CommandId {
     /// Get the category for this command (used for grouping in command palette)
     pub fn category(&self) -> &'static str {
         match self {
-            Self::RepositoryAdd | Self::RepositoryNext | Self::RepositoryPrevious => "Repository",
+            Self::RepositoryAdd
+            | Self::RepositoryOpenInBrowser
+            | Self::RepositoryNext
+            | Self::RepositoryPrevious => "Repository",
 
             Self::NavigateNext
             | Self::NavigatePrevious

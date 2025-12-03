@@ -319,6 +319,7 @@ pub fn default_keymap() -> Keymap {
         KeyBinding::new("shift+tab", "Shift+Tab", RepositoryPrevious),
         KeyBinding::new("backtab", "Shift+Tab", RepositoryPrevious),
         KeyBinding::new("r a", "r → a", RepositoryAdd),
+        KeyBinding::new("r o", "r → o", RepositoryOpenInBrowser),
         // Scrolling
         // Note: "gg" and "G" are handled specially in keyboard middleware
         KeyBinding::new("g g", "gg", NavigateToTop),
