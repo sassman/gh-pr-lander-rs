@@ -219,6 +219,31 @@ impl GitHubMiddleware {
             .unwrap_or_else(|| "unknown".to_string())
     }
 
+    /// Trigger CI status checks for PRs that don't have status loaded yet
+    fn trigger_ci_status_if_needed(
+        &self,
+        repo_idx: usize,
+        state: &AppState,
+        dispatcher: &Dispatcher,
+    ) {
+        if self.client.is_none() {
+            return;
+        }
+
+        // Check if this repository has PRs loaded
+        if let Some(repo_data) = state.main_view.repo_data.get(&repo_idx) {
+            // Filter PRs with Unknown status
+            let prs_needing_status: Vec<_> = repo_data
+                .prs
+                .iter()
+                .filter(|pr| matches!(pr.mergeable, MergeableStatus::Unknown))
+                .cloned()
+                .collect();
+
+            dispatch_ci_status_checks(repo_idx, &prs_needing_status, dispatcher);
+        }
+    }
+
     /// Handle loading PRs for a repository
     fn handle_pr_load(
         &self,
@@ -305,6 +330,10 @@ impl GitHubMiddleware {
                         format!("Loaded {} PRs from {}/{}", domain_prs.len(), org, repo_name),
                         "Load",
                     )));
+
+                    // Trigger CI status checks for each PR (background fetch)
+                    dispatch_ci_status_checks(repo_idx, &domain_prs, &dispatcher);
+
                     dispatcher.dispatch(Action::PullRequest(PullRequestAction::Loaded(
                         repo_idx, domain_prs,
                     )));
@@ -356,6 +385,29 @@ impl Middleware for GitHubMiddleware {
 
                 let repo_idx = state.main_view.selected_repository;
                 self.handle_pr_load(repo_idx, state, dispatcher, true)
+            }
+
+            // Handle repository switching - trigger CI status checks if needed
+            Action::PullRequest(PullRequestAction::RepositoryNext) => {
+                let num_repos = state.main_view.repositories.len();
+                if num_repos > 0 {
+                    let next_repo_idx = (state.main_view.selected_repository + 1) % num_repos;
+                    self.trigger_ci_status_if_needed(next_repo_idx, state, dispatcher);
+                }
+                true // Let action pass through to reducer
+            }
+
+            Action::PullRequest(PullRequestAction::RepositoryPrevious) => {
+                let num_repos = state.main_view.repositories.len();
+                if num_repos > 0 {
+                    let prev_repo_idx = if state.main_view.selected_repository == 0 {
+                        num_repos - 1
+                    } else {
+                        state.main_view.selected_repository - 1
+                    };
+                    self.trigger_ci_status_if_needed(prev_repo_idx, state, dispatcher);
+                }
+                true // Let action pass through to reducer
             }
 
             Action::PullRequest(PullRequestAction::OpenInBrowser) => {
@@ -1338,6 +1390,66 @@ impl Middleware for GitHubMiddleware {
                 false // Consume action
             }
 
+            // Handle CI status check request
+            Action::PullRequest(PullRequestAction::CheckBuildStatus {
+                repo_idx,
+                pr_number,
+                head_sha,
+            }) => {
+                let client = match &self.client {
+                    Some(c) => c.clone(),
+                    None => {
+                        log::warn!("Cannot check build status: GitHub client not initialized");
+                        return true;
+                    }
+                };
+
+                let Some((owner, repo)) = self.get_repo_info(state, *repo_idx) else {
+                    log::warn!("Cannot check build status: repository not found");
+                    return true;
+                };
+
+                let repo_idx = *repo_idx;
+                let pr_number = *pr_number;
+                let head_sha = head_sha.clone();
+                let dispatcher = dispatcher.clone();
+
+                // Spawn async task to fetch CI status
+                self.runtime.spawn(async move {
+                    match client.fetch_ci_status(&owner, &repo, &head_sha).await {
+                        Ok(ci_status) => {
+                            // Convert CiState to MergeableStatus using From trait
+                            let status: MergeableStatus = ci_status.state.into();
+                            log::debug!(
+                                "CI status for PR #{}: {:?} (passed: {}, failed: {}, pending: {})",
+                                pr_number,
+                                status,
+                                ci_status.passed,
+                                ci_status.failed,
+                                ci_status.pending
+                            );
+                            dispatcher.dispatch(Action::PullRequest(
+                                PullRequestAction::BuildStatusUpdated {
+                                    repo_idx,
+                                    pr_number,
+                                    status,
+                                },
+                            ));
+                        }
+                        Err(e) => {
+                            log::warn!(
+                                "Failed to fetch CI status for PR #{}: {}",
+                                pr_number,
+                                e
+                            );
+                            // Don't dispatch error - just leave status as-is
+                        }
+                    }
+                });
+
+                true // Let action pass through
+            }
+
             _ => true, // Pass through other actions
         }
     }
@@ -1587,6 +1699,17 @@ async fn init_client(
     let cached_client = CachedGitHubClient::new(octocrab_client, cache, CacheMode::ReadWrite);
 
     Ok(cached_client)
+}
+
+/// Dispatch CheckBuildStatus actions for the given PRs
+fn dispatch_ci_status_checks(repo_idx: usize, prs: &[Pr], dispatcher: &Dispatcher) {
+    for pr in prs {
+        dispatcher.dispatch(Action::PullRequest(PullRequestAction::CheckBuildStatus {
+            repo_idx,
+            pr_number: pr.number as u64,
+            head_sha: pr.head_sha.clone(),
+        }));
+    }
 }
 
 /// Convert gh-client PullRequest to domain Pr

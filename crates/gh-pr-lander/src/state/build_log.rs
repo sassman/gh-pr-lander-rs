@@ -141,7 +141,7 @@ impl BuildLogState {
 
     /// Flatten tree to list of visible node paths
     ///
-    /// Returns paths as vectors: [workflow], [workflow, job], [workflow, job, step], etc.
+    /// Returns paths as vectors: \[workflow\], \[workflow, job\], \[workflow, job, step\], etc.
     pub fn flatten_visible_nodes(&self) -> Vec<Vec<usize>> {
         let mut result = Vec::new();
 

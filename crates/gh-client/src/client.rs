@@ -5,7 +5,8 @@
 //! controlling caching behavior.
 
 use crate::types::{
-    CheckRun, CheckStatus, MergeMethod, MergeResult, PullRequest, ReviewEvent, WorkflowRun,
+    CheckRun, CheckStatus, CiStatus, MergeMethod, MergeResult, PullRequest, ReviewEvent,
+    WorkflowRun,
 };
 use async_trait::async_trait;
 
@@ -243,6 +244,31 @@ pub trait GitHubClient: Send + Sync {
         repo: &str,
         head_sha: &str,
     ) -> anyhow::Result<Vec<WorkflowRun>>;
+
+    /// Fetch aggregated CI status for a commit
+    ///
+    /// This fetches all check runs for a commit and aggregates them into
+    /// a single status. The aggregation logic is:
+    /// - Any failure → Failure
+    /// - Any pending (and no failure) → Pending
+    /// - All success → Success
+    /// - No checks → Unknown
+    ///
+    /// # Arguments
+    ///
+    /// * `owner` - Repository owner
+    /// * `repo` - Repository name
+    /// * `head_sha` - The commit SHA to get CI status for
+    ///
+    /// # Returns
+    ///
+    /// Aggregated CI status with overall state and counts
+    async fn fetch_ci_status(
+        &self,
+        owner: &str,
+        repo: &str,
+        head_sha: &str,
+    ) -> anyhow::Result<CiStatus>;
 }
 
 #[cfg(test)]

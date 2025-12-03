@@ -84,12 +84,41 @@ pub fn reduce(mut state: AppState, action: &Action) -> AppState {
         }
 
         // =======================================================================
-        // GENERIC ACTIONS - Handled by middleware (translation to view-specific actions)
-        // These reach the reducer only if no view handles them
+        // GENERIC ACTIONS - Translate via active view and recurse
         // =======================================================================
-        Action::Navigate(_) | Action::TextInput(_) => {
-            // Translation is handled by NavigationMiddleware and TextInputMiddleware
-            // If we reach here, the action was not handled by any view
+        Action::Navigate(nav) => {
+            if let Some(view) = state.view_stack.last() {
+                if let Some(translated) = view.translate_navigation(*nav) {
+                    // Recurse with the translated action
+                    return reduce(state, &translated);
+                }
+            }
+            log::debug!("Navigation action not handled by active view: {:?}", nav);
+            state
+        }
+
+        Action::TextInput(input) => {
+            if let Some(view) = state.view_stack.last() {
+                if let Some(translated) = view.translate_text_input(input.clone()) {
+                    // Recurse with the translated action
+                    return reduce(state, &translated);
+                }
+            }
+            log::debug!("TextInput action not handled by active view: {:?}", input);
+            state
+        }
+
+        Action::ViewContext(ctx_action) => {
+            if let Some(view) = state.view_stack.last() {
+                if let Some(translated) = view.translate_context_action(*ctx_action, &state) {
+                    // Recurse with the translated view-specific action
+                    return reduce(state, &translated);
+                }
+            }
+            log::debug!(
+                "ViewContext action not handled by active view: {:?}",
+                ctx_action
+            );
             state
         }
 

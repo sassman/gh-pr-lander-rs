@@ -5,7 +5,8 @@
 
 use crate::client::{CacheMode, GitHubClient};
 use crate::types::{
-    CheckRun, CheckStatus, MergeMethod, MergeResult, PullRequest, ReviewEvent, WorkflowRun,
+    CheckRun, CheckStatus, CiStatus, MergeMethod, MergeResult, PullRequest, ReviewEvent,
+    WorkflowRun,
 };
 use async_trait::async_trait;
 use gh_api_cache::{ApiCache, CachedResponse};
@@ -347,12 +348,51 @@ impl<C: GitHubClient + Clone> GitHubClient for CachedGitHubClient<C> {
 
         Ok(runs)
     }
+
+    async fn fetch_ci_status(
+        &self,
+        owner: &str,
+        repo: &str,
+        head_sha: &str,
+    ) -> anyhow::Result<CiStatus> {
+        let url = format!(
+            "/repos/{}/{}/commits/{}/check-runs",
+            owner, repo, head_sha
+        );
+        let params: &[(&str, &str)] = &[];
+
+        // Try cache first
+        if let Some(cached_body) = self.try_cache_get("GET", &url, params) {
+            match serde_json::from_str::<CiStatus>(&cached_body) {
+                Ok(status) => {
+                    debug!(
+                        "Cache HIT for CI status {}/{} @ {}: {:?}",
+                        owner, repo, head_sha, status.state
+                    );
+                    return Ok(status);
+                }
+                Err(e) => {
+                    debug!("Failed to parse cached CI status: {}", e);
+                }
+            }
+        }
+
+        // Fetch from API
+        let status = self.inner.fetch_ci_status(owner, repo, head_sha).await?;
+
+        // Cache the result
+        if let Ok(json) = serde_json::to_string(&status) {
+            self.cache_set("GET", &url, params, &json);
+        }
+
+        Ok(status)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{CheckState, MergeableState};
+    use crate::types::{CheckState, CiState, MergeableState};
     use chrono::Utc;
 
     /// Mock client for testing
@@ -478,6 +518,22 @@ mod tests {
         ) -> anyhow::Result<Vec<WorkflowRun>> {
             *self.call_count.lock().unwrap() += 1;
             Ok(vec![])
+        }
+
+        async fn fetch_ci_status(
+            &self,
+            _owner: &str,
+            _repo: &str,
+            _head_sha: &str,
+        ) -> anyhow::Result<CiStatus> {
+            *self.call_count.lock().unwrap() += 1;
+            Ok(CiStatus {
+                state: CiState::Success,
+                total_checks: 0,
+                passed: 0,
+                failed: 0,
+                pending: 0,
+            })
         }
     }
 

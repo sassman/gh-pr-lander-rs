@@ -16,6 +16,17 @@ use crate::views::KeyBindingsView;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CommandId {
+    // === Semantic/Context actions (translated by views) ===
+    /// Primary action on focused item (Enter key)
+    /// Views interpret this differently (open, execute, submit, etc.)
+    Confirm,
+    /// Toggle selection/state of focused item (Space key)
+    ToggleSelect,
+    /// Select all items (Ctrl+A)
+    SelectAll,
+    /// Deselect all items
+    DeselectAll,
+
     // === Repository management ===
     /// Add a new repository to track
     RepositoryAdd,
@@ -136,12 +147,18 @@ impl CommandId {
     /// those are handled separately in the reducer.
     pub fn to_action(self) -> crate::actions::Action {
         use crate::actions::{
-            Action, DebugConsoleAction, GlobalAction, MergeBotAction, NavigationAction,
-            PullRequestAction,
+            Action, ContextAction, DebugConsoleAction, GlobalAction, MergeBotAction,
+            NavigationAction, PullRequestAction,
         };
         use crate::views::{AddRepositoryView, CommandPaletteView, DebugConsoleView};
 
         match self {
+            // Semantic/Context actions (translated by views)
+            Self::Confirm => Action::ViewContext(ContextAction::Confirm),
+            Self::ToggleSelect => Action::ViewContext(ContextAction::ToggleSelect),
+            Self::SelectAll => Action::ViewContext(ContextAction::SelectAll),
+            Self::DeselectAll => Action::ViewContext(ContextAction::DeselectAll),
+
             // Repository
             Self::RepositoryAdd => {
                 Action::Global(GlobalAction::PushView(Box::new(AddRepositoryView::new())))
@@ -230,6 +247,12 @@ impl CommandId {
     /// Get the default title for this command (used in command palette)
     pub fn title(&self) -> &'static str {
         match self {
+            // Semantic/Context actions
+            Self::Confirm => "Confirm / Primary action",
+            Self::ToggleSelect => "Toggle selection",
+            Self::SelectAll => "Select all",
+            Self::DeselectAll => "Deselect all",
+
             // Repository
             Self::RepositoryAdd => "Add repository",
             Self::RepositoryOpenInBrowser => "Open repository in browser",
@@ -304,6 +327,12 @@ impl CommandId {
     /// Get the default description for this command
     pub fn description(&self) -> &'static str {
         match self {
+            // Semantic/Context actions
+            Self::Confirm => "Execute primary action on focused item (context-dependent)",
+            Self::ToggleSelect => "Toggle selection or state of focused item",
+            Self::SelectAll => "Select all items in the current view",
+            Self::DeselectAll => "Clear all selections",
+
             // Repository
             Self::RepositoryAdd => "Add a new repository to track",
             Self::RepositoryOpenInBrowser => "Open the current repository in your browser",
@@ -378,6 +407,8 @@ impl CommandId {
     /// Get the category for this command (used for grouping in command palette)
     pub fn category(&self) -> &'static str {
         match self {
+            Self::Confirm | Self::ToggleSelect | Self::SelectAll | Self::DeselectAll => "Selection",
+
             Self::RepositoryAdd
             | Self::RepositoryOpenInBrowser
             | Self::RepositoryNext
@@ -429,6 +460,7 @@ impl CommandId {
 
     pub fn category_order() -> Vec<&'static str> {
         vec![
+            "Selection",
             "Navigation",
             "Repository",
             "Pull Request",
@@ -444,6 +476,9 @@ impl CommandId {
     /// Check if this command should appear in the command palette
     pub fn show_in_palette(&self) -> bool {
         match self {
+            // Semantic/context commands are keyboard-driven, not shown in palette
+            Self::Confirm | Self::ToggleSelect | Self::SelectAll | Self::DeselectAll => false,
+
             // Navigation/scroll commands are typically not shown in palette
             // (they're keyboard-driven)
             Self::NavigateNext

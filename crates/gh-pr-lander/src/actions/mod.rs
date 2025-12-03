@@ -2,11 +2,13 @@
 //!
 //! This module defines all actions in the application using a tagged action architecture.
 //! Actions are organized by:
-//! - Generic actions (Navigation, TextInput) that views translate to screen-specific actions
+//! - Generic actions (Navigation, TextInput, ViewContext) that views translate to screen-specific actions
 //! - Global actions that affect the entire application
 //! - Screen-specific actions that are already targeted to a particular screen
 
 // Shared action types
+pub mod available_action;
+pub mod context_action;
 pub mod global;
 pub mod navigation;
 pub mod text_input;
@@ -26,10 +28,12 @@ pub mod status_bar;
 
 // Re-export all action types for convenience
 pub use add_repository::AddRepositoryAction;
+pub use available_action::{ActionCategory, AvailableAction};
 pub use bootstrap::BootstrapAction;
 pub use build_log::BuildLogAction;
 pub use command_palette::CommandPaletteAction;
 pub use confirmation_popup::ConfirmationPopupAction;
+pub use context_action::ContextAction;
 pub use debug_console::DebugConsoleAction;
 pub use global::GlobalAction;
 pub use key_bindings::KeyBindingsAction;
@@ -43,7 +47,7 @@ pub use text_input::TextInputAction;
 /// Root action enum - tagged by screen/domain
 ///
 /// Actions are categorized as:
-/// - `Navigate` / `TextInput`: Generic actions that need translation by the active view
+/// - `Navigate` / `TextInput` / `ViewContext`: Generic actions that need translation by the active view
 /// - `Global`: Application-wide actions (quit, view management, tick)
 /// - Screen-specific variants: Already targeted to a specific screen's reducer
 #[derive(Debug, Clone)]
@@ -53,6 +57,10 @@ pub enum Action {
     Navigate(NavigationAction),
     /// Generic text input action - will be translated by active view
     TextInput(TextInputAction),
+    /// Context-sensitive action - will be translated by active view
+    /// These are semantic actions (Confirm, ToggleSelect, etc.) that mean
+    /// different things in different views.
+    ViewContext(ContextAction),
 
     // Global actions (no translation needed)
     /// Global application actions

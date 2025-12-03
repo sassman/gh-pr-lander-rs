@@ -2,7 +2,7 @@
 //!
 //! Actions specific to the main PR view screen.
 
-use crate::domain_models::Pr;
+use crate::domain_models::{MergeableStatus, Pr};
 use crate::state::PrFilter;
 
 /// Actions for the Pull Request screen
@@ -134,6 +134,18 @@ pub enum PullRequestAction {
     CloseError(usize, usize, String),
 
     // CI/Build Status actions
+    /// Trigger a CI status check for a specific PR
+    CheckBuildStatus {
+        repo_idx: usize,
+        pr_number: u64,
+        head_sha: String,
+    },
+    /// Update the build status of a specific PR after CI check completes
+    BuildStatusUpdated {
+        repo_idx: usize,
+        pr_number: u64,
+        status: MergeableStatus,
+    },
     /// Request to rerun failed jobs for the current PR
     RerunFailedJobs,
     /// Rerun started for a workflow run (repo_idx, pr_number, run_id)

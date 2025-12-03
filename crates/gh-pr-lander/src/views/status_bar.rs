@@ -1,7 +1,7 @@
 //! Status Bar Widget
 //!
 //! Renders the status bar at the bottom of the screen.
-//! Format: [timestamp] emoji message                     [source]
+//! Format: `[timestamp] emoji message                     [source]`
 
 use crate::view_models::StatusBarViewModel;
 use ratatui::{buffer::Buffer, layout::Rect, widgets::Widget};

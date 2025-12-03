@@ -1,3 +1,4 @@
+use crate::actions::Action;
 use crate::capabilities::PanelCapabilities;
 use crate::state::AppState;
 use crate::views::View;
@@ -37,6 +38,11 @@ impl View for SplashView {
 
     fn clone_box(&self) -> Box<dyn View> {
         Box::new(self.clone())
+    }
+
+    fn accepts_action(&self, action: &Action) -> bool {
+        // Splash screen only accepts global actions (like Quit)
+        matches!(action, Action::Global(_))
     }
 }
 

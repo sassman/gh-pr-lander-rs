@@ -57,10 +57,10 @@ impl AddRepoFormState {
     /// Try to parse the URL and populate org/repo fields if valid
     ///
     /// Supports formats:
-    /// - https://github.com/org/repo
-    /// - https://github.com/org/repo.git
-    /// - git@github.com:org/repo.git
-    /// - git@github.com:org/repo
+    /// - `https://github.com/org/repo`
+    /// - `https://github.com/org/repo.git`
+    /// - `git@github.com:org/repo.git`
+    /// - `git@github.com:org/repo`
     pub fn parse_url_and_update(&mut self) {
         if let Some((org, repo)) = parse_github_url(&self.url) {
             self.org = org;
@@ -91,10 +91,10 @@ impl AddRepoFormState {
 /// Parse a GitHub URL and extract org/repo
 ///
 /// Supports:
-/// - https://github.com/org/repo
-/// - https://github.com/org/repo.git
-/// - git@github.com:org/repo.git
-/// - git@github.com:org/repo
+/// - `https://github.com/org/repo`
+/// - `https://github.com/org/repo.git`
+/// - `git@github.com:org/repo.git`
+/// - `git@github.com:org/repo`
 fn parse_github_url(url: &str) -> Option<(String, String)> {
     let url = url.trim();
 

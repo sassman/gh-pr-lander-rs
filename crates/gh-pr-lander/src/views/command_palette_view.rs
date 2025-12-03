@@ -1,4 +1,4 @@
-use crate::actions::{Action, CommandPaletteAction, NavigationAction, TextInputAction};
+use crate::actions::{Action, CommandPaletteAction, ContextAction, NavigationAction, TextInputAction};
 use crate::capabilities::PanelCapabilities;
 use crate::state::AppState;
 use crate::view_models::CommandPaletteViewModel;
@@ -63,6 +63,26 @@ impl View for CommandPaletteView {
             TextInputAction::Confirm => CommandPaletteAction::Execute,
         };
         Some(Action::CommandPalette(action))
+    }
+
+    fn translate_context_action(&self, action: ContextAction, _state: &AppState) -> Option<Action> {
+        match action {
+            // Confirm executes the selected command
+            ContextAction::Confirm => Some(Action::CommandPalette(CommandPaletteAction::Execute)),
+            // Other context actions don't apply
+            _ => None,
+        }
+    }
+
+    fn accepts_action(&self, action: &Action) -> bool {
+        matches!(
+            action,
+            Action::CommandPalette(_)
+                | Action::ViewContext(_)
+                | Action::Navigate(_)
+                | Action::TextInput(_)
+                | Action::Global(_)
+        )
     }
 }
 

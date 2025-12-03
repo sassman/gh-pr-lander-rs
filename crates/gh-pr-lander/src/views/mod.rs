@@ -1,4 +1,4 @@
-use crate::actions::{Action, NavigationAction, TextInputAction};
+use crate::actions::{Action, AvailableAction, ContextAction, NavigationAction, TextInputAction};
 use crate::capabilities::PanelCapabilities;
 use crate::state::AppState;
 use ratatui::{layout::Rect, Frame};
@@ -41,7 +41,7 @@ pub enum ViewId {
 /// View trait - defines the interface that all views must implement
 ///
 /// This allows the application to interact with views polymorphically through
-/// trait objects (Box<dyn View>).
+/// trait objects (`Box<dyn View>`).
 ///
 /// IMPORTANT: This trait must be object-safe to be used as a trait object.
 /// That means:
@@ -102,9 +102,74 @@ pub trait View: std::fmt::Debug + Send {
     fn translate_text_input(&self, _input: TextInputAction) -> Option<Action> {
         None // Default: view doesn't handle text input
     }
+
+    /// Translate a context-sensitive action to this view's specific action.
+    ///
+    /// Context actions are semantic actions (Confirm, ToggleSelect, etc.) that
+    /// mean different things in different views. For example:
+    /// - Confirm in PR table → Open PR in browser
+    /// - Confirm in Command palette → Execute selected command
+    /// - Confirm in Add repository → Submit form
+    ///
+    /// # Example
+    /// ```ignore
+    /// fn translate_context_action(&self, action: ContextAction, _state: &AppState) -> Option<Action> {
+    ///     match action {
+    ///         ContextAction::Confirm => Some(Action::PullRequest(PullRequestAction::OpenInBrowser)),
+    ///         ContextAction::ToggleSelect => Some(Action::PullRequest(PullRequestAction::ToggleSelection)),
+    ///         _ => None,
+    ///     }
+    /// }
+    /// ```
+    fn translate_context_action(
+        &self,
+        _action: ContextAction,
+        _state: &AppState,
+    ) -> Option<Action> {
+        None // Default: view doesn't handle context actions
+    }
+
+    /// Check if this view accepts/handles a given action.
+    ///
+    /// This is used by the keyboard middleware for action gating.
+    /// Return false to silently ignore the action, preventing it from
+    /// "leaking" to reducers when this view is active.
+    ///
+    /// # Example
+    /// ```ignore
+    /// fn accepts_action(&self, action: &Action) -> bool {
+    ///     matches!(action,
+    ///         Action::PullRequest(_) |
+    ///         Action::ViewContext(_) |
+    ///         Action::Navigate(_)
+    ///     )
+    /// }
+    /// ```
+    fn accepts_action(&self, _action: &Action) -> bool {
+        true // Default: accept all actions (backward compatible)
+    }
+
+    /// Get the available actions for this view in the current state.
+    ///
+    /// Returns a list of actions that can be performed, used for rendering
+    /// contextual help in the UI footer (suggestions panel).
+    ///
+    /// # Example
+    /// ```ignore
+    /// fn available_actions(&self, _state: &AppState) -> Vec<AvailableAction> {
+    ///     vec![
+    ///         AvailableAction::primary(CommandId::Confirm, "Open"),
+    ///         AvailableAction::primary(CommandId::PrMerge, "Merge"),
+    ///         AvailableAction::selection(CommandId::ToggleSelect, "Select"),
+    ///     ]
+    /// }
+    /// ```
+    fn available_actions(&self, _state: &AppState) -> Vec<AvailableAction> {
+        vec![] // Default: no available actions to display
+    }
 }
 
-/// Implement Clone for Box<dyn View>
+/// Implement Clone for `Box<dyn View>`
 impl Clone for Box<dyn View> {
     fn clone(&self) -> Box<dyn View> {
         self.clone_box()

@@ -89,19 +89,32 @@ pub enum MergeableStatus {
     Merging,
 }
 
+impl From<gh_client::CiState> for MergeableStatus {
+    fn from(ci: gh_client::CiState) -> Self {
+        match ci {
+            gh_client::CiState::Success => MergeableStatus::Ready,
+            gh_client::CiState::Failure => MergeableStatus::BuildFailed,
+            gh_client::CiState::Pending => MergeableStatus::Checking,
+            gh_client::CiState::Unknown => MergeableStatus::Unknown,
+        }
+    }
+}
+
 impl MergeableStatus {
     /// Get the display icon for this status
+    ///
+    /// Icons are aligned with BuildLogJobStatus for consistency.
     pub fn icon(&self) -> &'static str {
         match self {
-            Self::Unknown => "?",
-            Self::Checking => "⋯",
-            Self::Ready => "✓",
-            Self::NeedsRebase => "↻",
-            Self::BuildFailed => "✗",
-            Self::Conflicted => "✗",
-            Self::Blocked => "⊗",
-            Self::Rebasing => "⟳",
-            Self::Merging => "⇒",
+            Self::Unknown => "🚧",
+            Self::Checking => "⏳",
+            Self::Ready => "✅",
+            Self::NeedsRebase => "🔂",
+            Self::BuildFailed => "🚨",
+            Self::Conflicted => "💥",
+            Self::Blocked => "🚫",
+            Self::Rebasing => "🔃",
+            Self::Merging => "🔀",
         }
     }
 

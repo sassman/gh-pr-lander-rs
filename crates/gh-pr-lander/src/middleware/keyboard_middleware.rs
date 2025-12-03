@@ -1,28 +1,33 @@
 //! KeyboardMiddleware - translates keyboard events into context-aware actions
 //!
-//! This middleware intercepts `GlobalKeyPressed` actions and translates them into
-//! appropriate actions based on:
-//! - The keymap (configurable keybindings from AppState)
-//! - The capabilities of the active view
-//! - Two-key sequences with timeout (e.g., "g g" for scroll-to-top)
+//! This middleware uses a three-layer approach to handle keyboard input:
+//!
+//! ## Layer 1: Priority Keys
+//! Keys that always work regardless of context (Ctrl+C, Esc).
+//! These are handled directly before any other processing.
+//!
+//! ## Layer 2: Capabilities
+//! Route keys based on view capabilities. For example, views with TEXT_INPUT
+//! capability route character keys to text input rather than keybindings.
+//!
+//! ## Layer 3: Keymap + Gating
+//! Look up keys in the keymap, then check if the active view accepts the action.
+//! This prevents actions from "leaking" to reducers when a different view is active.
 
-use crate::actions::{Action, BuildLogAction, GlobalAction, NavigationAction, TextInputAction};
-use crate::capabilities::PanelCapabilities;
-use crate::command_id::CommandId;
+use crate::actions::{Action, GlobalAction, NavigationAction, TextInputAction};
 use crate::dispatcher::Dispatcher;
 use crate::keybindings::PendingKey;
 use crate::middleware::Middleware;
 use crate::state::AppState;
-use crate::views::ViewId;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::time::Instant;
 
-/// KeyboardMiddleware handles keyboard input and maps it to actions
+/// KeyboardMiddleware handles keyboard input using a three-layer approach
 ///
-/// # Features
-/// - Keymap-based: All keybindings come from AppState.keymap
-/// - Capability-aware: Actions are filtered based on active view capabilities
-/// - Two-key sequences: Supports sequences like "g g" or "p a" with timeout
+/// # Layers
+/// 1. **Priority keys**: Ctrl+C (quit), Esc (close) - always work
+/// 2. **Capabilities**: TEXT_INPUT routes chars to text input
+/// 3. **Keymap + Gating**: Look up in keymap, check view accepts action
 pub struct KeyboardMiddleware {
     /// Pending key for two-key sequences
     pending_key: Option<PendingKey>,
@@ -33,26 +38,112 @@ impl KeyboardMiddleware {
         Self { pending_key: None }
     }
 
-    /// Handle a key event
-    fn handle_key(
-        &mut self,
-        key: KeyEvent,
-        capabilities: PanelCapabilities,
-        state: &AppState,
-        dispatcher: &Dispatcher,
-    ) -> bool {
-        // Views with TEXT_INPUT capability get special handling
-        if capabilities.accepts_text_input() {
-            return self.handle_text_input_key(key, capabilities, state, dispatcher);
-        }
+    /// Handle a key event using the three-layer approach
+    fn handle_key(&mut self, key: KeyEvent, state: &AppState, dispatcher: &Dispatcher) -> bool {
+        let view = state.view_stack.last();
+        let capabilities = view
+            .map(|v| v.capabilities(state))
+            .unwrap_or_default();
 
-        let active_view_id = state.active_view().view_id();
+        // ═══════════════════════════════════════════════════════════════════
+        // LAYER 1: Priority keys (always work)
+        // ═══════════════════════════════════════════════════════════════════
 
-        // Special handling for BuildLog view - Enter key toggles expand/collapse
-        if active_view_id == ViewId::BuildLog && key.code == KeyCode::Enter {
-            dispatcher.dispatch(Action::BuildLog(BuildLogAction::Toggle));
+        // Ctrl+C: Emergency quit - always works
+        if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
+            log::debug!("Layer 1: Ctrl+C - dispatching Quit");
+            dispatcher.dispatch(Action::Global(GlobalAction::Quit));
             return false;
         }
+
+        // Esc: Close current view - always works
+        if key.code == KeyCode::Esc {
+            log::debug!("Layer 1: Esc - dispatching Close");
+            dispatcher.dispatch(Action::Global(GlobalAction::Close));
+            return false;
+        }
+
+        // ═══════════════════════════════════════════════════════════════════
+        // LAYER 2: Capability-based routing
+        // ═══════════════════════════════════════════════════════════════════
+
+        if capabilities.accepts_text_input() {
+            // Clear any pending sequence when in text input mode
+            self.pending_key = None;
+
+            // Route character keys to text input (unless Ctrl/Alt modifier)
+            if let KeyCode::Char(c) = key.code {
+                if !key.modifiers.contains(KeyModifiers::CONTROL)
+                    && !key.modifiers.contains(KeyModifiers::ALT)
+                {
+                    log::debug!("Layer 2: TEXT_INPUT - routing char '{}' to TextInput", c);
+                    dispatcher.dispatch(Action::TextInput(TextInputAction::Char(c)));
+                    return false;
+                }
+
+                // Ctrl+U - Unix line kill (clear line)
+                if key.modifiers.contains(KeyModifiers::CONTROL) && c == 'u' {
+                    dispatcher.dispatch(Action::TextInput(TextInputAction::ClearLine));
+                    return false;
+                }
+            }
+
+            // Route backspace to text input
+            if key.code == KeyCode::Backspace {
+                if key.modifiers.contains(KeyModifiers::SUPER) {
+                    // Cmd+Backspace on Mac - clear entire line
+                    dispatcher.dispatch(Action::TextInput(TextInputAction::ClearLine));
+                } else {
+                    dispatcher.dispatch(Action::TextInput(TextInputAction::Backspace));
+                }
+                return false;
+            }
+
+            // Enter in text input mode triggers Confirm action
+            if key.code == KeyCode::Enter {
+                dispatcher.dispatch(Action::TextInput(TextInputAction::Confirm));
+                return false;
+            }
+
+            // Arrow keys for navigation in text input views that support it
+            if capabilities.supports_item_navigation() {
+                match key.code {
+                    KeyCode::Down => {
+                        dispatcher.dispatch(Action::Navigate(NavigationAction::Next));
+                        return false;
+                    }
+                    KeyCode::Up => {
+                        dispatcher.dispatch(Action::Navigate(NavigationAction::Previous));
+                        return false;
+                    }
+                    _ => {}
+                }
+            }
+
+            // Tab for field navigation in text input mode
+            match key.code {
+                KeyCode::Tab => {
+                    if key.modifiers.contains(KeyModifiers::SHIFT) {
+                        dispatcher.dispatch(Action::Navigate(NavigationAction::Previous));
+                    } else {
+                        dispatcher.dispatch(Action::Navigate(NavigationAction::Next));
+                    }
+                    return false;
+                }
+                KeyCode::BackTab => {
+                    dispatcher.dispatch(Action::Navigate(NavigationAction::Previous));
+                    return false;
+                }
+                _ => {}
+            }
+
+            // Other keys in text input mode are passed through
+            // (they'll go through Layer 3 for Ctrl+ combinations)
+        }
+
+        // ═══════════════════════════════════════════════════════════════════
+        // LAYER 3: Keymap lookup + Gating
+        // ═══════════════════════════════════════════════════════════════════
 
         // Try keymap matching (handles both single keys and two-key sequences)
         let (command_id, clear_pending, new_pending) =
@@ -68,146 +159,40 @@ impl KeyboardMiddleware {
                 timestamp: Instant::now(),
             });
             log::debug!(
-                "Waiting for second key in sequence (first: {})",
+                "Layer 3: Waiting for second key in sequence (first: {})",
                 pending_char
             );
             return false; // Don't process further - waiting for second key
         }
 
-        // If keymap matched, check if command is valid for current view
+        // If keymap matched, check if view accepts the action (gating)
         if let Some(cmd_id) = command_id {
-            // Filter view-specific commands
-            if Self::is_command_valid_for_view(cmd_id, active_view_id) {
-                log::debug!("Keymap matched command: {:?}", cmd_id);
-                dispatcher.dispatch(cmd_id.to_action());
-                return false;
+            let action = cmd_id.to_action();
+
+            // Gating: Check if active view accepts this action
+            if let Some(view) = view {
+                if view.accepts_action(&action) {
+                    log::debug!(
+                        "Layer 3: Command {:?} accepted by view, dispatching",
+                        cmd_id
+                    );
+                    dispatcher.dispatch(action);
+                } else {
+                    log::debug!(
+                        "Layer 3: Command {:?} rejected by view {:?}, ignoring",
+                        cmd_id,
+                        view.view_id()
+                    );
+                }
             } else {
-                log::debug!(
-                    "Command {:?} not valid for view {:?}, ignoring",
-                    cmd_id,
-                    active_view_id
-                );
+                // No view - just dispatch (shouldn't normally happen)
+                dispatcher.dispatch(action);
             }
+            return false;
         }
 
         // Unhandled keys are consumed (not passed through)
         false
-    }
-
-    /// Check if a command is valid for the given view
-    ///
-    /// Some commands are view-specific (like BuildLog commands) and should
-    /// only be dispatched when that view is active.
-    fn is_command_valid_for_view(cmd_id: CommandId, view_id: ViewId) -> bool {
-        match cmd_id {
-            // BuildLog commands only work in BuildLog view
-            CommandId::BuildLogNextError
-            | CommandId::BuildLogPrevError
-            | CommandId::BuildLogToggle
-            | CommandId::BuildLogToggleTimestamps
-            | CommandId::BuildLogExpandAll
-            | CommandId::BuildLogCollapseAll => view_id == ViewId::BuildLog,
-
-            // All other commands are globally available
-            _ => true,
-        }
-    }
-
-    /// Handle key events for views that accept text input
-    ///
-    /// In text input mode:
-    /// - Character keys are sent to the input field
-    /// - Special keys (Esc, Enter, Backspace, arrows) have their own handling
-    /// - Ctrl+C still quits
-    fn handle_text_input_key(
-        &mut self,
-        key: KeyEvent,
-        capabilities: PanelCapabilities,
-        _state: &AppState,
-        dispatcher: &Dispatcher,
-    ) -> bool {
-        // Clear any pending sequence when in text input mode
-        self.pending_key = None;
-
-        match key.code {
-            // Escape - context-dependent close behavior
-            KeyCode::Esc => {
-                dispatcher.dispatch(Action::TextInput(TextInputAction::Escape));
-                false
-            }
-
-            // Enter - confirm/execute
-            KeyCode::Enter => {
-                dispatcher.dispatch(Action::TextInput(TextInputAction::Confirm));
-                false
-            }
-
-            // Backspace - remove last character (or clear line with Cmd/Super modifier)
-            KeyCode::Backspace => {
-                if key.modifiers.contains(KeyModifiers::SUPER) {
-                    // Cmd+Backspace on Mac - clear entire line
-                    dispatcher.dispatch(Action::TextInput(TextInputAction::ClearLine));
-                } else {
-                    dispatcher.dispatch(Action::TextInput(TextInputAction::Backspace));
-                }
-                false
-            }
-
-            // Arrow keys for navigation (if view supports it)
-            KeyCode::Down if capabilities.supports_item_navigation() => {
-                dispatcher.dispatch(Action::Navigate(NavigationAction::Next));
-                false
-            }
-            KeyCode::Up if capabilities.supports_item_navigation() => {
-                dispatcher.dispatch(Action::Navigate(NavigationAction::Previous));
-                false
-            }
-
-            // Tab for field navigation
-            KeyCode::Tab => {
-                if key.modifiers.contains(KeyModifiers::SHIFT) {
-                    dispatcher.dispatch(Action::Navigate(NavigationAction::Previous));
-                } else {
-                    dispatcher.dispatch(Action::Navigate(NavigationAction::Next));
-                }
-                false
-            }
-
-            // BackTab (Shift+Tab) - some terminals send this instead of Tab with SHIFT modifier
-            KeyCode::BackTab => {
-                dispatcher.dispatch(Action::Navigate(NavigationAction::Previous));
-                false
-            }
-
-            // Character input
-            KeyCode::Char(c) => {
-                // Ctrl+C always quits
-                if key.modifiers.contains(KeyModifiers::CONTROL) && c == 'c' {
-                    dispatcher.dispatch(Action::Global(GlobalAction::Quit));
-                    return false;
-                }
-
-                // Ctrl+U - Unix line kill (clear line) - this is what Cmd+Backspace sends in terminals
-                if key.modifiers.contains(KeyModifiers::CONTROL) && c == 'u' {
-                    dispatcher.dispatch(Action::TextInput(TextInputAction::ClearLine));
-                    return false;
-                }
-
-                // Don't send characters with Ctrl/Super modifiers as text input
-                if key.modifiers.contains(KeyModifiers::CONTROL)
-                    || key.modifiers.contains(KeyModifiers::SUPER)
-                {
-                    return true; // Pass through
-                }
-
-                // Send character to text input
-                dispatcher.dispatch(Action::TextInput(TextInputAction::Char(c)));
-                false
-            }
-
-            // Pass through other keys
-            _ => true,
-        }
     }
 }
 
@@ -221,13 +206,8 @@ impl Middleware for KeyboardMiddleware {
     fn handle(&mut self, action: &Action, state: &AppState, dispatcher: &Dispatcher) -> bool {
         // Only intercept Global KeyPressed actions
         if let Action::Global(GlobalAction::KeyPressed(key)) = action {
-            let capabilities = state.active_view().capabilities(state);
-            log::debug!(
-                "KeyboardMiddleware: key={:?}, capabilities={:?}",
-                key,
-                capabilities
-            );
-            return self.handle_key(*key, capabilities, state, dispatcher);
+            log::debug!("KeyboardMiddleware: key={:?}", key);
+            return self.handle_key(*key, state, dispatcher);
         }
 
         // All other actions pass through

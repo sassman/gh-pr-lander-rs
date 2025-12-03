@@ -266,6 +266,44 @@ pub enum WorkflowRunConclusion {
     Stale,
 }
 
+/// Aggregated CI status from check runs
+///
+/// This represents the combined status of all CI check runs for a commit,
+/// aggregated into a single overall state with counts.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CiStatus {
+    /// Overall CI state (aggregated from all check runs)
+    pub state: CiState,
+    /// Total number of check runs
+    pub total_checks: usize,
+    /// Number of passed checks
+    pub passed: usize,
+    /// Number of failed checks
+    pub failed: usize,
+    /// Number of pending/in-progress checks
+    pub pending: usize,
+}
+
+/// Aggregated CI state
+///
+/// Represents the overall state of CI for a commit:
+/// - Any failure → Failure
+/// - Any pending (and no failure) → Pending
+/// - All success → Success
+/// - No checks → Unknown
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CiState {
+    /// All checks passed
+    Success,
+    /// At least one check failed
+    Failure,
+    /// At least one check is pending/in-progress (no failures)
+    Pending,
+    /// No checks found or status unknown
+    Unknown,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

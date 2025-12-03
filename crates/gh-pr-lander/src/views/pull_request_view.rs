@@ -2,8 +2,11 @@
 //!
 //! Renders the repository tabs and PR table.
 
-use crate::actions::{Action, NavigationAction, PullRequestAction};
+use crate::actions::{
+    Action, AvailableAction, BuildLogAction, ContextAction, NavigationAction, PullRequestAction,
+};
 use crate::capabilities::PanelCapabilities;
+use crate::command_id::CommandId;
 use crate::state::AppState;
 use crate::view_models::{
     determine_main_content, MainContentViewModel, PrTableViewModel, RepositoryTabsViewModel,
@@ -55,6 +58,38 @@ impl View for MainView {
             NavigationAction::Left | NavigationAction::Right => return None,
         };
         Some(Action::PullRequest(action))
+    }
+
+    fn translate_context_action(&self, action: ContextAction, _state: &AppState) -> Option<Action> {
+        let pr_action = match action {
+            ContextAction::Confirm => PullRequestAction::OpenInBrowser,
+            ContextAction::ToggleSelect => PullRequestAction::ToggleSelection,
+            ContextAction::SelectAll => PullRequestAction::SelectAll,
+            ContextAction::DeselectAll => PullRequestAction::DeselectAll,
+        };
+        Some(Action::PullRequest(pr_action))
+    }
+
+    fn accepts_action(&self, action: &Action) -> bool {
+        matches!(
+            action,
+            Action::PullRequest(_)
+                | Action::BuildLog(BuildLogAction::Open)
+                | Action::ViewContext(_)
+                | Action::Navigate(_)
+                | Action::Global(_)
+                | Action::MergeBot(_)
+        )
+    }
+
+    fn available_actions(&self, _state: &AppState) -> Vec<AvailableAction> {
+        vec![
+            AvailableAction::primary(CommandId::Confirm, "Open"),
+            AvailableAction::primary(CommandId::PrMerge, "Merge"),
+            AvailableAction::primary(CommandId::PrOpenBuildLogs, "Build Logs"),
+            AvailableAction::selection(CommandId::ToggleSelect, "Select"),
+            AvailableAction::navigation(CommandId::RepositoryNext, "Next Repo"),
+        ]
     }
 }
 

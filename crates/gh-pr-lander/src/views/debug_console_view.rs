@@ -1,4 +1,4 @@
-use crate::actions::{Action, DebugConsoleAction, NavigationAction};
+use crate::actions::{Action, ContextAction, DebugConsoleAction, NavigationAction};
 use crate::capabilities::{PanelCapabilities, PanelCapabilityProvider};
 use crate::keybindings::Keymap;
 use crate::state::AppState;
@@ -53,6 +53,18 @@ impl View for DebugConsoleView {
             NavigationAction::Left | NavigationAction::Right => return None,
         };
         Some(Action::DebugConsole(action))
+    }
+
+    fn translate_context_action(&self, _action: ContextAction, _state: &AppState) -> Option<Action> {
+        // Debug console is read-only log viewer, no context actions apply
+        None
+    }
+
+    fn accepts_action(&self, action: &Action) -> bool {
+        matches!(
+            action,
+            Action::DebugConsole(_) | Action::ViewContext(_) | Action::Navigate(_) | Action::Global(_)
+        )
     }
 }
 

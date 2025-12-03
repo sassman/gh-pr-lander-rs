@@ -2,7 +2,8 @@
 //!
 //! Renders the build log panel with tree navigation.
 
-use crate::actions::{Action, BuildLogAction, NavigationAction};
+use crate::actions::{Action, AvailableAction, BuildLogAction, ContextAction, NavigationAction};
+use crate::command_id::CommandId;
 use crate::capabilities::PanelCapabilities;
 use crate::state::AppState;
 use crate::view_models::{BuildLogRowStyle, BuildLogViewModel, StatusBarViewModel};
@@ -72,6 +73,33 @@ impl View for BuildLogView {
             NavigationAction::Right => BuildLogAction::ScrollRight,
         };
         Some(Action::BuildLog(action))
+    }
+
+    fn translate_context_action(&self, action: ContextAction, _state: &AppState) -> Option<Action> {
+        match action {
+            // Confirm and ToggleSelect both toggle expand/collapse
+            ContextAction::Confirm | ContextAction::ToggleSelect => {
+                Some(Action::BuildLog(BuildLogAction::Toggle))
+            }
+            // SelectAll/DeselectAll don't apply to build logs
+            _ => None,
+        }
+    }
+
+    fn accepts_action(&self, action: &Action) -> bool {
+        matches!(
+            action,
+            Action::BuildLog(_) | Action::ViewContext(_) | Action::Navigate(_) | Action::Global(_)
+        )
+    }
+
+    fn available_actions(&self, _state: &AppState) -> Vec<AvailableAction> {
+        vec![
+            AvailableAction::primary(CommandId::Confirm, "Toggle"),
+            AvailableAction::primary(CommandId::BuildLogNextError, "Next Error"),
+            AvailableAction::navigation(CommandId::NavigateNext, "Down"),
+            AvailableAction::navigation(CommandId::GlobalClose, "Close"),
+        ]
     }
 }
 

@@ -5,9 +5,9 @@
 
 use crate::client::GitHubClient;
 use crate::types::{
-    CheckConclusion, CheckRun, CheckRunStatus, CheckState, CheckStatus, CommitStatus, MergeMethod,
-    MergeResult, MergeableState, PullRequest, ReviewEvent, WorkflowRun, WorkflowRunConclusion,
-    WorkflowRunStatus,
+    CheckConclusion, CheckRun, CheckRunStatus, CheckState, CheckStatus, CiState, CiStatus,
+    CommitStatus, MergeMethod, MergeResult, MergeableState, PullRequest, ReviewEvent, WorkflowRun,
+    WorkflowRunConclusion, WorkflowRunStatus,
 };
 use async_trait::async_trait;
 use log::debug;
@@ -378,6 +378,81 @@ impl GitHubClient for OctocrabClient {
             .collect();
 
         Ok(runs)
+    }
+
+    async fn fetch_ci_status(
+        &self,
+        owner: &str,
+        repo: &str,
+        head_sha: &str,
+    ) -> anyhow::Result<CiStatus> {
+        debug!(
+            "Fetching CI status for {}/{} @ {}",
+            owner, repo, head_sha
+        );
+
+        // Use the check-runs API endpoint
+        let route = format!(
+            "/repos/{}/{}/commits/{}/check-runs",
+            owner, repo, head_sha
+        );
+
+        #[derive(serde::Deserialize)]
+        struct CheckRunsResponse {
+            check_runs: Vec<CheckRunItem>,
+        }
+
+        #[derive(serde::Deserialize)]
+        struct CheckRunItem {
+            status: Option<String>,
+            conclusion: Option<String>,
+        }
+
+        let response: CheckRunsResponse = self.octocrab.get(&route, None::<&()>).await?;
+
+        let mut passed = 0;
+        let mut failed = 0;
+        let mut pending = 0;
+
+        for check in &response.check_runs {
+            if let Some(conclusion) = &check.conclusion {
+                match conclusion.as_str() {
+                    "success" | "neutral" | "skipped" => passed += 1,
+                    "failure" | "cancelled" | "timed_out" | "action_required" | "stale"
+                    | "startup_failure" => failed += 1,
+                    _ => pending += 1,
+                }
+            } else if let Some(status) = &check.status {
+                // No conclusion yet - check if in progress or queued
+                if status == "in_progress" || status == "queued" {
+                    pending += 1;
+                }
+            }
+        }
+
+        let total_checks = response.check_runs.len();
+        let state = if failed > 0 {
+            CiState::Failure
+        } else if pending > 0 {
+            CiState::Pending
+        } else if passed > 0 {
+            CiState::Success
+        } else {
+            CiState::Unknown
+        };
+
+        debug!(
+            "CI status for {}/{} @ {}: {:?} (passed={}, failed={}, pending={})",
+            owner, repo, head_sha, state, passed, failed, pending
+        );
+
+        Ok(CiStatus {
+            state,
+            total_checks,
+            passed,
+            failed,
+            pending,
+        })
     }
 }
 

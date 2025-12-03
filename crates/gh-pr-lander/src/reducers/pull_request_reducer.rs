@@ -229,6 +229,29 @@ pub fn reduce_pull_request(mut state: MainViewState, action: &PullRequestAction)
 
         // Open repository in browser - handled by middleware
         PullRequestAction::OpenRepositoryInBrowser => {}
+
+        // CI/Build status actions
+        PullRequestAction::CheckBuildStatus { .. } => {
+            // Handled by middleware - triggers async CI status fetch
+        }
+
+        PullRequestAction::BuildStatusUpdated {
+            repo_idx,
+            pr_number,
+            status,
+        } => {
+            // Update the PR's mergeable status with the fetched CI status
+            if let Some(repo_data) = state.repo_data.get_mut(repo_idx) {
+                if let Some(pr) = repo_data
+                    .prs
+                    .iter_mut()
+                    .find(|p| p.number == *pr_number as usize)
+                {
+                    pr.mergeable = status.clone();
+                    log::debug!("Updated CI status for PR #{} to {:?}", pr_number, status);
+                }
+            }
+        }
     }
 
     state

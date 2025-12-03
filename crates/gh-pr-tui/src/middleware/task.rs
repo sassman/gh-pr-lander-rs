@@ -159,7 +159,7 @@ impl TaskMiddleware {
     /// This is the single source of truth for mapping GitHub's workflow run conclusion
     /// strings to our internal WorkflowRunStatus enum.
     ///
-    /// Based on: https://docs.github.com/en/rest/guides/using-the-rest-api-to-interact-with-checks
+    /// Based on: <https://docs.github.com/en/rest/guides/using-the-rest-api-to-interact-with-checks>
     ///
     /// # Arguments
     /// - `conclusion`: Optional conclusion string from GitHub workflow run

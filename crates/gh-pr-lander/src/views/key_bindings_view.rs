@@ -2,7 +2,7 @@
 //!
 //! Displays all available keybindings grouped by category.
 
-use crate::actions::{Action, KeyBindingsAction, NavigationAction};
+use crate::actions::{Action, ContextAction, KeyBindingsAction, NavigationAction};
 use crate::capabilities::PanelCapabilities;
 use crate::state::AppState;
 use crate::view_models::KeyBindingsPanelViewModel;
@@ -54,6 +54,18 @@ impl View for KeyBindingsView {
             NavigationAction::Left | NavigationAction::Right => return None,
         };
         Some(Action::KeyBindings(action))
+    }
+
+    fn translate_context_action(&self, _action: ContextAction, _state: &AppState) -> Option<Action> {
+        // Key bindings panel is read-only, no context actions apply
+        None
+    }
+
+    fn accepts_action(&self, action: &Action) -> bool {
+        matches!(
+            action,
+            Action::KeyBindings(_) | Action::ViewContext(_) | Action::Navigate(_) | Action::Global(_)
+        )
     }
 }
 
