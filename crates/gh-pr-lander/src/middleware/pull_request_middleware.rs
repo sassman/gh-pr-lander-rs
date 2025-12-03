@@ -7,7 +7,7 @@
 //! Note: Actual GitHub API calls are handled by GitHubMiddleware.
 //! This middleware only coordinates the loading process.
 
-use crate::actions::Action;
+use crate::actions::{Action, AddRepositoryAction, BootstrapAction, PullRequestAction};
 use crate::dispatcher::Dispatcher;
 use crate::middleware::Middleware;
 use crate::state::AppState;
@@ -38,7 +38,9 @@ impl PullRequestMiddleware {
 
             if self.pending_bulk_load.is_empty() {
                 log::info!("PullRequestMiddleware: All bulk repositories loaded");
-                dispatcher.dispatch(Action::LoadRecentRepositoriesDone);
+                dispatcher.dispatch(Action::Bootstrap(
+                    BootstrapAction::LoadRecentRepositoriesDone,
+                ));
             }
         }
     }
@@ -54,7 +56,7 @@ impl Middleware for PullRequestMiddleware {
     fn handle(&mut self, action: &Action, state: &AppState, dispatcher: &Dispatcher) -> bool {
         match action {
             // When repositories are added in bulk, start loading PRs for each
-            Action::RepositoryAddBulk(repos) => {
+            Action::Bootstrap(BootstrapAction::RepositoryAddBulk(repos)) => {
                 log::info!("RepositoryAddBulk received with {} repos", repos.len(),);
 
                 // Calculate starting index (after existing repos)
@@ -71,34 +73,36 @@ impl Middleware for PullRequestMiddleware {
                     self.pending_bulk_load.insert(start_idx + i);
                 }
 
-                // Dispatch PrLoadStart for each new repository
+                // Dispatch LoadStart for each new repository
                 for (i, _repo) in repos.iter().enumerate() {
                     let repo_idx = start_idx + i;
-                    dispatcher.dispatch(Action::PrLoadStart(repo_idx));
+                    dispatcher
+                        .dispatch(Action::PullRequest(PullRequestAction::LoadStart(repo_idx)));
                 }
 
                 true // Let action pass through to reducer
             }
 
             // When a single repository is added via confirm
-            Action::AddRepoConfirm => {
+            Action::AddRepository(AddRepositoryAction::Confirm) => {
                 if state.add_repo_form.is_valid() {
                     // The new repo will be at the end of the list
                     let repo_idx = state.main_view.repositories.len();
-                    dispatcher.dispatch(Action::PrLoadStart(repo_idx));
+                    dispatcher
+                        .dispatch(Action::PullRequest(PullRequestAction::LoadStart(repo_idx)));
                 }
 
                 true // Let action pass through to reducer
             }
 
             // Handle PR loaded - check if bulk load is complete
-            Action::PrLoaded(repo_idx, _) => {
+            Action::PullRequest(PullRequestAction::Loaded(repo_idx, _)) => {
                 self.mark_bulk_load_done(*repo_idx, dispatcher);
                 true // Let action pass through to reducer
             }
 
             // Handle PR load error - still counts as "done" for bulk tracking
-            Action::PrLoadError(repo_idx, _) => {
+            Action::PullRequest(PullRequestAction::LoadError(repo_idx, _)) => {
                 self.mark_bulk_load_done(*repo_idx, dispatcher);
                 true // Let action pass through to reducer
             }

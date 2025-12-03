@@ -2,6 +2,7 @@
 //!
 //! Renders the repository tabs and PR table.
 
+use crate::actions::{Action, NavigationAction, PullRequestAction};
 use crate::capabilities::PanelCapabilities;
 use crate::state::AppState;
 use crate::view_models::{
@@ -41,6 +42,17 @@ impl View for MainView {
 
     fn clone_box(&self) -> Box<dyn View> {
         Box::new(self.clone())
+    }
+
+    fn translate_navigation(&self, nav: NavigationAction) -> Option<Action> {
+        let action = match nav {
+            NavigationAction::Next => PullRequestAction::NavigateNext,
+            NavigationAction::Previous => PullRequestAction::NavigatePrevious,
+            NavigationAction::ToTop => PullRequestAction::NavigateToTop,
+            NavigationAction::ToBottom => PullRequestAction::NavigateToBottom,
+            NavigationAction::Left | NavigationAction::Right => return None,
+        };
+        Some(Action::PullRequest(action))
     }
 }
 

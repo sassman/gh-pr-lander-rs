@@ -25,13 +25,12 @@ mod utils;
 mod view_models;
 mod views;
 
-use actions::Action;
+use actions::{Action, BootstrapAction, GlobalAction};
 use middleware::{
     app_config_middleware::AppConfigMiddleware, bootstrap_middleware::BootstrapMiddleware,
-    command_palette_middleware::CommandPaletteMiddleware,
-    github_middleware::GitHubMiddleware, keyboard_middleware::KeyboardMiddleware,
-    logging_middleware::LoggingMiddleware, pull_request_middleware::PullRequestMiddleware,
-    repository_middleware::RepositoryMiddleware,
+    command_palette_middleware::CommandPaletteMiddleware, github_middleware::GitHubMiddleware,
+    keyboard_middleware::KeyboardMiddleware, logging_middleware::LoggingMiddleware,
+    pull_request_middleware::PullRequestMiddleware, repository_middleware::RepositoryMiddleware,
 };
 use state::AppState;
 use store::Store;
@@ -86,7 +85,7 @@ fn run_app(
     store: &mut Store,
 ) -> io::Result<()> {
     // Start bootstrap process
-    store.dispatch(Action::BootstrapStart);
+    store.dispatch(Action::Bootstrap(BootstrapAction::Start));
 
     loop {
         // Process any pending actions from background threads
@@ -96,10 +95,22 @@ fn run_app(
         }
 
         // Render
+        let mut terminal_height = 0u16;
         terminal.draw(|frame| {
             let area = frame.area();
+            terminal_height = area.height;
             views::render(store.state(), area, frame);
         })?;
+
+        // Dirty hack to fix the scrolling behaviour of the debug console
+        // Update debug console visible height based on terminal size
+        // (70% of screen height minus 2 for borders)
+        let debug_console_height = ((terminal_height as usize) * 70 / 100).saturating_sub(2);
+        if store.state().debug_console.visible_height != debug_console_height {
+            store.dispatch(Action::DebugConsole(
+                crate::actions::DebugConsoleAction::SetVisibleHeight(debug_console_height),
+            ));
+        }
 
         // Check if we should quit
         if !store.state().running {
@@ -111,7 +122,7 @@ fn run_app(
             if let Event::Key(key) = event::read()? {
                 // Only process key press events (ignore key release)
                 if key.kind == KeyEventKind::Press {
-                    store.dispatch(Action::GlobalKeyPressed(key));
+                    store.dispatch(Action::Global(GlobalAction::KeyPressed(key)));
                 }
             }
         }

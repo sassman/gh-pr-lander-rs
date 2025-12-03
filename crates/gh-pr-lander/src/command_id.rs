@@ -113,66 +113,77 @@ impl CommandId {
     /// Some commands require context (like views) to create their action,
     /// those are handled separately in the reducer.
     pub fn to_action(self) -> crate::actions::Action {
-        use crate::actions::Action;
-        use crate::views::{CommandPaletteView, DebugConsoleView};
+        use crate::actions::{
+            Action, DebugConsoleAction, GlobalAction, MergeBotAction, NavigationAction,
+            PullRequestAction,
+        };
+        use crate::views::{AddRepositoryView, CommandPaletteView, DebugConsoleView};
 
         match self {
             // Repository
-            Self::RepositoryAdd => Action::RepositoryAdd,
-            Self::RepositoryNext => Action::RepositoryNext,
-            Self::RepositoryPrevious => Action::RepositoryPrevious,
+            Self::RepositoryAdd => {
+                Action::Global(GlobalAction::PushView(Box::new(AddRepositoryView::new())))
+            }
+            Self::RepositoryNext => Action::PullRequest(PullRequestAction::RepositoryNext),
+            Self::RepositoryPrevious => Action::PullRequest(PullRequestAction::RepositoryPrevious),
 
             // Navigation
-            Self::NavigateNext => Action::NavigateNext,
-            Self::NavigatePrevious => Action::NavigatePrevious,
-            Self::NavigateLeft => Action::NavigateLeft,
-            Self::NavigateRight => Action::NavigateRight,
-            Self::NavigateToTop => Action::NavigateToTop,
-            Self::NavigateToBottom => Action::NavigateToBottom,
+            Self::NavigateNext => Action::Navigate(NavigationAction::Next),
+            Self::NavigatePrevious => Action::Navigate(NavigationAction::Previous),
+            Self::NavigateLeft => Action::Navigate(NavigationAction::Left),
+            Self::NavigateRight => Action::Navigate(NavigationAction::Right),
+            Self::NavigateToTop => Action::Navigate(NavigationAction::ToTop),
+            Self::NavigateToBottom => Action::Navigate(NavigationAction::ToBottom),
 
             // Debug
-            Self::DebugToggleConsoleView => Action::PushView(Box::new(DebugConsoleView::new())),
-            Self::DebugClearLogs => Action::DebugConsoleClear,
-            Self::DebugLogDump => Action::DebugConsoleDumpLogs,
+            Self::DebugToggleConsoleView => {
+                Action::Global(GlobalAction::PushView(Box::new(DebugConsoleView::new())))
+            }
+            Self::DebugClearLogs => Action::DebugConsole(DebugConsoleAction::Clear),
+            Self::DebugLogDump => Action::DebugConsole(DebugConsoleAction::DumpLogs),
 
             // Command palette
-            Self::CommandPaletteOpen => Action::PushView(Box::new(CommandPaletteView::new())),
+            Self::CommandPaletteOpen => {
+                Action::Global(GlobalAction::PushView(Box::new(CommandPaletteView::new())))
+            }
 
             // PR Selection
-            Self::PrToggleSelection => Action::PrToggleSelection,
-            Self::PrSelectAll => Action::PrSelectAll,
-            Self::PrDeselectAll => Action::PrDeselectAll,
-            Self::PrRefresh => Action::PrRefresh,
+            Self::PrToggleSelection => Action::PullRequest(PullRequestAction::ToggleSelection),
+            Self::PrSelectAll => Action::PullRequest(PullRequestAction::SelectAll),
+            Self::PrDeselectAll => Action::PullRequest(PullRequestAction::DeselectAll),
+            Self::PrRefresh => Action::PullRequest(PullRequestAction::Refresh),
 
             // PR Operations
-            Self::PrOpenInBrowser => Action::PrOpenInBrowser,
-            Self::PrMerge => Action::PrMergeRequest,
-            Self::PrRebase => Action::PrRebaseRequest,
-            Self::PrApprove => Action::PrApproveRequest,
-            Self::PrClose => Action::PrCloseRequest,
+            Self::PrOpenInBrowser => Action::PullRequest(PullRequestAction::OpenInBrowser),
+            Self::PrMerge => Action::PullRequest(PullRequestAction::MergeRequest),
+            Self::PrRebase => Action::PullRequest(PullRequestAction::RebaseRequest),
+            Self::PrApprove => Action::PullRequest(PullRequestAction::ApproveRequest),
+            Self::PrClose => Action::PullRequest(PullRequestAction::CloseRequest),
 
             // CI/Build Status
-            Self::PrRerunFailedJobs => Action::PrRerunFailedJobs,
-            Self::PrOpenBuildLogs => Action::PrOpenBuildLogs,
+            Self::PrRerunFailedJobs => Action::PullRequest(PullRequestAction::RerunFailedJobs),
+            Self::PrOpenBuildLogs => Action::PullRequest(PullRequestAction::OpenBuildLogs),
 
             // IDE Integration
-            Self::PrOpenInIDE => Action::PrOpenInIDE,
+            Self::PrOpenInIDE => Action::PullRequest(PullRequestAction::OpenInIDE),
 
             // Filter & Search
-            Self::PrCycleFilter => Action::PrCycleFilter,
-            Self::PrClearFilter => Action::PrClearFilter,
+            Self::PrCycleFilter => Action::PullRequest(PullRequestAction::CycleFilter),
+            Self::PrClearFilter => Action::PullRequest(PullRequestAction::ClearFilter),
 
             // Merge Bot
-            Self::MergeBotStart => Action::MergeBotStart,
-            Self::MergeBotStop => Action::MergeBotStop,
-            Self::MergeBotAddToQueue => Action::MergeBotAddToQueue,
+            Self::MergeBotStart => Action::MergeBot(MergeBotAction::Start),
+            Self::MergeBotStop => Action::MergeBot(MergeBotAction::Stop),
+            Self::MergeBotAddToQueue => Action::MergeBot(MergeBotAction::AddToQueue),
 
             // Help
-            Self::KeyBindingsToggleView => Action::PushView(Box::new(KeyBindingsView::new())),
+            Self::KeyBindingsToggleView => {
+                Action::Global(GlobalAction::PushView(Box::new(KeyBindingsView::new())))
+            }
 
             // General
-            Self::GlobalClose => Action::GlobalClose,
-            Self::GlobalQuit => Action::GlobalQuit,
+            Self::GlobalClose => Action::Global(GlobalAction::Close),
+            Self::GlobalQuit => Action::Global(GlobalAction::Quit),
         }
     }
 

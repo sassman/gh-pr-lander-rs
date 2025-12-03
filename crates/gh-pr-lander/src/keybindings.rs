@@ -54,14 +54,15 @@ pub enum ParsedKeyPattern {
 /// Parse a textual key pattern into a matchable form
 ///
 /// Supported formats:
-/// - Single char: "q", "a", "1"
+/// - Single char: "q", "a", "1", "G" (case-sensitive for single chars)
 /// - With modifiers: "ctrl+p", "shift+tab", "ctrl+shift+c"
 /// - Special keys: "tab", "enter", "esc", "backspace", "up", "down", "left", "right"
 /// - Two-key sequence: "p a" (space-separated)
 pub fn parse_key_pattern(pattern: &str) -> Option<ParsedKeyPattern> {
-    let pattern = pattern.trim().to_lowercase();
+    let pattern = pattern.trim();
 
     // Check for two-key sequence (space-separated single chars)
+    // Preserve case for character sequences
     if pattern.contains(' ') {
         let parts: Vec<&str> = pattern.split_whitespace().collect();
         if parts.len() == 2 {
@@ -74,9 +75,28 @@ pub fn parse_key_pattern(pattern: &str) -> Option<ParsedKeyPattern> {
         return None; // Invalid sequence format
     }
 
+    // For single characters, preserve case (e.g., "G" vs "g")
+    // This allows uppercase bindings like "G" for NavigateToBottom
+    if pattern.len() == 1 {
+        let c = pattern.chars().next()?;
+        // Uppercase letters come with SHIFT modifier from terminal
+        let modifiers = if c.is_ascii_uppercase() {
+            KeyModifiers::SHIFT
+        } else {
+            KeyModifiers::NONE
+        };
+        return Some(ParsedKeyPattern::Single {
+            code: KeyCode::Char(c),
+            modifiers,
+        });
+    }
+
+    // For everything else (modifiers, special keys), lowercase for matching
+    let pattern_lower = pattern.to_lowercase();
+
     // Parse modifier+key combinations
     let mut modifiers = KeyModifiers::NONE;
-    let mut key_part = pattern.as_str();
+    let mut key_part = pattern_lower.as_str();
 
     // Extract modifiers
     while key_part.contains('+') {
@@ -298,13 +318,14 @@ pub fn default_keymap() -> Keymap {
         KeyBinding::new("tab", "Tab", RepositoryNext),
         KeyBinding::new("shift+tab", "Shift+Tab", RepositoryPrevious),
         KeyBinding::new("backtab", "Shift+Tab", RepositoryPrevious),
-        KeyBinding::new("p a", "p → a", RepositoryAdd),
+        KeyBinding::new("r a", "r → a", RepositoryAdd),
         // Scrolling
         // Note: "gg" and "G" are handled specially in keyboard middleware
-        KeyBinding::new("g g", "g g", NavigateToTop),
+        KeyBinding::new("g g", "gg", NavigateToTop),
         KeyBinding::new("G", "G", NavigateToBottom),
         // Debug
         KeyBinding::new("`", "`", DebugToggleConsoleView),
+        KeyBinding::new("c", "c", DebugClearLogs),
         // Command palette
         KeyBinding::new("ctrl+p", "Ctrl+P", CommandPaletteOpen),
         // PR Selection
@@ -314,20 +335,21 @@ pub fn default_keymap() -> Keymap {
         KeyBinding::new("ctrl+r", "Ctrl+R", PrRefresh),
         // PR Operations
         KeyBinding::new("enter", "Enter", PrOpenInBrowser),
-        KeyBinding::new("m", "m", PrMerge),
-        KeyBinding::new("r", "r", PrRebase),
-        KeyBinding::new("a", "a", PrApprove),
-        KeyBinding::new("c", "c", PrClose),
+        // TODO: for as long as key bingings are not view-specific handled, deactivate them
+        KeyBinding::new("p m", "p -> m", PrMerge),
+        // KeyBinding::new("r", "r", PrRebase),
+        // KeyBinding::new("a", "a", PrApprove),
+        // KeyBinding::new("c", "c", PrClose),
         // CI/Build Status
-        KeyBinding::new("R", "R", PrRerunFailedJobs),
-        KeyBinding::new("b", "b", PrOpenBuildLogs),
+        // KeyBinding::new("R", "R", PrRerunFailedJobs),
+        // KeyBinding::new("b", "b", PrOpenBuildLogs),
         // IDE Integration
         KeyBinding::new("i", "i", PrOpenInIDE),
         // Filter & Search
         KeyBinding::new("f", "f", PrCycleFilter),
         KeyBinding::new("F", "F", PrClearFilter),
         // Merge Bot
-        KeyBinding::new("M", "M", MergeBotStart),
+        // KeyBinding::new("M", "M", MergeBotStart),
         // KeyBinding::new("Q", "Q", MergeBotAddToQueue),
         // Help
         KeyBinding::new("?", "?", KeyBindingsToggleView),
@@ -447,5 +469,48 @@ mod tests {
             keymap.compact_hint_for_command(CommandId::DebugToggleConsoleView),
             Some("`".to_string())
         );
+    }
+
+    #[test]
+    fn test_uppercase_key_pattern_parsing() {
+        // Uppercase "G" should parse with SHIFT modifier
+        let pattern = parse_key_pattern("G").unwrap();
+        match pattern {
+            ParsedKeyPattern::Single { code, modifiers } => {
+                assert_eq!(code, KeyCode::Char('G'));
+                assert_eq!(modifiers, KeyModifiers::SHIFT);
+            }
+            _ => panic!("Expected Single pattern"),
+        }
+
+        // Lowercase "g" should parse without SHIFT modifier
+        let pattern = parse_key_pattern("g").unwrap();
+        match pattern {
+            ParsedKeyPattern::Single { code, modifiers } => {
+                assert_eq!(code, KeyCode::Char('g'));
+                assert_eq!(modifiers, KeyModifiers::NONE);
+            }
+            _ => panic!("Expected Single pattern"),
+        }
+    }
+
+    #[test]
+    fn test_uppercase_key_matching() {
+        use CommandId::*;
+        let keymap = Keymap::new(vec![
+            KeyBinding::new("G", "G", NavigateToBottom),
+            KeyBinding::new("g g", "g g", NavigateToTop),
+        ]);
+
+        // Shift+G should match "G" binding
+        let key = KeyEvent::new(KeyCode::Char('G'), KeyModifiers::SHIFT);
+        let (cmd, _, _) = keymap.match_key(&key, None);
+        assert_eq!(cmd, Some(NavigateToBottom));
+
+        // Lowercase 'g' should start a sequence, not match
+        let key = KeyEvent::new(KeyCode::Char('g'), KeyModifiers::NONE);
+        let (cmd, _, pending) = keymap.match_key(&key, None);
+        assert_eq!(cmd, None);
+        assert_eq!(pending, Some('g'));
     }
 }

@@ -6,7 +6,7 @@
 //! - The capabilities of the active view
 //! - Two-key sequences with timeout (e.g., "g g" for scroll-to-top)
 
-use crate::actions::Action;
+use crate::actions::{Action, GlobalAction, NavigationAction, TextInputAction};
 use crate::capabilities::PanelCapabilities;
 use crate::dispatcher::Dispatcher;
 use crate::keybindings::PendingKey;
@@ -71,18 +71,8 @@ impl KeyboardMiddleware {
             return false;
         }
 
-        // For unmatched character keys, dispatch as LocalKeyPressed
-        if let KeyCode::Char(c) = key.code {
-            if !key.modifiers.contains(KeyModifiers::CONTROL)
-                && !key.modifiers.contains(KeyModifiers::ALT)
-            {
-                dispatcher.dispatch(Action::LocalKeyPressed(c));
-                return false;
-            }
-        }
-
-        // Pass through unhandled keys
-        true
+        // Unhandled keys are consumed (not passed through)
+        false
     }
 
     /// Handle key events for views that accept text input
@@ -104,13 +94,13 @@ impl KeyboardMiddleware {
         match key.code {
             // Escape - context-dependent close behavior
             KeyCode::Esc => {
-                dispatcher.dispatch(Action::TextInputEscape);
+                dispatcher.dispatch(Action::TextInput(TextInputAction::Escape));
                 false
             }
 
             // Enter - confirm/execute
             KeyCode::Enter => {
-                dispatcher.dispatch(Action::TextInputConfirm);
+                dispatcher.dispatch(Action::TextInput(TextInputAction::Confirm));
                 false
             }
 
@@ -118,36 +108,36 @@ impl KeyboardMiddleware {
             KeyCode::Backspace => {
                 if key.modifiers.contains(KeyModifiers::SUPER) {
                     // Cmd+Backspace on Mac - clear entire line
-                    dispatcher.dispatch(Action::TextInputClearLine);
+                    dispatcher.dispatch(Action::TextInput(TextInputAction::ClearLine));
                 } else {
-                    dispatcher.dispatch(Action::TextInputBackspace);
+                    dispatcher.dispatch(Action::TextInput(TextInputAction::Backspace));
                 }
                 false
             }
 
             // Arrow keys for navigation (if view supports it)
             KeyCode::Down if capabilities.supports_item_navigation() => {
-                dispatcher.dispatch(Action::NavigateNext);
+                dispatcher.dispatch(Action::Navigate(NavigationAction::Next));
                 false
             }
             KeyCode::Up if capabilities.supports_item_navigation() => {
-                dispatcher.dispatch(Action::NavigatePrevious);
+                dispatcher.dispatch(Action::Navigate(NavigationAction::Previous));
                 false
             }
 
             // Tab for field navigation
             KeyCode::Tab => {
                 if key.modifiers.contains(KeyModifiers::SHIFT) {
-                    dispatcher.dispatch(Action::NavigatePrevious);
+                    dispatcher.dispatch(Action::Navigate(NavigationAction::Previous));
                 } else {
-                    dispatcher.dispatch(Action::NavigateNext);
+                    dispatcher.dispatch(Action::Navigate(NavigationAction::Next));
                 }
                 false
             }
 
             // BackTab (Shift+Tab) - some terminals send this instead of Tab with SHIFT modifier
             KeyCode::BackTab => {
-                dispatcher.dispatch(Action::NavigatePrevious);
+                dispatcher.dispatch(Action::Navigate(NavigationAction::Previous));
                 false
             }
 
@@ -155,13 +145,13 @@ impl KeyboardMiddleware {
             KeyCode::Char(c) => {
                 // Ctrl+C always quits
                 if key.modifiers.contains(KeyModifiers::CONTROL) && c == 'c' {
-                    dispatcher.dispatch(Action::GlobalQuit);
+                    dispatcher.dispatch(Action::Global(GlobalAction::Quit));
                     return false;
                 }
 
                 // Ctrl+U - Unix line kill (clear line) - this is what Cmd+Backspace sends in terminals
                 if key.modifiers.contains(KeyModifiers::CONTROL) && c == 'u' {
-                    dispatcher.dispatch(Action::TextInputClearLine);
+                    dispatcher.dispatch(Action::TextInput(TextInputAction::ClearLine));
                     return false;
                 }
 
@@ -173,7 +163,7 @@ impl KeyboardMiddleware {
                 }
 
                 // Send character to text input
-                dispatcher.dispatch(Action::TextInputChar(c));
+                dispatcher.dispatch(Action::TextInput(TextInputAction::Char(c)));
                 false
             }
 
@@ -191,8 +181,8 @@ impl Default for KeyboardMiddleware {
 
 impl Middleware for KeyboardMiddleware {
     fn handle(&mut self, action: &Action, state: &AppState, dispatcher: &Dispatcher) -> bool {
-        // Only intercept GlobalKeyPressed actions
-        if let Action::GlobalKeyPressed(key) = action {
+        // Only intercept Global KeyPressed actions
+        if let Action::Global(GlobalAction::KeyPressed(key)) = action {
             let capabilities = state.active_view().capabilities(state);
             log::debug!(
                 "KeyboardMiddleware: key={:?}, capabilities={:?}",

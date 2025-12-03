@@ -176,11 +176,11 @@ pub struct CommitStatus {
 #[serde(rename_all = "snake_case")]
 pub enum MergeMethod {
     /// Create a merge commit
-    #[default]
     Merge,
     /// Squash all commits into one
     Squash,
     /// Rebase commits onto the base branch
+    #[default]
     Rebase,
 }
 

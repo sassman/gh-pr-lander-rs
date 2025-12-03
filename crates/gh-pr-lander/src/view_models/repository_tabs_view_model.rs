@@ -130,7 +130,7 @@ impl RepositoryTabsViewModel {
         // Build add repo hint (right side)
         let hint = TabHintViewModel {
             text: " p → a ".to_string(),
-            style: help_hint.style.clone(),
+            style: help_hint.style,
             width: 7, // " p → a " is 7 chars
         };
 

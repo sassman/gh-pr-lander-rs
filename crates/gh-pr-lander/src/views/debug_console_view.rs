@@ -1,3 +1,4 @@
+use crate::actions::{Action, DebugConsoleAction, NavigationAction};
 use crate::capabilities::{PanelCapabilities, PanelCapabilityProvider};
 use crate::keybindings::Keymap;
 use crate::state::AppState;
@@ -41,13 +42,25 @@ impl View for DebugConsoleView {
     fn clone_box(&self) -> Box<dyn View> {
         Box::new(self.clone())
     }
+
+    fn translate_navigation(&self, nav: NavigationAction) -> Option<Action> {
+        let action = match nav {
+            NavigationAction::Next => DebugConsoleAction::NavigateNext,
+            NavigationAction::Previous => DebugConsoleAction::NavigatePrevious,
+            NavigationAction::ToTop => DebugConsoleAction::NavigateToTop,
+            NavigationAction::ToBottom => DebugConsoleAction::NavigateToBottom,
+            // Debug console doesn't use horizontal navigation
+            NavigationAction::Left | NavigationAction::Right => return None,
+        };
+        Some(Action::DebugConsole(action))
+    }
 }
 
 /// Render the debug console (Quake-style drop-down)
 fn render(state: &DebugConsoleState, theme: &Theme, keymap: &Keymap, area: Rect, f: &mut Frame) {
-    if !state.visible {
-        return; // Don't render if not visible
-    }
+    // if !state.visible {
+    // return; // Don't render if not visible
+    // }
 
     // Render dimmed overlay over the entire screen to create modal effect
     let overlay = Block::default().style(

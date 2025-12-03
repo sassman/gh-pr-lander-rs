@@ -1,4 +1,4 @@
-use crate::actions::Action;
+use crate::actions::{Action, DebugConsoleAction};
 use crate::dispatcher::Dispatcher;
 use log::{Level, Metadata, Record};
 use std::fmt::Display;
@@ -58,7 +58,9 @@ impl log::Log for DebugConsoleLogger {
         // Send to debug console
         if let Ok(dispatcher) = self.dispatcher.lock() {
             if let Some(ref d) = *dispatcher {
-                d.dispatch(Action::DebugConsoleLogAdded(owned_record));
+                d.dispatch(Action::DebugConsole(DebugConsoleAction::LogAdded(
+                    owned_record,
+                )));
             }
         }
     }

@@ -6,7 +6,7 @@
 //! - Listens for LoadRecentRepositoriesDone to dispatch BootstrapEnd
 //! - Stops tick thread on BootstrapEnd
 
-use crate::actions::Action;
+use crate::actions::{Action, BootstrapAction, GlobalAction};
 use crate::dispatcher::Dispatcher;
 use crate::middleware::Middleware;
 use crate::state::AppState;
@@ -36,7 +36,7 @@ impl Default for BootstrapMiddleware {
 impl Middleware for BootstrapMiddleware {
     fn handle(&mut self, action: &Action, _state: &AppState, dispatcher: &Dispatcher) -> bool {
         match action {
-            Action::BootstrapStart => {
+            Action::Bootstrap(BootstrapAction::Start) => {
                 log::info!("BootstrapMiddleware: Bootstrap starting");
 
                 // Start tick thread if not already started
@@ -62,7 +62,7 @@ impl Middleware for BootstrapMiddleware {
                             let elapsed = now.duration_since(last_tick);
 
                             if elapsed >= tick_rate {
-                                dispatcher_clone.dispatch(Action::Tick);
+                                dispatcher_clone.dispatch(Action::Global(GlobalAction::Tick));
                                 last_tick = now;
                             } else {
                                 // Sleep for the remaining time
@@ -75,19 +75,19 @@ impl Middleware for BootstrapMiddleware {
                 }
 
                 // Trigger loading of recent repositories
-                dispatcher.dispatch(Action::LoadRecentRepositories);
+                dispatcher.dispatch(Action::Bootstrap(BootstrapAction::LoadRecentRepositories));
 
                 // Pass through
                 true
             }
 
-            Action::LoadRecentRepositoriesDone => {
+            Action::Bootstrap(BootstrapAction::LoadRecentRepositoriesDone) => {
                 log::info!("BootstrapMiddleware: Repository loading done, ending bootstrap");
-                dispatcher.dispatch(Action::BootstrapEnd);
+                dispatcher.dispatch(Action::Bootstrap(BootstrapAction::End));
                 true
             }
 
-            Action::BootstrapEnd => {
+            Action::Bootstrap(BootstrapAction::End) => {
                 // Stop the tick thread
                 let mut started = self.tick_thread_started.lock().unwrap();
                 *started = false;

@@ -1,3 +1,4 @@
+use crate::actions::{Action, CommandPaletteAction, NavigationAction, TextInputAction};
 use crate::capabilities::PanelCapabilities;
 use crate::state::AppState;
 use crate::view_models::CommandPaletteViewModel;
@@ -38,6 +39,30 @@ impl View for CommandPaletteView {
 
     fn clone_box(&self) -> Box<dyn View> {
         Box::new(self.clone())
+    }
+
+    fn translate_navigation(&self, nav: NavigationAction) -> Option<Action> {
+        let action = match nav {
+            NavigationAction::Next => CommandPaletteAction::NavigateNext,
+            NavigationAction::Previous => CommandPaletteAction::NavigatePrev,
+            // Command palette only supports up/down navigation
+            NavigationAction::Left
+            | NavigationAction::Right
+            | NavigationAction::ToTop
+            | NavigationAction::ToBottom => return None,
+        };
+        Some(Action::CommandPalette(action))
+    }
+
+    fn translate_text_input(&self, input: TextInputAction) -> Option<Action> {
+        let action = match input {
+            TextInputAction::Char(c) => CommandPaletteAction::Char(c),
+            TextInputAction::Backspace => CommandPaletteAction::Backspace,
+            TextInputAction::ClearLine => CommandPaletteAction::Clear,
+            TextInputAction::Escape => CommandPaletteAction::Close,
+            TextInputAction::Confirm => CommandPaletteAction::Execute,
+        };
+        Some(Action::CommandPalette(action))
     }
 }
 

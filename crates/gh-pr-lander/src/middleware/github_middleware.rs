@@ -7,7 +7,7 @@
 //! - CI operations (rerun failed jobs)
 //! - Browser/IDE integration
 
-use crate::actions::Action;
+use crate::actions::{Action, BootstrapAction, PullRequestAction};
 use crate::dispatcher::Dispatcher;
 use crate::domain_models::{MergeableStatus, Pr};
 use crate::middleware::Middleware;
@@ -216,20 +216,20 @@ impl GitHubMiddleware {
         let client = if force_refresh {
             let Some(client) = self.force_refresh_client() else {
                 log::error!("PrLoad: client not initialized");
-                dispatcher.dispatch(Action::PrLoadError(
+                dispatcher.dispatch(Action::PullRequest(PullRequestAction::LoadError(
                     repo_idx,
                     "GitHub client not initialized".to_string(),
-                ));
+                )));
                 return true;
             };
             client
         } else {
             let Some(client) = self.client.clone() else {
                 log::error!("PrLoad: client not initialized");
-                dispatcher.dispatch(Action::PrLoadError(
+                dispatcher.dispatch(Action::PullRequest(PullRequestAction::LoadError(
                     repo_idx,
                     "GitHub client not initialized".to_string(),
-                ));
+                )));
                 return true;
             };
             client
@@ -280,11 +280,16 @@ impl GitHubMiddleware {
                 Ok(prs) => {
                     let domain_prs: Vec<Pr> = prs.into_iter().map(convert_to_domain_pr).collect();
                     log::info!("Loaded {} PRs for {}/{}", domain_prs.len(), org, repo_name);
-                    dispatcher.dispatch(Action::PrLoaded(repo_idx, domain_prs));
+                    dispatcher.dispatch(Action::PullRequest(PullRequestAction::Loaded(
+                        repo_idx, domain_prs,
+                    )));
                 }
                 Err(e) => {
                     log::error!("Failed to load PRs for {}/{}: {}", org, repo_name, e);
-                    dispatcher.dispatch(Action::PrLoadError(repo_idx, e.to_string()));
+                    dispatcher.dispatch(Action::PullRequest(PullRequestAction::LoadError(
+                        repo_idx,
+                        e.to_string(),
+                    )));
                 }
             }
         });
@@ -303,18 +308,18 @@ impl Middleware for GitHubMiddleware {
     fn handle(&mut self, action: &Action, state: &AppState, dispatcher: &Dispatcher) -> bool {
         match action {
             // Initialize client on bootstrap
-            Action::BootstrapStart => {
+            Action::Bootstrap(BootstrapAction::Start) => {
                 self.initialize_client();
                 true // Let action pass through
             }
 
             // Handle PR load start - actually fetch the PRs
-            Action::PrLoadStart(repo_idx) => {
+            Action::PullRequest(PullRequestAction::LoadStart(repo_idx)) => {
                 self.handle_pr_load(*repo_idx, state, dispatcher, false)
             }
 
             // Handle PR refresh request (force refresh - bypass cache)
-            Action::PrRefresh => {
+            Action::PullRequest(PullRequestAction::Refresh) => {
                 if self.client.is_none() {
                     log::warn!("Cannot refresh PRs: GitHub client not initialized");
                     return true;
@@ -324,7 +329,7 @@ impl Middleware for GitHubMiddleware {
                 self.handle_pr_load(repo_idx, state, dispatcher, true)
             }
 
-            Action::PrOpenInBrowser => {
+            Action::PullRequest(PullRequestAction::OpenInBrowser) => {
                 let urls = self.get_target_pr_urls(state);
                 if urls.is_empty() {
                     log::warn!("No PRs selected for opening in browser");
@@ -339,7 +344,7 @@ impl Middleware for GitHubMiddleware {
                 false // Consume action
             }
 
-            Action::PrMergeRequest => {
+            Action::PullRequest(PullRequestAction::MergeRequest) => {
                 let client = match &self.client {
                     Some(c) => c.clone(),
                     None => {
@@ -359,7 +364,9 @@ impl Middleware for GitHubMiddleware {
                         let dispatcher = dispatcher.clone();
                         let client = client.clone();
 
-                        dispatcher.dispatch(Action::PrMergeStart(repo_idx, pr_number));
+                        dispatcher.dispatch(Action::PullRequest(PullRequestAction::MergeStart(
+                            repo_idx, pr_number,
+                        )));
 
                         self.runtime.spawn(async move {
                             match client
@@ -375,25 +382,31 @@ impl Middleware for GitHubMiddleware {
                             {
                                 Ok(result) if result.merged => {
                                     log::info!("Successfully merged PR #{}", pr_number);
-                                    dispatcher
-                                        .dispatch(Action::PrMergeSuccess(repo_idx, pr_number));
+                                    dispatcher.dispatch(Action::PullRequest(
+                                        PullRequestAction::MergeSuccess(repo_idx, pr_number),
+                                    ));
                                     // Trigger refresh to update PR list
-                                    dispatcher.dispatch(Action::PrRefresh);
+                                    dispatcher
+                                        .dispatch(Action::PullRequest(PullRequestAction::Refresh));
                                 }
                                 Ok(result) => {
                                     log::error!("Merge failed: {}", result.message);
-                                    dispatcher.dispatch(Action::PrMergeError(
-                                        repo_idx,
-                                        pr_number,
-                                        result.message,
+                                    dispatcher.dispatch(Action::PullRequest(
+                                        PullRequestAction::MergeError(
+                                            repo_idx,
+                                            pr_number,
+                                            result.message,
+                                        ),
                                     ));
                                 }
                                 Err(e) => {
                                     log::error!("Merge error: {}", e);
-                                    dispatcher.dispatch(Action::PrMergeError(
-                                        repo_idx,
-                                        pr_number,
-                                        e.to_string(),
+                                    dispatcher.dispatch(Action::PullRequest(
+                                        PullRequestAction::MergeError(
+                                            repo_idx,
+                                            pr_number,
+                                            e.to_string(),
+                                        ),
                                     ));
                                 }
                             }
@@ -403,7 +416,7 @@ impl Middleware for GitHubMiddleware {
                 false // Consume action
             }
 
-            Action::PrRebaseRequest => {
+            Action::PullRequest(PullRequestAction::RebaseRequest) => {
                 let client = match &self.client {
                     Some(c) => c.clone(),
                     None => {
@@ -423,7 +436,9 @@ impl Middleware for GitHubMiddleware {
                         let dispatcher = dispatcher.clone();
                         let client = client.clone();
 
-                        dispatcher.dispatch(Action::PrRebaseStart(repo_idx, pr_number));
+                        dispatcher.dispatch(Action::PullRequest(PullRequestAction::RebaseStart(
+                            repo_idx, pr_number,
+                        )));
 
                         self.runtime.spawn(async move {
                             match client
@@ -432,17 +447,21 @@ impl Middleware for GitHubMiddleware {
                             {
                                 Ok(()) => {
                                     log::info!("Successfully rebased PR #{}", pr_number);
-                                    dispatcher
-                                        .dispatch(Action::PrRebaseSuccess(repo_idx, pr_number));
+                                    dispatcher.dispatch(Action::PullRequest(
+                                        PullRequestAction::RebaseSuccess(repo_idx, pr_number),
+                                    ));
                                     // Trigger refresh to update PR status
-                                    dispatcher.dispatch(Action::PrRefresh);
+                                    dispatcher
+                                        .dispatch(Action::PullRequest(PullRequestAction::Refresh));
                                 }
                                 Err(e) => {
                                     log::error!("Rebase error: {}", e);
-                                    dispatcher.dispatch(Action::PrRebaseError(
-                                        repo_idx,
-                                        pr_number,
-                                        e.to_string(),
+                                    dispatcher.dispatch(Action::PullRequest(
+                                        PullRequestAction::RebaseError(
+                                            repo_idx,
+                                            pr_number,
+                                            e.to_string(),
+                                        ),
                                     ));
                                 }
                             }
@@ -452,7 +471,7 @@ impl Middleware for GitHubMiddleware {
                 false // Consume action
             }
 
-            Action::PrApproveRequest => {
+            Action::PullRequest(PullRequestAction::ApproveRequest) => {
                 let client = match &self.client {
                     Some(c) => c.clone(),
                     None => {
@@ -472,7 +491,9 @@ impl Middleware for GitHubMiddleware {
                         let dispatcher = dispatcher.clone();
                         let client = client.clone();
 
-                        dispatcher.dispatch(Action::PrApproveStart(repo_idx, pr_number));
+                        dispatcher.dispatch(Action::PullRequest(PullRequestAction::ApproveStart(
+                            repo_idx, pr_number,
+                        )));
 
                         self.runtime.spawn(async move {
                             match client
@@ -487,15 +508,18 @@ impl Middleware for GitHubMiddleware {
                             {
                                 Ok(()) => {
                                     log::info!("Successfully approved PR #{}", pr_number);
-                                    dispatcher
-                                        .dispatch(Action::PrApproveSuccess(repo_idx, pr_number));
+                                    dispatcher.dispatch(Action::PullRequest(
+                                        PullRequestAction::ApproveSuccess(repo_idx, pr_number),
+                                    ));
                                 }
                                 Err(e) => {
                                     log::error!("Approve error: {}", e);
-                                    dispatcher.dispatch(Action::PrApproveError(
-                                        repo_idx,
-                                        pr_number,
-                                        e.to_string(),
+                                    dispatcher.dispatch(Action::PullRequest(
+                                        PullRequestAction::ApproveError(
+                                            repo_idx,
+                                            pr_number,
+                                            e.to_string(),
+                                        ),
                                     ));
                                 }
                             }
@@ -505,7 +529,7 @@ impl Middleware for GitHubMiddleware {
                 false // Consume action
             }
 
-            Action::PrCloseRequest => {
+            Action::PullRequest(PullRequestAction::CloseRequest) => {
                 let client = match &self.client {
                     Some(c) => c.clone(),
                     None => {
@@ -525,7 +549,9 @@ impl Middleware for GitHubMiddleware {
                         let dispatcher = dispatcher.clone();
                         let client = client.clone();
 
-                        dispatcher.dispatch(Action::PrCloseStart(repo_idx, pr_number));
+                        dispatcher.dispatch(Action::PullRequest(PullRequestAction::CloseStart(
+                            repo_idx, pr_number,
+                        )));
 
                         self.runtime.spawn(async move {
                             match client
@@ -534,17 +560,21 @@ impl Middleware for GitHubMiddleware {
                             {
                                 Ok(()) => {
                                     log::info!("Successfully closed PR #{}", pr_number);
-                                    dispatcher
-                                        .dispatch(Action::PrCloseSuccess(repo_idx, pr_number));
+                                    dispatcher.dispatch(Action::PullRequest(
+                                        PullRequestAction::CloseSuccess(repo_idx, pr_number),
+                                    ));
                                     // Trigger refresh to update PR list
-                                    dispatcher.dispatch(Action::PrRefresh);
+                                    dispatcher
+                                        .dispatch(Action::PullRequest(PullRequestAction::Refresh));
                                 }
                                 Err(e) => {
                                     log::error!("Close error: {}", e);
-                                    dispatcher.dispatch(Action::PrCloseError(
-                                        repo_idx,
-                                        pr_number,
-                                        e.to_string(),
+                                    dispatcher.dispatch(Action::PullRequest(
+                                        PullRequestAction::CloseError(
+                                            repo_idx,
+                                            pr_number,
+                                            e.to_string(),
+                                        ),
                                     ));
                                 }
                             }
@@ -554,7 +584,7 @@ impl Middleware for GitHubMiddleware {
                 false // Consume action
             }
 
-            Action::PrOpenBuildLogs => {
+            Action::PullRequest(PullRequestAction::OpenBuildLogs) => {
                 let targets = self.get_target_pr_ci_info(state);
                 if targets.is_empty() {
                     log::warn!("No PRs selected for opening build logs");
@@ -573,7 +603,7 @@ impl Middleware for GitHubMiddleware {
                 false // Consume action
             }
 
-            Action::PrOpenInIDE => {
+            Action::PullRequest(PullRequestAction::OpenInIDE) => {
                 let targets = self.get_target_pr_info_for_ide(state);
                 if targets.is_empty() {
                     log::warn!("No PRs selected for opening in IDE");
@@ -691,7 +721,7 @@ impl Middleware for GitHubMiddleware {
                 false // Consume action
             }
 
-            Action::PrRerunFailedJobs => {
+            Action::PullRequest(PullRequestAction::RerunFailedJobs) => {
                 let client = match &self.client {
                     Some(c) => c.clone(),
                     None => {
@@ -722,7 +752,7 @@ impl Middleware for GitHubMiddleware {
                                 let failed_runs: Vec<_> = runs
                                     .into_iter()
                                     .filter(|r| {
-                                        r.conclusion.as_ref().map_or(false, |c| {
+                                        r.conclusion.as_ref().is_some_and(|c| {
                                             matches!(
                                                 c,
                                                 gh_client::WorkflowRunConclusion::Failure
@@ -741,11 +771,11 @@ impl Middleware for GitHubMiddleware {
                                 }
 
                                 for run in failed_runs {
-                                    dispatcher.dispatch(Action::PrRerunStart(
+                                    dispatcher.dispatch(Action::PullRequest(PullRequestAction::RerunStart(
                                         repo_idx,
                                         pr_number,
                                         run.id,
-                                    ));
+                                    )));
 
                                     match client.rerun_failed_jobs(&owner, &repo, run.id).await {
                                         Ok(()) => {
@@ -754,11 +784,11 @@ impl Middleware for GitHubMiddleware {
                                                 run.name,
                                                 pr_number
                                             );
-                                            dispatcher.dispatch(Action::PrRerunSuccess(
+                                            dispatcher.dispatch(Action::PullRequest(PullRequestAction::RerunSuccess(
                                                 repo_idx,
                                                 pr_number,
                                                 run.id,
-                                            ));
+                                            )));
                                         }
                                         Err(e) => {
                                             log::error!(
@@ -767,12 +797,12 @@ impl Middleware for GitHubMiddleware {
                                                 pr_number,
                                                 e
                                             );
-                                            dispatcher.dispatch(Action::PrRerunError(
+                                            dispatcher.dispatch(Action::PullRequest(PullRequestAction::RerunError(
                                                 repo_idx,
                                                 pr_number,
                                                 run.id,
                                                 e.to_string(),
-                                            ));
+                                            )));
                                         }
                                     }
                                 }

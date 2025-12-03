@@ -2,6 +2,7 @@
 //!
 //! Displays all available keybindings grouped by category.
 
+use crate::actions::{Action, KeyBindingsAction, NavigationAction};
 use crate::capabilities::PanelCapabilities;
 use crate::state::AppState;
 use crate::view_models::KeyBindingsPanelViewModel;
@@ -41,6 +42,18 @@ impl View for KeyBindingsView {
 
     fn clone_box(&self) -> Box<dyn View> {
         Box::new(self.clone())
+    }
+
+    fn translate_navigation(&self, nav: NavigationAction) -> Option<Action> {
+        let action = match nav {
+            NavigationAction::Next => KeyBindingsAction::NavigateNext,
+            NavigationAction::Previous => KeyBindingsAction::NavigatePrevious,
+            NavigationAction::ToTop => KeyBindingsAction::NavigateToTop,
+            NavigationAction::ToBottom => KeyBindingsAction::NavigateToBottom,
+            // Key bindings panel doesn't use horizontal navigation
+            NavigationAction::Left | NavigationAction::Right => return None,
+        };
+        Some(Action::KeyBindings(action))
     }
 }
 

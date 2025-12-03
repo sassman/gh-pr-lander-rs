@@ -2,7 +2,7 @@
 //!
 //! Handles loading application configuration on bootstrap.
 
-use crate::actions::Action;
+use crate::actions::{Action, BootstrapAction};
 use crate::dispatcher::Dispatcher;
 use crate::middleware::Middleware;
 use crate::state::AppState;
@@ -30,7 +30,7 @@ impl Default for AppConfigMiddleware {
 impl Middleware for AppConfigMiddleware {
     fn handle(&mut self, action: &Action, _state: &AppState, dispatcher: &Dispatcher) -> bool {
         match action {
-            Action::BootstrapStart => {
+            Action::Bootstrap(BootstrapAction::Start) => {
                 if !self.config_loaded {
                     log::info!("AppConfigMiddleware: Loading application configuration");
                     let config = AppConfig::load();
@@ -38,7 +38,7 @@ impl Middleware for AppConfigMiddleware {
                         "AppConfigMiddleware: Loaded config (ide_command: {})",
                         config.ide_command
                     );
-                    dispatcher.dispatch(Action::AppConfigLoaded(config));
+                    dispatcher.dispatch(Action::Bootstrap(BootstrapAction::ConfigLoaded(config)));
                     self.config_loaded = true;
                 }
                 true // Pass through

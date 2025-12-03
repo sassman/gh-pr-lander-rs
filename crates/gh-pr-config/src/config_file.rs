@@ -31,5 +31,5 @@ pub fn load_config_file() -> Option<String> {
 ///
 /// Returns ~/.gh-pr-tui.toml if HOME environment variable is set.
 fn get_home_config_path() -> Option<PathBuf> {
-    env::var_os("HOME").map(|home| PathBuf::from(home).join(format!("{}", CONFIG_FILE)))
+    env::var_os("HOME").map(|home| PathBuf::from(home).join(CONFIG_FILE))
 }

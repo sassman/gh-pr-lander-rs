@@ -3,6 +3,7 @@
 //! A floating form for adding a new repository to track.
 //! Supports both URL parsing and manual field entry.
 
+use crate::actions::{Action, AddRepositoryAction, NavigationAction, TextInputAction};
 use crate::capabilities::PanelCapabilities;
 use crate::state::{AddRepoField, AddRepoFormState, AppState};
 use crate::views::View;
@@ -41,6 +42,30 @@ impl View for AddRepositoryView {
 
     fn clone_box(&self) -> Box<dyn View> {
         Box::new(self.clone())
+    }
+
+    fn translate_navigation(&self, nav: NavigationAction) -> Option<Action> {
+        let action = match nav {
+            NavigationAction::Next => AddRepositoryAction::NextField,
+            NavigationAction::Previous => AddRepositoryAction::PrevField,
+            // Form doesn't use horizontal or jump navigation
+            NavigationAction::Left
+            | NavigationAction::Right
+            | NavigationAction::ToTop
+            | NavigationAction::ToBottom => return None,
+        };
+        Some(Action::AddRepository(action))
+    }
+
+    fn translate_text_input(&self, input: TextInputAction) -> Option<Action> {
+        let action = match input {
+            TextInputAction::Char(c) => AddRepositoryAction::Char(c),
+            TextInputAction::Backspace => AddRepositoryAction::Backspace,
+            TextInputAction::ClearLine => AddRepositoryAction::ClearField,
+            TextInputAction::Escape => AddRepositoryAction::Close,
+            TextInputAction::Confirm => AddRepositoryAction::Confirm,
+        };
+        Some(Action::AddRepository(action))
     }
 }
 

@@ -97,15 +97,15 @@ Create a `.recent-repositories.json` file to configure your repositories:
 
 ## Quick Start
 
-1. Launch the tool: `./target/release/gh-pr-tui` (or `cargo run --bin gh-pr-tui`)
-2. Use `Tab` or `/` to switch between repositories
+1. Launch the tool: `cargo run --bin gh-pr-lander`
+2. Use `Tab` or `/` to switch between repositories (or add a new Repository with `ra`)
 3. Use `↑/↓` or `j/k` to navigate PRs
-4. Press `Space` to select/deselect PRs (automatically advances to next PR)
-5. Press `m` to merge selected PRs
+4. Press `Space` to select/deselect PRs
+5. Press `p -> m` to merge selected PRs
 6. Press `l` to view build logs with smart error navigation
 7. Press `i` to open PR in IDE (or main branch if no PRs)
 8. Press `Ctrl+P` for command palette (fuzzy search all commands)
-9. Press `?` for complete keyboard shortcuts
+9. Press `?` for complete keyboard bindings reference  
 
 ---
 

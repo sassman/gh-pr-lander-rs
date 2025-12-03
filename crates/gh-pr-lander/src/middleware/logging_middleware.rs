@@ -1,4 +1,4 @@
-use crate::actions::Action;
+use crate::actions::{Action, DebugConsoleAction};
 use crate::dispatcher::Dispatcher;
 use crate::middleware::Middleware;
 use crate::state::AppState;
@@ -15,8 +15,11 @@ impl LoggingMiddleware {
 impl Middleware for LoggingMiddleware {
     fn handle(&mut self, action: &Action, _state: &AppState, _dispatcher: &Dispatcher) -> bool {
         // Log all actions (custom logger will send to debug console)
-        // Don't log DebugConsoleLogAdded to avoid infinite loop
-        if !matches!(action, Action::DebugConsoleLogAdded(_)) {
+        // Don't log DebugConsole::LogAdded to avoid infinite loop
+        if !matches!(
+            action,
+            Action::DebugConsole(DebugConsoleAction::LogAdded(_))
+        ) {
             log::debug!("Action: {:?}", action);
         }
 

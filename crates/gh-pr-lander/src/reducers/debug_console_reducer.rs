@@ -1,64 +1,65 @@
-use crate::actions::Action;
+use crate::actions::DebugConsoleAction;
 use crate::capabilities::{PanelCapabilities, PanelCapabilityProvider};
 use crate::logger::OwnedLogRecord;
 use crate::state::DebugConsoleState;
-use crate::views::ViewId;
 
-/// Reducer for debug console state
-pub fn reduce(mut state: DebugConsoleState, action: &Action) -> DebugConsoleState {
-    let is_active = state.visible;
+/// Reducer for debug console state.
+///
+/// Accepts only DebugConsoleAction, making it type-safe and focused.
+pub fn reduce_debug_console(
+    mut state: DebugConsoleState,
+    action: &DebugConsoleAction,
+) -> DebugConsoleState {
+    // Calculate max scroll based on visible height (if known)
+    let max_scroll = if state.visible_height > 0 {
+        state.logs.len().saturating_sub(state.visible_height)
+    } else {
+        state.logs.len()
+    };
+
     match action {
-        Action::PushView(view) if view.view_id() == ViewId::DebugConsole => {
-            state.visible = true;
+        DebugConsoleAction::NavigateNext => {
+            // Scroll towards newer logs (decrease offset, towards 0)
+            // First cap to max_scroll in case we're beyond it
+            state.scroll_offset = state.scroll_offset.min(max_scroll);
+            state.scroll_offset = state.scroll_offset.saturating_sub(1);
         }
-        Action::ReplaceView(_) | Action::GlobalClose => {
-            state.visible = false;
-            // Reset scroll when leaving
+        DebugConsoleAction::NavigatePrevious => {
+            // Scroll towards older logs (increase offset, capped at max_scroll)
+            if state.scroll_offset < max_scroll {
+                state.scroll_offset = state.scroll_offset.saturating_add(1);
+            }
+        }
+        DebugConsoleAction::NavigateToTop => {
+            // Go to oldest logs
+            state.scroll_offset = max_scroll;
+        }
+        DebugConsoleAction::NavigateToBottom => {
+            // Go to newest logs (offset = 0)
             state.scroll_offset = 0;
         }
-        Action::DebugConsoleLogAdded(log_record) => {
-            state.logs.push(log_record.clone());
-            // If we're at the bottom (scroll_offset == 0), stay at bottom
-            // Otherwise, keep current scroll position
+        DebugConsoleAction::Clear => {
+            state.logs.clear();
+            state.scroll_offset = 0;
         }
-        Action::DebugConsoleDumpLogs => {
+        DebugConsoleAction::LogAdded(log_record) => {
+            state.logs.push(log_record.clone());
+            if state.scroll_offset > 0 {
+                // Keep viewing the same logs (offset increases as new logs are added)
+                state.scroll_offset = state.scroll_offset.saturating_add(1);
+            }
+            // If scroll_offset == 0, stay at bottom (auto-scroll to newest)
+        }
+        DebugConsoleAction::DumpLogs => {
             // Dump logs to file
             if let Err(e) = dump_logs_to_file(&state.logs) {
                 log::warn!("Failed to dump debug logs to file: {}", e);
             }
         }
-        Action::LocalKeyPressed(c) if *c == 'c' && is_active => {
-            // Handle local 'c' key - clear logs
-            state.logs.clear();
-            state.scroll_offset = 0;
-        }
-        Action::DebugConsoleClear if is_active => {
-            state.logs.clear();
-            state.scroll_offset = 0;
-        }
-        Action::NavigateNext if is_active => {
-            // Scroll down (increase offset = go back in history)
-            if state.scroll_offset > 0 {
-                state.scroll_offset = state.scroll_offset.saturating_sub(1);
-            }
-        }
-        Action::NavigatePrevious if is_active => {
-            // Scroll up (decrease offset = go forward in history)
-            state.scroll_offset = state.scroll_offset.saturating_add(1);
-        }
-        Action::NavigateToTop if is_active => {
-            // Go to oldest log (maximum offset)
-            state.scroll_offset = state.logs.len();
-        }
-        Action::NavigateToBottom if is_active => {
-            // Go to newest log (offset = 0)
-            state.scroll_offset = 0;
-        }
-        _ => {
-            // Unhandled actions - no state change
+        DebugConsoleAction::SetVisibleHeight(height) => {
+            state.visible_height = *height;
         }
     }
-
     state
 }
 

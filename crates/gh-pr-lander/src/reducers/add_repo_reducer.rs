@@ -2,13 +2,18 @@
 //!
 //! Handles state changes for the add repository form.
 
-use crate::actions::Action;
+use crate::actions::AddRepositoryAction;
 use crate::state::{AddRepoField, AddRepoFormState};
 
-/// Reduce add repository form state based on actions
-pub fn reduce(mut state: AddRepoFormState, action: &Action) -> AddRepoFormState {
+/// Reduce add repository form state based on actions.
+///
+/// Accepts only AddRepositoryAction, making it type-safe and focused.
+pub fn reduce_add_repository(
+    mut state: AddRepoFormState,
+    action: &AddRepositoryAction,
+) -> AddRepoFormState {
     match action {
-        Action::AddRepoChar(c) => {
+        AddRepositoryAction::Char(c) => {
             // Add character to the currently focused field
             match state.focused_field {
                 AddRepoField::Url => {
@@ -28,7 +33,7 @@ pub fn reduce(mut state: AddRepoFormState, action: &Action) -> AddRepoFormState 
             }
         }
 
-        Action::AddRepoBackspace => {
+        AddRepositoryAction::Backspace => {
             // Remove last character from the currently focused field
             match state.focused_field {
                 AddRepoField::Url => {
@@ -48,7 +53,7 @@ pub fn reduce(mut state: AddRepoFormState, action: &Action) -> AddRepoFormState 
             }
         }
 
-        Action::AddRepoClearField => {
+        AddRepositoryAction::ClearField => {
             // Clear entire current field (Cmd+Backspace)
             match state.focused_field {
                 AddRepoField::Url => {
@@ -69,17 +74,19 @@ pub fn reduce(mut state: AddRepoFormState, action: &Action) -> AddRepoFormState 
             }
         }
 
-        Action::AddRepoNextField => {
+        AddRepositoryAction::NextField => {
             state.focused_field = state.focused_field.next();
         }
 
-        Action::AddRepoPrevField => {
+        AddRepositoryAction::PrevField => {
             state.focused_field = state.focused_field.prev();
         }
 
-        // AddRepoConfirm and AddRepoClose: form reset handled in app_reducer,
+        // Confirm and Close: form reset handled in app_reducer,
         // view management handled in add_repository middleware
-        _ => {}
+        AddRepositoryAction::Confirm | AddRepositoryAction::Close => {
+            // No state changes needed here - handled by app_reducer
+        }
     }
 
     state

@@ -1,3 +1,4 @@
+use crate::actions::{Action, NavigationAction, TextInputAction};
 use crate::capabilities::PanelCapabilities;
 use crate::state::AppState;
 use ratatui::{layout::Rect, Frame};
@@ -54,6 +55,46 @@ pub trait View: std::fmt::Debug + Send {
     /// Clone this view into a Box
     /// This is needed because Clone requires Sized, so we provide a manual clone method
     fn clone_box(&self) -> Box<dyn View>;
+
+    /// Translate a generic navigation action to this view's specific action.
+    ///
+    /// Views that handle navigation should implement this to return their
+    /// screen-specific action variant. The default implementation returns None,
+    /// indicating the view doesn't handle navigation.
+    ///
+    /// # Example
+    /// ```ignore
+    /// fn translate_navigation(&self, nav: NavigationAction) -> Option<Action> {
+    ///     match nav {
+    ///         NavigationAction::Next => Some(Action::PullRequest(PullRequestAction::NavigateNext)),
+    ///         NavigationAction::Previous => Some(Action::PullRequest(PullRequestAction::NavigatePrevious)),
+    ///         _ => None,
+    ///     }
+    /// }
+    /// ```
+    fn translate_navigation(&self, _nav: NavigationAction) -> Option<Action> {
+        None // Default: view doesn't handle navigation
+    }
+
+    /// Translate a generic text input action to this view's specific action.
+    ///
+    /// Views that accept text input should implement this to return their
+    /// screen-specific action variant. The default implementation returns None,
+    /// indicating the view doesn't handle text input.
+    ///
+    /// # Example
+    /// ```ignore
+    /// fn translate_text_input(&self, input: TextInputAction) -> Option<Action> {
+    ///     match input {
+    ///         TextInputAction::Char(c) => Some(Action::CommandPalette(CommandPaletteAction::Char(c))),
+    ///         TextInputAction::Backspace => Some(Action::CommandPalette(CommandPaletteAction::Backspace)),
+    ///         _ => None,
+    ///     }
+    /// }
+    /// ```
+    fn translate_text_input(&self, _input: TextInputAction) -> Option<Action> {
+        None // Default: view doesn't handle text input
+    }
 }
 
 /// Implement Clone for Box<dyn View>

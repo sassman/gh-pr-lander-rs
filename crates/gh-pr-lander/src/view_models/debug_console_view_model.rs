@@ -57,20 +57,28 @@ impl<'a> DebugConsoleViewModel<'a> {
     }
 
     /// Get the visible logs based on scroll offset and available height
+    ///
+    /// scroll_offset = 0 means we're at the bottom (showing newest logs)
+    /// scroll_offset > 0 means we've scrolled up (showing older logs)
     pub fn visible_logs(&self, available_height: usize) -> &[OwnedLogRecord] {
         let total_logs = self.state.logs.len();
 
-        // Calculate the end index (where to stop showing logs)
-        let end_index = total_logs.saturating_sub(self.state.scroll_offset);
-
-        // Calculate the start index (where to start showing logs)
-        let start_index = end_index.saturating_sub(available_height);
-
-        if start_index < end_index && start_index < total_logs {
-            &self.state.logs[start_index..end_index]
-        } else {
-            &[]
+        if total_logs == 0 || available_height == 0 {
+            return &[];
         }
+
+        // Cap scroll_offset to valid range (can't scroll past showing the first log)
+        let max_scroll = total_logs.saturating_sub(available_height);
+        let effective_scroll = self.state.scroll_offset.min(max_scroll);
+
+        // end is the index AFTER the last visible log
+        // When effective_scroll=0, end=total_logs (newest logs at the end)
+        let end = total_logs.saturating_sub(effective_scroll);
+
+        // start is the index of the first visible log
+        let start = end.saturating_sub(available_height);
+
+        &self.state.logs[start..end]
     }
 
     /// Format a log record as a styled Line
@@ -100,7 +108,7 @@ impl<'a> DebugConsoleViewModel<'a> {
     pub fn title(&self) -> String {
         if self.state.scroll_offset > 0 {
             format!(
-                " Debug Console (c to clear) - ↑{} ",
+                " Debug Console (c to clear) - ↓{} ",
                 self.state.scroll_offset
             )
         } else {
