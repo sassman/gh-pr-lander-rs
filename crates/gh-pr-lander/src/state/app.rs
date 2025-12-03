@@ -1,11 +1,11 @@
 //! Application State
 
-use crate::keybindings::{default_keymap, Keymap};
+use crate::keymap::{default_keymap, Keymap};
 use crate::views::{SplashView, View};
 
 use super::{
-    AddRepoFormState, CommandPaletteState, DebugConsoleState, KeyBindingsPanelState, MainViewState,
-    MergeBotState, SplashState, StatusBarState,
+    AddRepoFormState, BuildLogState, CommandPaletteState, DebugConsoleState, KeyBindingsPanelState,
+    MainViewState, MergeBotState, SplashState, StatusBarState,
 };
 
 /// Application state
@@ -22,6 +22,7 @@ pub struct AppState {
     pub merge_bot: MergeBotState,
     pub key_bindings_panel: KeyBindingsPanelState,
     pub status_bar: StatusBarState,
+    pub build_log: BuildLogState,
     pub theme: gh_pr_lander_theme::Theme,
     /// The keymap containing all keybindings
     pub keymap: Keymap,
@@ -52,6 +53,7 @@ impl std::fmt::Debug for AppState {
             .field("merge_bot", &self.merge_bot)
             .field("key_bindings_panel", &self.key_bindings_panel)
             .field("status_bar", &self.status_bar)
+            .field("build_log", &self.build_log)
             .field("theme", &"<theme>")
             .field("app_config", &self.app_config)
             .finish()
@@ -71,6 +73,7 @@ impl Clone for AppState {
             merge_bot: self.merge_bot.clone(),
             key_bindings_panel: self.key_bindings_panel.clone(),
             status_bar: self.status_bar.clone(),
+            build_log: self.build_log.clone(),
             theme: self.theme.clone(),
             keymap: self.keymap.clone(),
             app_config: self.app_config.clone(),
@@ -91,6 +94,7 @@ impl Default for AppState {
             merge_bot: MergeBotState::default(),
             key_bindings_panel: KeyBindingsPanelState::default(),
             status_bar: StatusBarState::default(),
+            build_log: BuildLogState::default(),
             theme: gh_pr_lander_theme::Theme::default(),
             keymap: default_keymap(),
             app_config: gh_pr_config::AppConfig::default(),

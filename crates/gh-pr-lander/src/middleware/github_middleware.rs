@@ -7,17 +7,22 @@
 //! - CI operations (rerun failed jobs)
 //! - Browser/IDE integration
 
-use crate::actions::{Action, BootstrapAction, PullRequestAction, StatusBarAction};
+use crate::actions::{
+    Action, BootstrapAction, BuildLogAction, GlobalAction, PullRequestAction, StatusBarAction,
+};
 use crate::dispatcher::Dispatcher;
 use crate::domain_models::{MergeableStatus, Pr};
 use crate::middleware::Middleware;
 use crate::state::AppState;
+use crate::state::{BuildLogJobMetadata, BuildLogJobStatus, BuildLogPrContext};
 use crate::utils::browser::open_url;
+use crate::views::BuildLogView;
 use gh_client::{
     octocrab::Octocrab, ApiCache, CacheMode, CachedGitHubClient, GitHubClient, MergeMethod,
     OctocrabClient, PullRequest, ReviewEvent,
 };
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use tokio::runtime::Runtime;
 
 /// Middleware for all GitHub API operations
@@ -68,6 +73,11 @@ impl GitHubMiddleware {
         self.client
             .as_ref()
             .map(|c| c.with_mode(CacheMode::WriteOnly))
+    }
+
+    /// Get a cloneable octocrab instance for async operations
+    fn octocrab_arc(&self) -> Option<Arc<Octocrab>> {
+        self.client.as_ref().map(|c| c.inner().octocrab_arc())
     }
 
     /// Get target PRs for an operation (selected PRs or cursor PR)
@@ -884,8 +894,313 @@ impl Middleware for GitHubMiddleware {
                 false // Consume action
             }
 
+            // === Build Log Operations ===
+            Action::BuildLog(BuildLogAction::Open) => {
+                let repo_idx = state.main_view.selected_repository;
+
+                // Get repository info
+                let Some(repo) = state.main_view.repositories.get(repo_idx) else {
+                    dispatcher.dispatch(Action::StatusBar(StatusBarAction::warning(
+                        "No repository selected",
+                        "Build Logs",
+                    )));
+                    return false;
+                };
+
+                // Get repository data
+                let Some(repo_data) = state.main_view.repo_data.get(&repo_idx) else {
+                    dispatcher.dispatch(Action::StatusBar(StatusBarAction::warning(
+                        "No repository data loaded",
+                        "Build Logs",
+                    )));
+                    return false;
+                };
+
+                // Get current PR
+                let Some(pr) = repo_data.prs.get(repo_data.selected_pr) else {
+                    dispatcher.dispatch(Action::StatusBar(StatusBarAction::warning(
+                        "No PR selected",
+                        "Build Logs",
+                    )));
+                    return false;
+                };
+
+                // Get octocrab client
+                let Some(octocrab) = self.octocrab_arc() else {
+                    dispatcher.dispatch(Action::StatusBar(StatusBarAction::error(
+                        "GitHub client not initialized",
+                        "Build Logs",
+                    )));
+                    return false;
+                };
+
+                // Capture PR context
+                let pr_context = BuildLogPrContext {
+                    number: pr.number,
+                    title: pr.title.clone(),
+                    author: pr.author.clone(),
+                };
+                let pr_number = pr.number;
+                let head_sha = pr.head_sha.clone();
+                let repo_org = repo.org.clone();
+                let repo_name = repo.repo.clone();
+                let dispatcher = dispatcher.clone();
+
+                // Dispatch loading state and push view
+                dispatcher.dispatch(Action::BuildLog(BuildLogAction::LoadStart));
+                dispatcher.dispatch(Action::StatusBar(StatusBarAction::running(
+                    format!("Loading build logs for PR #{}...", pr_number),
+                    "Build Logs",
+                )));
+                dispatcher.dispatch(Action::Global(GlobalAction::PushView(Box::new(
+                    BuildLogView::new(),
+                ))));
+
+                // Spawn async task to fetch build logs
+                self.runtime.spawn(async move {
+                    match fetch_build_logs(
+                        &octocrab,
+                        &repo_org,
+                        &repo_name,
+                        &head_sha,
+                        pr_context.clone(),
+                    )
+                    .await
+                    {
+                        Ok((workflows, job_metadata)) => {
+                            dispatcher.dispatch(Action::BuildLog(BuildLogAction::Loaded {
+                                workflows,
+                                job_metadata,
+                                pr_context: pr_context.clone(),
+                            }));
+                            dispatcher.dispatch(Action::StatusBar(StatusBarAction::success(
+                                format!("Build logs loaded for PR #{}", pr_number),
+                                "Build Logs",
+                            )));
+                        }
+                        Err(e) => {
+                            log::error!("Failed to load build logs: {}", e);
+                            dispatcher
+                                .dispatch(Action::BuildLog(BuildLogAction::LoadError(e.clone())));
+                            dispatcher.dispatch(Action::StatusBar(StatusBarAction::error(
+                                format!("Failed to load build logs: {}", e),
+                                "Build Logs",
+                            )));
+                        }
+                    }
+                });
+
+                false // Consume action
+            }
+
             _ => true, // Pass through other actions
         }
+    }
+}
+
+/// Fetch build logs from GitHub Actions
+async fn fetch_build_logs(
+    octocrab: &Octocrab,
+    owner: &str,
+    repo: &str,
+    head_sha: &str,
+    _pr_context: BuildLogPrContext,
+) -> Result<
+    (
+        Vec<gh_actions_log_parser::WorkflowNode>,
+        Vec<BuildLogJobMetadata>,
+    ),
+    String,
+> {
+    // Get workflow runs for this commit
+    let url = format!(
+        "/repos/{}/{}/actions/runs?head_sha={}",
+        owner, repo, head_sha
+    );
+
+    #[derive(Debug, serde::Deserialize)]
+    struct WorkflowRunsResponse {
+        workflow_runs: Vec<WorkflowRunData>,
+    }
+
+    #[derive(Debug, serde::Deserialize)]
+    struct WorkflowRunData {
+        id: u64,
+        name: String,
+        #[allow(dead_code)]
+        conclusion: Option<String>,
+    }
+
+    let workflow_runs: WorkflowRunsResponse = octocrab
+        .get(&url, None::<&()>)
+        .await
+        .map_err(|e| format!("Failed to fetch workflow runs: {}", e))?;
+
+    let mut all_workflows = Vec::new();
+    let mut all_job_metadata = Vec::new();
+
+    // Process each workflow run
+    for workflow_run in workflow_runs.workflow_runs {
+        let workflow_name = workflow_run.name.clone();
+
+        // Fetch jobs for this workflow run
+        let jobs_url = format!(
+            "/repos/{}/{}/actions/runs/{}/jobs",
+            owner, repo, workflow_run.id
+        );
+
+        #[derive(Debug, serde::Deserialize)]
+        struct JobsResponse {
+            jobs: Vec<WorkflowJob>,
+        }
+
+        #[derive(Debug, serde::Deserialize)]
+        struct WorkflowJob {
+            #[allow(dead_code)]
+            id: u64,
+            name: String,
+            html_url: String,
+            conclusion: Option<String>,
+            started_at: Option<String>,
+            completed_at: Option<String>,
+        }
+
+        let jobs_response: Result<JobsResponse, _> = octocrab.get(&jobs_url, None::<&()>).await;
+
+        // Try to download and parse workflow logs
+        // Convert u64 to RunId using .into()
+        match octocrab
+            .actions()
+            .download_workflow_run_logs(owner, repo, workflow_run.id.into())
+            .await
+        {
+            Ok(log_data) => {
+                // Parse the zip file using gh-actions-log-parser
+                match gh_actions_log_parser::parse_workflow_logs(&log_data) {
+                    Ok(parsed_log) => {
+                        // Build workflow node from parsed log
+                        let mut workflow_node = gh_actions_log_parser::WorkflowNode {
+                            name: workflow_name.clone(),
+                            jobs: Vec::new(),
+                            has_failures: false,
+                            total_errors: 0,
+                        };
+
+                        // Process each job from the parsed log
+                        for job_log in parsed_log.jobs {
+                            // Find matching GitHub API job by name
+                            let github_job = if let Ok(ref jobs) = jobs_response {
+                                jobs.jobs.iter().find(|j| job_log.name.contains(&j.name))
+                            } else {
+                                None
+                            };
+
+                            // Count errors in this job
+                            let error_count = count_errors_in_job(&job_log);
+
+                            // Parse job status
+                            let status = if let Some(job) = github_job {
+                                conclusion_to_build_log_status(job.conclusion.as_deref())
+                            } else if error_count > 0 {
+                                BuildLogJobStatus::Failure
+                            } else {
+                                BuildLogJobStatus::Success
+                            };
+
+                            // Calculate duration
+                            let duration = github_job.and_then(|job| {
+                                if let (Some(ref started), Some(ref completed)) =
+                                    (&job.started_at, &job.completed_at)
+                                {
+                                    parse_duration(started, completed)
+                                } else {
+                                    None
+                                }
+                            });
+
+                            // Build job metadata
+                            all_job_metadata.push(BuildLogJobMetadata {
+                                name: job_log.name.clone(),
+                                workflow_name: workflow_name.clone(),
+                                status,
+                                error_count,
+                                duration,
+                                html_url: github_job
+                                    .map(|j| j.html_url.clone())
+                                    .unwrap_or_default(),
+                            });
+
+                            // Convert job_log to JobNode using the parser's built-in function
+                            let job_node = gh_actions_log_parser::job_log_to_tree(job_log);
+                            workflow_node.total_errors += job_node.error_count;
+                            if job_node.error_count > 0 {
+                                workflow_node.has_failures = true;
+                            }
+                            workflow_node.jobs.push(job_node);
+                        }
+
+                        all_workflows.push(workflow_node);
+                    }
+                    Err(e) => {
+                        log::warn!("Failed to parse workflow logs for {}: {}", workflow_name, e);
+                    }
+                }
+            }
+            Err(e) => {
+                log::warn!(
+                    "Failed to download workflow logs for {} (id: {}): {}",
+                    workflow_name,
+                    workflow_run.id,
+                    e
+                );
+            }
+        }
+    }
+
+    // Sort workflows: failed first
+    all_workflows.sort_by_key(|w| if w.has_failures { 0 } else { 1 });
+
+    Ok((all_workflows, all_job_metadata))
+}
+
+/// Count errors in a job log
+fn count_errors_in_job(job_log: &gh_actions_log_parser::JobLog) -> usize {
+    job_log
+        .lines
+        .iter()
+        .filter(|line| {
+            if let Some(ref cmd) = line.command {
+                matches!(cmd, gh_actions_log_parser::WorkflowCommand::Error { .. })
+            } else {
+                line.content.to_lowercase().contains("error:")
+            }
+        })
+        .count()
+}
+
+/// Convert GitHub job conclusion to BuildLogJobStatus
+fn conclusion_to_build_log_status(conclusion: Option<&str>) -> BuildLogJobStatus {
+    match conclusion {
+        Some("success") => BuildLogJobStatus::Success,
+        Some("failure") => BuildLogJobStatus::Failure,
+        Some("cancelled") => BuildLogJobStatus::Cancelled,
+        Some("skipped") => BuildLogJobStatus::Skipped,
+        None => BuildLogJobStatus::InProgress,
+        _ => BuildLogJobStatus::Unknown,
+    }
+}
+
+/// Parse duration from GitHub API timestamps
+fn parse_duration(started: &str, completed: &str) -> Option<Duration> {
+    use chrono::DateTime;
+    if let (Ok(start), Ok(end)) = (
+        DateTime::parse_from_rfc3339(started),
+        DateTime::parse_from_rfc3339(completed),
+    ) {
+        let duration = end.signed_duration_since(start);
+        Some(Duration::from_secs(duration.num_seconds().max(0) as u64))
+    } else {
+        None
     }
 }
 

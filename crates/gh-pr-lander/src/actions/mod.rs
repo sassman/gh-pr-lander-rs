@@ -14,6 +14,7 @@ pub mod text_input;
 // Screen-specific action types
 pub mod add_repository;
 pub mod bootstrap;
+pub mod build_log;
 pub mod command_palette;
 pub mod debug_console;
 pub mod key_bindings;
@@ -25,6 +26,7 @@ pub mod status_bar;
 // Re-export all action types for convenience
 pub use add_repository::AddRepositoryAction;
 pub use bootstrap::BootstrapAction;
+pub use build_log::BuildLogAction;
 pub use command_palette::CommandPaletteAction;
 pub use debug_console::DebugConsoleAction;
 pub use global::GlobalAction;
@@ -73,6 +75,8 @@ pub enum Action {
     MergeBot(MergeBotAction),
     /// Status Bar actions
     StatusBar(StatusBarAction),
+    /// Build Log panel actions
+    BuildLog(BuildLogAction),
 
     /// No-op action
     None,

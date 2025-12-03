@@ -122,18 +122,7 @@ impl KeyBindingsPanelViewModel {
             by_category.entry(category).or_default().push(row);
         }
 
-        // Define category order
-        let category_order = [
-            "Navigation",
-            "Scroll",
-            "Repository",
-            "Pull Request",
-            "Merge Bot",
-            "Command Palette",
-            "Help",
-            "Debug",
-            "General",
-        ];
+        let category_order = CommandId::category_order();
 
         // Build sections in defined order
         let mut sections = Vec::new();

@@ -5,6 +5,7 @@ use ratatui::{layout::Rect, Frame};
 
 // New view modules (concrete view types)
 pub mod add_repository_view;
+pub mod build_log_view;
 pub mod command_palette_view;
 pub mod debug_console_view;
 pub mod key_bindings_view;
@@ -15,6 +16,7 @@ pub mod status_bar;
 
 // Re-export concrete view types for convenience
 pub use add_repository_view::AddRepositoryView;
+pub use build_log_view::BuildLogView;
 pub use command_palette_view::CommandPaletteView;
 pub use debug_console_view::DebugConsoleView;
 pub use key_bindings_view::KeyBindingsView;
@@ -30,6 +32,7 @@ pub enum ViewId {
     CommandPalette,
     AddRepository,
     KeyBindings,
+    BuildLog,
 }
 
 /// View trait - defines the interface that all views must implement

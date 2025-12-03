@@ -10,8 +10,8 @@ use crate::actions::{
     KeyBindingsAction,
 };
 use crate::reducers::{
-    add_repo_reducer, command_palette_reducer, debug_console_reducer, key_bindings_reducer,
-    pull_request_reducer, splash_reducer, status_bar_reducer,
+    add_repo_reducer, build_log_reducer, command_palette_reducer, debug_console_reducer,
+    key_bindings_reducer, pull_request_reducer, splash_reducer, status_bar_reducer,
 };
 use crate::state::AppState;
 use crate::views::MainView;
@@ -217,6 +217,12 @@ pub fn reduce(mut state: AppState, action: &Action) -> AppState {
         // Status bar actions
         Action::StatusBar(sub) => {
             state.status_bar = status_bar_reducer::reduce_status_bar(state.status_bar, sub);
+            state
+        }
+
+        // Build log actions
+        Action::BuildLog(sub) => {
+            state.build_log = build_log_reducer::reduce_build_log(state.build_log, sub);
             state
         }
 

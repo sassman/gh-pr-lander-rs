@@ -78,6 +78,13 @@ impl<C: GitHubClient + Clone> CachedGitHubClient<C> {
         }
     }
 
+    /// Get a reference to the inner client
+    ///
+    /// This allows access to client-specific methods not covered by GitHubClient trait.
+    pub fn inner(&self) -> &C {
+        &self.inner
+    }
+
     /// Try to get data from cache
     fn try_cache_get(&self, method: &str, url: &str, params: &[(&str, &str)]) -> Option<String> {
         if !self.mode.should_read() {

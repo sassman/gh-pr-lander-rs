@@ -16,6 +16,7 @@ mod commands;
 mod dispatcher;
 mod domain_models;
 mod keybindings;
+mod keymap;
 mod logger;
 mod middleware;
 mod reducers;

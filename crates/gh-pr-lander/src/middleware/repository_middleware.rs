@@ -6,7 +6,9 @@
 //! - Translating generic TextInput actions to AddRepository-specific actions
 //! - Opening repository URLs in the browser
 
-use crate::actions::{Action, AddRepositoryAction, BootstrapAction, GlobalAction, PullRequestAction, StatusBarAction};
+use crate::actions::{
+    Action, AddRepositoryAction, BootstrapAction, GlobalAction, PullRequestAction, StatusBarAction,
+};
 use crate::dispatcher::Dispatcher;
 use crate::domain_models::Repository;
 use crate::middleware::Middleware;
@@ -37,9 +39,11 @@ impl RepositoryMiddleware {
     /// Get the GitHub URL for the currently selected repository
     fn get_current_repo_url(state: &AppState) -> Option<String> {
         let repo_idx = state.main_view.selected_repository;
-        state.main_view.repositories.get(repo_idx).map(|repo| {
-            format!("https://github.com/{}/{}", repo.org, repo.repo)
-        })
+        state
+            .main_view
+            .repositories
+            .get(repo_idx)
+            .map(|repo| format!("https://github.com/{}/{}", repo.org, repo.repo))
     }
 }
 

@@ -102,6 +102,22 @@ pub enum CommandId {
     /// Toggle key bindings help panel
     KeyBindingsToggleView,
 
+    // === Build Log ===
+    /// Open build logs viewer for current PR
+    BuildLogOpen,
+    /// Navigate to next error in build logs
+    BuildLogNextError,
+    /// Navigate to previous error in build logs
+    BuildLogPrevError,
+    /// Toggle expand/collapse in build logs
+    BuildLogToggle,
+    /// Toggle timestamps in build logs
+    BuildLogToggleTimestamps,
+    /// Expand all nodes in build logs
+    BuildLogExpandAll,
+    /// Collapse all nodes in build logs
+    BuildLogCollapseAll,
+
     // === General ===
     /// Close the current view/panel
     GlobalClose,
@@ -186,6 +202,19 @@ impl CommandId {
                 Action::Global(GlobalAction::PushView(Box::new(KeyBindingsView::new())))
             }
 
+            // Build Log
+            Self::BuildLogOpen => Action::BuildLog(crate::actions::BuildLogAction::Open),
+            Self::BuildLogNextError => Action::BuildLog(crate::actions::BuildLogAction::NextError),
+            Self::BuildLogPrevError => Action::BuildLog(crate::actions::BuildLogAction::PrevError),
+            Self::BuildLogToggle => Action::BuildLog(crate::actions::BuildLogAction::Toggle),
+            Self::BuildLogToggleTimestamps => {
+                Action::BuildLog(crate::actions::BuildLogAction::ToggleTimestamps)
+            }
+            Self::BuildLogExpandAll => Action::BuildLog(crate::actions::BuildLogAction::ExpandAll),
+            Self::BuildLogCollapseAll => {
+                Action::BuildLog(crate::actions::BuildLogAction::CollapseAll)
+            }
+
             // General
             Self::GlobalClose => Action::Global(GlobalAction::Close),
             Self::GlobalQuit => Action::Global(GlobalAction::Quit),
@@ -248,6 +277,15 @@ impl CommandId {
 
             // Help
             Self::KeyBindingsToggleView => "Show key bindings",
+
+            // Build Log
+            Self::BuildLogOpen => "Open build logs",
+            Self::BuildLogNextError => "Next error",
+            Self::BuildLogPrevError => "Previous error",
+            Self::BuildLogToggle => "Toggle expand/collapse",
+            Self::BuildLogToggleTimestamps => "Toggle timestamps",
+            Self::BuildLogExpandAll => "Expand all",
+            Self::BuildLogCollapseAll => "Collapse all",
 
             // General
             Self::GlobalClose => "Close",
@@ -312,6 +350,15 @@ impl CommandId {
             // Help
             Self::KeyBindingsToggleView => "Show or hide the key bindings help panel",
 
+            // Build Log
+            Self::BuildLogOpen => "Open the build logs viewer for the current PR",
+            Self::BuildLogNextError => "Jump to the next error in the build logs",
+            Self::BuildLogPrevError => "Jump to the previous error in the build logs",
+            Self::BuildLogToggle => "Toggle expand/collapse of the current tree node",
+            Self::BuildLogToggleTimestamps => "Toggle timestamp display in log lines",
+            Self::BuildLogExpandAll => "Expand all nodes in the build log tree",
+            Self::BuildLogCollapseAll => "Collapse all nodes in the build log tree",
+
             // General
             Self::GlobalClose => "Close the current view or panel",
             Self::GlobalQuit => "Exit the application",
@@ -329,9 +376,9 @@ impl CommandId {
             Self::NavigateNext
             | Self::NavigatePrevious
             | Self::NavigateLeft
-            | Self::NavigateRight => "Navigation",
-
-            Self::NavigateToTop | Self::NavigateToBottom => "Scroll",
+            | Self::NavigateRight
+            | Self::NavigateToTop
+            | Self::NavigateToBottom => "Navigation",
 
             Self::DebugToggleConsoleView | Self::DebugClearLogs | Self::DebugLogDump => "Debug",
 
@@ -356,8 +403,30 @@ impl CommandId {
 
             Self::KeyBindingsToggleView => "Help",
 
+            Self::BuildLogOpen
+            | Self::BuildLogNextError
+            | Self::BuildLogPrevError
+            | Self::BuildLogToggle
+            | Self::BuildLogToggleTimestamps
+            | Self::BuildLogExpandAll
+            | Self::BuildLogCollapseAll => "Build Log",
+
             Self::GlobalClose | Self::GlobalQuit => "General",
         }
+    }
+
+    pub fn category_order() -> Vec<&'static str> {
+        vec![
+            "Navigation",
+            "Repository",
+            "Pull Request",
+            "Build Log",
+            "Merge Bot",
+            "Command Palette",
+            "Debug",
+            "Help",
+            "General",
+        ]
     }
 
     /// Check if this command should appear in the command palette
@@ -373,7 +442,15 @@ impl CommandId {
             | Self::NavigateToBottom
             | Self::CommandPaletteOpen => false,
 
-            // All others are shown
+            // Build log navigation commands are keyboard-driven within the view
+            Self::BuildLogNextError
+            | Self::BuildLogPrevError
+            | Self::BuildLogToggle
+            | Self::BuildLogToggleTimestamps
+            | Self::BuildLogExpandAll
+            | Self::BuildLogCollapseAll => false,
+
+            // All others are shown (including BuildLogOpen)
             _ => true,
         }
     }

@@ -6,12 +6,14 @@
 //! - The capabilities of the active view
 //! - Two-key sequences with timeout (e.g., "g g" for scroll-to-top)
 
-use crate::actions::{Action, GlobalAction, NavigationAction, TextInputAction};
+use crate::actions::{Action, BuildLogAction, GlobalAction, NavigationAction, TextInputAction};
 use crate::capabilities::PanelCapabilities;
+use crate::command_id::CommandId;
 use crate::dispatcher::Dispatcher;
 use crate::keybindings::PendingKey;
 use crate::middleware::Middleware;
 use crate::state::AppState;
+use crate::views::ViewId;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::time::Instant;
 
@@ -44,6 +46,14 @@ impl KeyboardMiddleware {
             return self.handle_text_input_key(key, capabilities, state, dispatcher);
         }
 
+        let active_view_id = state.active_view().view_id();
+
+        // Special handling for BuildLog view - Enter key toggles expand/collapse
+        if active_view_id == ViewId::BuildLog && key.code == KeyCode::Enter {
+            dispatcher.dispatch(Action::BuildLog(BuildLogAction::Toggle));
+            return false;
+        }
+
         // Try keymap matching (handles both single keys and two-key sequences)
         let (command_id, clear_pending, new_pending) =
             state.keymap.match_key(&key, self.pending_key.as_ref());
@@ -64,15 +74,43 @@ impl KeyboardMiddleware {
             return false; // Don't process further - waiting for second key
         }
 
-        // If keymap matched, dispatch the command's action
+        // If keymap matched, check if command is valid for current view
         if let Some(cmd_id) = command_id {
-            log::debug!("Keymap matched command: {:?}", cmd_id);
-            dispatcher.dispatch(cmd_id.to_action());
-            return false;
+            // Filter view-specific commands
+            if Self::is_command_valid_for_view(cmd_id, active_view_id) {
+                log::debug!("Keymap matched command: {:?}", cmd_id);
+                dispatcher.dispatch(cmd_id.to_action());
+                return false;
+            } else {
+                log::debug!(
+                    "Command {:?} not valid for view {:?}, ignoring",
+                    cmd_id,
+                    active_view_id
+                );
+            }
         }
 
         // Unhandled keys are consumed (not passed through)
         false
+    }
+
+    /// Check if a command is valid for the given view
+    ///
+    /// Some commands are view-specific (like BuildLog commands) and should
+    /// only be dispatched when that view is active.
+    fn is_command_valid_for_view(cmd_id: CommandId, view_id: ViewId) -> bool {
+        match cmd_id {
+            // BuildLog commands only work in BuildLog view
+            CommandId::BuildLogNextError
+            | CommandId::BuildLogPrevError
+            | CommandId::BuildLogToggle
+            | CommandId::BuildLogToggleTimestamps
+            | CommandId::BuildLogExpandAll
+            | CommandId::BuildLogCollapseAll => view_id == ViewId::BuildLog,
+
+            // All other commands are globally available
+            _ => true,
+        }
     }
 
     /// Handle key events for views that accept text input

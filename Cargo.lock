@@ -814,6 +814,7 @@ dependencies = [
  "bitflags",
  "chrono",
  "figlet-rs",
+ "gh-actions-log-parser",
  "gh-client",
  "gh-pr-config",
  "gh-pr-lander-theme",

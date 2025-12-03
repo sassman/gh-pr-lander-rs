@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+gh-actions-log-parser = { path = "../gh-actions-log-parser" }
 gh-client.workspace = true
 gh-pr-config.workspace = true
 gh-pr-lander-theme.workspace = true

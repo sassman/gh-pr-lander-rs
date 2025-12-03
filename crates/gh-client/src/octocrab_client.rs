@@ -33,6 +33,13 @@ impl OctocrabClient {
     pub fn octocrab(&self) -> &Octocrab {
         &self.octocrab
     }
+
+    /// Get a clone of the Arc-wrapped octocrab instance
+    ///
+    /// This is useful when you need to pass octocrab to an async task.
+    pub fn octocrab_arc(&self) -> Arc<Octocrab> {
+        Arc::clone(&self.octocrab)
+    }
 }
 
 #[async_trait]
