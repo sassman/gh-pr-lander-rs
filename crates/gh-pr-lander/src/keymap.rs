@@ -52,6 +52,11 @@ pub fn default_keymap() -> Keymap {
         KeyBinding::new("F", "F", PrClearFilter),
         // Build Log Operations
         KeyBinding::new("b l", "b -> l", BuildLogOpen),
+        // Diff Viewer
+        KeyBinding::new("d d", "d -> d", DiffViewerOpen),
+        KeyBinding::new("d c", "d -> c", DiffViewerAddComment),
+        KeyBinding::new("d r", "d -> r", DiffViewerShowReviewPopup),
+        KeyBinding::new("d v", "d -> v", DiffViewerVisualMode),
         // Merge Bot
         // KeyBinding::new("M", "M", MergeBotStart),
         // KeyBinding::new("Q", "Q", MergeBotAddToQueue),

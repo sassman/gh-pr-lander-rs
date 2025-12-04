@@ -15,7 +15,7 @@ impl Default for DebugConsoleState {
     fn default() -> Self {
         Self {
             visible: false,
-            logs: Vec::new(),
+            logs: Vec::with_capacity(1_000_000),
             scroll_offset: 0,
             visible_height: 20, // Reasonable default for most terminals
         }

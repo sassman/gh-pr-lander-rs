@@ -8,6 +8,7 @@ mod build_log;
 mod command_palette;
 mod confirmation_popup;
 mod debug_console;
+mod diff_viewer;
 mod key_bindings;
 mod main_view;
 mod merge_bot;
@@ -22,8 +23,9 @@ pub use build_log::{
 pub use command_palette::CommandPaletteState;
 pub use confirmation_popup::{ConfirmationIntent, ConfirmationPopupState};
 pub use debug_console::DebugConsoleState;
+pub use diff_viewer::{DiffViewerLoadingState, DiffViewerState};
 pub use key_bindings::KeyBindingsPanelState;
 pub use main_view::{MainViewState, PrFilter, RepositoryData};
 pub use merge_bot::MergeBotState;
-pub use splash::SplashState;
+pub use splash::{SplashState, MIN_SPLASH_DURATION_SECS};
 pub use status_bar::{StatusBarState, StatusKind, StatusMessage};

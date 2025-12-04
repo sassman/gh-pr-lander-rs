@@ -11,11 +11,11 @@ use crate::actions::{
 };
 use crate::reducers::{
     add_repo_reducer, build_log_reducer, command_palette_reducer, confirmation_popup_reducer,
-    debug_console_reducer, key_bindings_reducer, pull_request_reducer, splash_reducer,
-    status_bar_reducer,
+    debug_console_reducer, diff_viewer_reducer, key_bindings_reducer, pull_request_reducer,
+    splash_reducer, status_bar_reducer,
 };
 use crate::state::AppState;
-use crate::views::MainView;
+use crate::views::{DiffViewerView, PullRequestView};
 
 /// Reducer - pure function that produces new state from current state + action
 ///
@@ -126,6 +126,7 @@ pub fn reduce(mut state: AppState, action: &Action) -> AppState {
         // SCREEN-SPECIFIC ACTIONS - Route by tag to type-safe reducers
         // =======================================================================
         Action::PullRequest(sub) => {
+            // TODO: here we should have a dedicated pull request state in the future
             state.main_view = pull_request_reducer::reduce_pull_request(state.main_view, sub);
             state
         }
@@ -159,9 +160,6 @@ pub fn reduce(mut state: AppState, action: &Action) -> AppState {
             // Handle Confirm - add repository if valid
             if matches!(sub, AddRepositoryAction::Confirm) {
                 if state.add_repo_form.is_valid() {
-                    let repo = state.add_repo_form.to_repository();
-                    log::info!("Adding repository: {}", repo.display_name());
-                    state.main_view.repositories.push(repo);
                     state.add_repo_form.reset();
                     if state.view_stack.len() > 1 {
                         state.view_stack.pop();
@@ -203,17 +201,19 @@ pub fn reduce(mut state: AppState, action: &Action) -> AppState {
                 BootstrapAction::Start => {
                     state.splash.bootstrapping = true;
                     state.splash.animation_frame = 0;
+                    state.splash.loading_complete = false;
                 }
                 BootstrapAction::End => {
+                    // Mark loading as complete, but only transition if min duration elapsed
+                    state.splash.loading_complete = true;
                     state.splash.bootstrapping = false;
-                    state.view_stack.clear();
-                    state.view_stack.push(Box::new(MainView::new()));
                 }
                 BootstrapAction::ConfigLoaded(config) => {
                     state.app_config = config.clone();
                     log::info!("App config loaded into state");
                 }
-                BootstrapAction::LoadRecentRepositories
+                BootstrapAction::ClientReady
+                | BootstrapAction::LoadRecentRepositories
                 | BootstrapAction::LoadRecentRepositoriesDone => {
                     // Handled by middleware
                 }
@@ -244,6 +244,27 @@ pub fn reduce(mut state: AppState, action: &Action) -> AppState {
         // Confirmation popup actions - delegate to dedicated reducer
         Action::ConfirmationPopup(sub) => {
             confirmation_popup_reducer::reduce_confirmation_popup(state, sub)
+        }
+
+        // Diff viewer actions
+        Action::DiffViewer(sub) => {
+            use crate::actions::DiffViewerAction;
+
+            // Handle Open specially to push view onto stack
+            if matches!(sub, DiffViewerAction::Open) {
+                log::debug!("Opening diff viewer");
+                state.view_stack.push(Box::new(DiffViewerView::new()));
+            }
+
+            state.diff_viewer = diff_viewer_reducer::reduce_diff_viewer(state.diff_viewer, sub);
+            state
+        }
+
+        Action::Repository(sub) => {
+            // Handled by repository reducer
+            state.main_view =
+                crate::reducers::repository_reducer::reduce_repository(state.main_view, sub);
+            state
         }
 
         // No-op action

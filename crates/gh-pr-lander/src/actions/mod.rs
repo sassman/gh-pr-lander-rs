@@ -20,9 +20,11 @@ pub mod build_log;
 pub mod command_palette;
 pub mod confirmation_popup;
 pub mod debug_console;
+pub mod diff_viewer;
 pub mod key_bindings;
 pub mod merge_bot;
 pub mod pull_request;
+pub mod repository;
 pub mod splash;
 pub mod status_bar;
 
@@ -35,11 +37,13 @@ pub use command_palette::CommandPaletteAction;
 pub use confirmation_popup::ConfirmationPopupAction;
 pub use context_action::ContextAction;
 pub use debug_console::DebugConsoleAction;
+pub use diff_viewer::DiffViewerAction;
 pub use global::GlobalAction;
 pub use key_bindings::KeyBindingsAction;
 pub use merge_bot::MergeBotAction;
 pub use navigation::NavigationAction;
 pub use pull_request::PullRequestAction;
+pub use repository::RepositoryAction;
 pub use splash::SplashAction;
 pub use status_bar::StatusBarAction;
 pub use text_input::TextInputAction;
@@ -89,6 +93,10 @@ pub enum Action {
     BuildLog(BuildLogAction),
     /// Confirmation Popup actions (approve, comment, request changes, close)
     ConfirmationPopup(ConfirmationPopupAction),
+    /// Diff Viewer panel actions
+    DiffViewer(DiffViewerAction),
+    /// Repository management actions
+    Repository(RepositoryAction),
 
     /// No-op action
     None,

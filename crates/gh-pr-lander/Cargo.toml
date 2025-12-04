@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 gh-actions-log-parser = { path = "../gh-actions-log-parser" }
+gh-diff-viewer = { path = "../gh-diff-viewer" }
 gh-client.workspace = true
 gh-pr-config.workspace = true
 gh-pr-lander-theme.workspace = true

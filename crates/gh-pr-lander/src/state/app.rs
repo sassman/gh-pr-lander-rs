@@ -5,8 +5,8 @@ use crate::views::{SplashView, View};
 
 use super::{
     AddRepoFormState, BuildLogState, CommandPaletteState, ConfirmationPopupState,
-    DebugConsoleState, KeyBindingsPanelState, MainViewState, MergeBotState, SplashState,
-    StatusBarState,
+    DebugConsoleState, DiffViewerState, KeyBindingsPanelState, MainViewState, MergeBotState,
+    SplashState, StatusBarState,
 };
 
 /// Application state
@@ -24,6 +24,7 @@ pub struct AppState {
     pub key_bindings_panel: KeyBindingsPanelState,
     pub status_bar: StatusBarState,
     pub build_log: BuildLogState,
+    pub diff_viewer: DiffViewerState,
     /// Confirmation popup state (present only when popup is shown)
     pub confirmation_popup: Option<ConfirmationPopupState>,
     pub theme: gh_pr_lander_theme::Theme,
@@ -57,6 +58,7 @@ impl std::fmt::Debug for AppState {
             .field("key_bindings_panel", &self.key_bindings_panel)
             .field("status_bar", &self.status_bar)
             .field("build_log", &self.build_log)
+            .field("diff_viewer", &self.diff_viewer)
             .field("confirmation_popup", &self.confirmation_popup)
             .field("theme", &"<theme>")
             .field("app_config", &self.app_config)
@@ -78,6 +80,7 @@ impl Clone for AppState {
             key_bindings_panel: self.key_bindings_panel.clone(),
             status_bar: self.status_bar.clone(),
             build_log: self.build_log.clone(),
+            diff_viewer: self.diff_viewer.clone(),
             confirmation_popup: self.confirmation_popup.clone(),
             theme: self.theme.clone(),
             keymap: self.keymap.clone(),
@@ -100,6 +103,7 @@ impl Default for AppState {
             key_bindings_panel: KeyBindingsPanelState::default(),
             status_bar: StatusBarState::default(),
             build_log: BuildLogState::default(),
+            diff_viewer: DiffViewerState::default(),
             confirmation_popup: None,
             theme: gh_pr_lander_theme::Theme::default(),
             keymap: default_keymap(),

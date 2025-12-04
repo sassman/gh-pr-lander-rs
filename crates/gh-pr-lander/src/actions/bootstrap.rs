@@ -11,6 +11,8 @@ pub enum BootstrapAction {
     Start,
     /// Bootstrap process completed
     End,
+    /// GitHub client initialized and ready
+    ClientReady,
     /// Application configuration loaded
     ConfigLoaded(gh_pr_config::AppConfig),
     /// Request to load recent repositories from config

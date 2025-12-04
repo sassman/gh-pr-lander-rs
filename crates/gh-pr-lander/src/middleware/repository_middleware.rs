@@ -7,7 +7,8 @@
 //! - Opening repository URLs in the browser
 
 use crate::actions::{
-    Action, AddRepositoryAction, BootstrapAction, GlobalAction, PullRequestAction, StatusBarAction,
+    Action, AddRepositoryAction, BootstrapAction, GlobalAction, PullRequestAction,
+    RepositoryAction, StatusBarAction,
 };
 use crate::dispatcher::Dispatcher;
 use crate::domain_models::Repository;
@@ -105,7 +106,7 @@ impl Middleware for RepositoryMiddleware {
             }
 
             // Handle opening repository in browser
-            Action::PullRequest(PullRequestAction::OpenRepositoryInBrowser) => {
+            Action::Repository(RepositoryAction::OpenRepositoryInBrowser) => {
                 if let Some(url) = Self::get_current_repo_url(state) {
                     let repo_idx = state.main_view.selected_repository;
                     let repo_name = state

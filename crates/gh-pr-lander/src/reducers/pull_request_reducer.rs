@@ -227,9 +227,6 @@ pub fn reduce_pull_request(mut state: MainViewState, action: &PullRequestAction)
             log::error!("Rerun failed: {}", error);
         }
 
-        // Open repository in browser - handled by middleware
-        PullRequestAction::OpenRepositoryInBrowser => {}
-
         // CI/Build status actions
         PullRequestAction::CheckBuildStatus { .. } => {
             // Handled by middleware - triggers async CI status fetch
@@ -247,9 +244,26 @@ pub fn reduce_pull_request(mut state: MainViewState, action: &PullRequestAction)
                     .iter_mut()
                     .find(|p| p.number == *pr_number as usize)
                 {
+                    log::info!(
+                        "Reducer: Updating PR #{} status from {:?} to {:?}",
+                        pr_number,
+                        pr.mergeable,
+                        status
+                    );
                     pr.mergeable = status.clone();
-                    log::debug!("Updated CI status for PR #{} to {:?}", pr_number, status);
+                } else {
+                    log::warn!(
+                        "Reducer: PR #{} not found in repo_data for repo_idx {}",
+                        pr_number,
+                        repo_idx
+                    );
                 }
+            } else {
+                log::warn!(
+                    "Reducer: repo_data not found for repo_idx {} when updating PR #{}",
+                    repo_idx,
+                    pr_number
+                );
             }
         }
     }

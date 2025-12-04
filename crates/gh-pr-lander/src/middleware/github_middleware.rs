@@ -8,7 +8,8 @@
 //! - Browser/IDE integration
 
 use crate::actions::{
-    Action, BootstrapAction, BuildLogAction, GlobalAction, PullRequestAction, StatusBarAction,
+    Action, BootstrapAction, BuildLogAction, DiffViewerAction, GlobalAction, PullRequestAction,
+    StatusBarAction,
 };
 use crate::dispatcher::Dispatcher;
 use crate::domain_models::{MergeableStatus, Pr};
@@ -29,8 +30,8 @@ use tokio::runtime::Runtime;
 pub struct GitHubMiddleware {
     /// Tokio runtime for async operations
     runtime: Runtime,
-    /// Cached GitHub client (initialized on BootstrapStart)
-    client: Option<CachedGitHubClient<OctocrabClient>>,
+    /// Shared client holder (populated asynchronously)
+    client_holder: Arc<Mutex<Option<CachedGitHubClient<OctocrabClient>>>>,
     /// Shared cache instance
     cache: Arc<Mutex<ApiCache>>,
 }
@@ -47,37 +48,45 @@ impl GitHubMiddleware {
 
         Self {
             runtime,
-            client: None,
+            client_holder: Arc::new(Mutex::new(None)),
             cache,
         }
     }
 
-    /// Initialize the GitHub client with caching
-    fn initialize_client(&mut self) {
-        let cache = Arc::clone(&self.cache);
-        let result = self.runtime.block_on(async { init_client(cache).await });
+    /// Get the client if initialized
+    fn client(&self) -> Option<CachedGitHubClient<OctocrabClient>> {
+        self.client_holder.lock().ok()?.clone()
+    }
 
-        match result {
-            Ok(client) => {
-                log::info!("GitHubMiddleware: GitHub client initialized with caching");
-                self.client = Some(client);
+    /// Initialize the GitHub client with caching (async, non-blocking)
+    fn initialize_client(&self, dispatcher: &Dispatcher) {
+        let cache = Arc::clone(&self.cache);
+        let client_holder = Arc::clone(&self.client_holder);
+        let dispatcher = dispatcher.clone();
+
+        self.runtime.spawn(async move {
+            match init_client(cache).await {
+                Ok(client) => {
+                    log::info!("GitHubMiddleware: GitHub client initialized with caching");
+                    *client_holder.lock().unwrap() = Some(client);
+                    // Signal that client is ready - trigger any pending operations
+                    dispatcher.dispatch(Action::Bootstrap(BootstrapAction::ClientReady));
+                }
+                Err(e) => {
+                    log::warn!("GitHubMiddleware: GitHub client not initialized: {}", e);
+                }
             }
-            Err(e) => {
-                log::warn!("GitHubMiddleware: GitHub client not initialized: {}", e);
-            }
-        }
+        });
     }
 
     /// Get a client configured for force refresh (WriteOnly mode)
     fn force_refresh_client(&self) -> Option<CachedGitHubClient<OctocrabClient>> {
-        self.client
-            .as_ref()
-            .map(|c| c.with_mode(CacheMode::WriteOnly))
+        self.client().map(|c| c.with_mode(CacheMode::WriteOnly))
     }
 
     /// Get a cloneable octocrab instance for async operations
     fn octocrab_arc(&self) -> Option<Arc<Octocrab>> {
-        self.client.as_ref().map(|c| c.inner().octocrab_arc())
+        self.client().map(|c| c.inner().octocrab_arc())
     }
 
     /// Get target PRs for an operation (selected PRs or cursor PR)
@@ -226,7 +235,7 @@ impl GitHubMiddleware {
         state: &AppState,
         dispatcher: &Dispatcher,
     ) {
-        if self.client.is_none() {
+        if self.client().is_none() {
             return;
         }
 
@@ -270,7 +279,7 @@ impl GitHubMiddleware {
             };
             client
         } else {
-            let Some(client) = self.client.clone() else {
+            let Some(client) = self.client() else {
                 log::error!("PrLoad: client not initialized");
                 dispatcher.dispatch(Action::PullRequest(PullRequestAction::LoadError(
                     repo_idx,
@@ -331,12 +340,15 @@ impl GitHubMiddleware {
                         "Load",
                     )));
 
-                    // Trigger CI status checks for each PR (background fetch)
-                    dispatch_ci_status_checks(repo_idx, &domain_prs, &dispatcher);
-
+                    // First dispatch Loaded to populate repo_data.prs
                     dispatcher.dispatch(Action::PullRequest(PullRequestAction::Loaded(
-                        repo_idx, domain_prs,
+                        repo_idx,
+                        domain_prs.clone(),
                     )));
+
+                    // Then trigger CI status checks for each PR (background fetch)
+                    // This must come AFTER Loaded so the PRs exist when BuildStatusUpdated arrives
+                    dispatch_ci_status_checks(repo_idx, &domain_prs, &dispatcher);
                 }
                 Err(e) => {
                     log::error!("Failed to load PRs for {}/{}: {}", org, repo_name, e);
@@ -365,9 +377,16 @@ impl Default for GitHubMiddleware {
 impl Middleware for GitHubMiddleware {
     fn handle(&mut self, action: &Action, state: &AppState, dispatcher: &Dispatcher) -> bool {
         match action {
-            // Initialize client on bootstrap
+            // Initialize client on bootstrap (async, non-blocking)
             Action::Bootstrap(BootstrapAction::Start) => {
-                self.initialize_client();
+                self.initialize_client(dispatcher);
+                true // Let action pass through
+            }
+
+            // Client ready - trigger repository loading
+            Action::Bootstrap(BootstrapAction::ClientReady) => {
+                log::info!("GitHub client ready, triggering repository loading");
+                dispatcher.dispatch(Action::Bootstrap(BootstrapAction::LoadRecentRepositories));
                 true // Let action pass through
             }
 
@@ -378,7 +397,7 @@ impl Middleware for GitHubMiddleware {
 
             // Handle PR refresh request (force refresh - bypass cache)
             Action::PullRequest(PullRequestAction::Refresh) => {
-                if self.client.is_none() {
+                if self.client().is_none() {
                     log::warn!("Cannot refresh PRs: GitHub client not initialized");
                     return true;
                 }
@@ -426,7 +445,7 @@ impl Middleware for GitHubMiddleware {
             }
 
             Action::PullRequest(PullRequestAction::MergeRequest) => {
-                let client = match &self.client {
+                let client = match &self.client() {
                     Some(c) => c.clone(),
                     None => {
                         log::error!("GitHub client not available");
@@ -516,7 +535,7 @@ impl Middleware for GitHubMiddleware {
             }
 
             Action::PullRequest(PullRequestAction::RebaseRequest) => {
-                let client = match &self.client {
+                let client = match &self.client() {
                     Some(c) => c.clone(),
                     None => {
                         log::error!("GitHub client not available");
@@ -721,7 +740,7 @@ impl Middleware for GitHubMiddleware {
                 pr_numbers,
                 message,
             }) => {
-                let client = match &self.client {
+                let client = match &self.client() {
                     Some(c) => c.clone(),
                     None => {
                         log::error!("GitHub client not available");
@@ -869,7 +888,7 @@ impl Middleware for GitHubMiddleware {
                 pr_numbers,
                 message,
             }) => {
-                let client = match &self.client {
+                let client = match &self.client() {
                     Some(c) => c.clone(),
                     None => {
                         log::error!("GitHub client not available");
@@ -975,7 +994,7 @@ impl Middleware for GitHubMiddleware {
                     }
                 };
 
-                let cached_client = match &self.client {
+                let cached_client = match &self.client() {
                     Some(c) => c.clone(),
                     None => {
                         log::error!("GitHub client not available");
@@ -1197,7 +1216,7 @@ impl Middleware for GitHubMiddleware {
             }
 
             Action::PullRequest(PullRequestAction::RerunFailedJobs) => {
-                let client = match &self.client {
+                let client = match &self.client() {
                     Some(c) => c.clone(),
                     None => {
                         log::error!("GitHub client not available");
@@ -1396,7 +1415,7 @@ impl Middleware for GitHubMiddleware {
                 pr_number,
                 head_sha,
             }) => {
-                let client = match &self.client {
+                let client = match &self.client() {
                     Some(c) => c.clone(),
                     None => {
                         log::warn!("Cannot check build status: GitHub client not initialized");
@@ -1415,13 +1434,14 @@ impl Middleware for GitHubMiddleware {
                 let dispatcher = dispatcher.clone();
 
                 // Spawn async task to fetch CI status
+                log::info!("Spawning CI status fetch for PR #{}", pr_number);
                 self.runtime.spawn(async move {
                     match client.fetch_ci_status(&owner, &repo, &head_sha).await {
                         Ok(ci_status) => {
                             // Convert CiState to MergeableStatus using From trait
                             let status: MergeableStatus = ci_status.state.into();
-                            log::debug!(
-                                "CI status for PR #{}: {:?} (passed: {}, failed: {}, pending: {})",
+                            log::info!(
+                                "CI status fetched for PR #{}: {:?} (passed: {}, failed: {}, pending: {})",
                                 pr_number,
                                 status,
                                 ci_status.passed,
@@ -1448,6 +1468,116 @@ impl Middleware for GitHubMiddleware {
                 });
 
                 true // Let action pass through
+            }
+
+            // === Diff Viewer Operations ===
+            Action::DiffViewer(DiffViewerAction::Open) => {
+                let repo_idx = state.main_view.selected_repository;
+
+                // Get repository info
+                let Some(repo) = state.main_view.repositories.get(repo_idx) else {
+                    dispatcher.dispatch(Action::StatusBar(StatusBarAction::warning(
+                        "No repository selected",
+                        "Diff Viewer",
+                    )));
+                    return false;
+                };
+
+                // Get repository data
+                let Some(repo_data) = state.main_view.repo_data.get(&repo_idx) else {
+                    dispatcher.dispatch(Action::StatusBar(StatusBarAction::warning(
+                        "No repository data loaded",
+                        "Diff Viewer",
+                    )));
+                    return false;
+                };
+
+                // Get current PR
+                let Some(pr) = repo_data.prs.get(repo_data.selected_pr) else {
+                    dispatcher.dispatch(Action::StatusBar(StatusBarAction::warning(
+                        "No PR selected",
+                        "Diff Viewer",
+                    )));
+                    return false;
+                };
+
+                // Get octocrab client
+                let Some(octocrab) = self.octocrab_arc() else {
+                    dispatcher.dispatch(Action::StatusBar(StatusBarAction::error(
+                        "GitHub client not initialized",
+                        "Diff Viewer",
+                    )));
+                    return false;
+                };
+
+                // Capture PR context
+                let pr_number = pr.number as u64;
+                let pr_title = pr.title.clone();
+                let head_sha = pr.head_sha.clone();
+                let base_sha = String::new(); // We'll get this from the API
+                let repo_org = repo.org.clone();
+                let repo_name = repo.repo.clone();
+                let dispatcher = dispatcher.clone();
+
+                // Dispatch loading state
+                dispatcher.dispatch(Action::DiffViewer(DiffViewerAction::LoadStart));
+                dispatcher.dispatch(Action::StatusBar(StatusBarAction::running(
+                    format!("Loading diff for PR #{}...", pr_number),
+                    "Diff Viewer",
+                )));
+
+                // Spawn async task to fetch diff
+                self.runtime.spawn(async move {
+                    match fetch_pr_diff(&octocrab, &repo_org, &repo_name, pr_number).await {
+                        Ok(diff_text) => {
+                            // Parse the diff
+                            match gh_diff_viewer::parse_unified_diff(
+                                &diff_text, &base_sha, &head_sha,
+                            ) {
+                                Ok(diff) => {
+                                    dispatcher.dispatch(Action::DiffViewer(
+                                        DiffViewerAction::Loaded {
+                                            diff,
+                                            pr_number,
+                                            pr_title,
+                                        },
+                                    ));
+                                    dispatcher.dispatch(Action::StatusBar(
+                                        StatusBarAction::success(
+                                            format!("Diff loaded for PR #{}", pr_number),
+                                            "Diff Viewer",
+                                        ),
+                                    ));
+                                }
+                                Err(e) => {
+                                    log::error!("Failed to parse diff: {}", e);
+                                    dispatcher.dispatch(Action::DiffViewer(
+                                        DiffViewerAction::LoadError(format!(
+                                            "Failed to parse diff: {}",
+                                            e
+                                        )),
+                                    ));
+                                    dispatcher.dispatch(Action::StatusBar(StatusBarAction::error(
+                                        format!("Failed to parse diff: {}", e),
+                                        "Diff Viewer",
+                                    )));
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            log::error!("Failed to fetch diff: {}", e);
+                            dispatcher.dispatch(Action::DiffViewer(DiffViewerAction::LoadError(
+                                e.clone(),
+                            )));
+                            dispatcher.dispatch(Action::StatusBar(StatusBarAction::error(
+                                format!("Failed to fetch diff: {}", e),
+                                "Diff Viewer",
+                            )));
+                        }
+                    }
+                });
+
+                true // Let action pass through to push view
             }
 
             _ => true, // Pass through other actions
@@ -1666,31 +1796,29 @@ async fn init_client(
     cache: Arc<Mutex<ApiCache>>,
 ) -> anyhow::Result<CachedGitHubClient<OctocrabClient>> {
     // Try environment variables first
-    let token = std::env::var("GITHUB_TOKEN")
-        .or_else(|_| std::env::var("GH_TOKEN"))
-        .or_else(|_| {
-            // Fallback: try to get token from gh CLI
-            log::debug!("No GITHUB_TOKEN/GH_TOKEN found, trying gh auth token");
-            std::process::Command::new("gh")
-                .args(["auth", "token"])
-                .output()
-                .ok()
-                .and_then(|output| {
-                    if output.status.success() {
-                        String::from_utf8(output.stdout)
-                            .ok()
-                            .map(|s| s.trim().to_string())
-                    } else {
-                        None
-                    }
-                })
-                .ok_or(std::env::VarError::NotPresent)
-        })
-        .map_err(|_| {
-            anyhow::anyhow!(
+    let token = if let Ok(token) = std::env::var("GITHUB_TOKEN") {
+        token
+    } else if let Ok(token) = std::env::var("GH_TOKEN") {
+        token
+    } else {
+        // Fallback: try to get token from gh CLI (async to avoid blocking)
+        log::debug!("No GITHUB_TOKEN/GH_TOKEN found, trying gh auth token");
+        let output = tokio::process::Command::new("gh")
+            .args(["auth", "token"])
+            .output()
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to run gh auth token: {}", e))?;
+
+        if output.status.success() {
+            String::from_utf8(output.stdout)
+                .map(|s| s.trim().to_string())
+                .map_err(|e| anyhow::anyhow!("Invalid UTF-8 from gh auth token: {}", e))?
+        } else {
+            return Err(anyhow::anyhow!(
                 "GitHub token not found. Set GITHUB_TOKEN, GH_TOKEN, or run 'gh auth login'"
-            )
-        })?;
+            ));
+        }
+    };
 
     let octocrab = Octocrab::builder().personal_token(token).build()?;
     let octocrab_client = OctocrabClient::new(Arc::new(octocrab));
@@ -1704,12 +1832,52 @@ async fn init_client(
 /// Dispatch CheckBuildStatus actions for the given PRs
 fn dispatch_ci_status_checks(repo_idx: usize, prs: &[Pr], dispatcher: &Dispatcher) {
     for pr in prs {
+        // --------------- THIS IS A SMOKE TEST - REMOVE ME ---------------
+        // SMOKE TEST: for now do nothing to see if this is faster
+        // --------------- REMOVE ME --------------------------------------
+        dispatcher.dispatch(Action::Bootstrap(
+            BootstrapAction::LoadRecentRepositoriesDone,
+        ));
+        return;
+        // --------------- END OF REMOVE ME -------------------------------
+
         dispatcher.dispatch(Action::PullRequest(PullRequestAction::CheckBuildStatus {
             repo_idx,
             pr_number: pr.number as u64,
             head_sha: pr.head_sha.clone(),
         }));
     }
+}
+
+/// Fetch PR diff from GitHub API using gh CLI
+async fn fetch_pr_diff(
+    _octocrab: &Octocrab, // Not used currently, but kept for potential future use
+    owner: &str,
+    repo: &str,
+    pr_number: u64,
+) -> Result<String, String> {
+    // Use gh CLI to fetch the diff with the correct Accept header
+    // This is the most reliable way to get the diff in unified format
+    let output = tokio::process::Command::new("gh")
+        .args([
+            "api",
+            &format!("/repos/{}/{}/pulls/{}", owner, repo, pr_number),
+            "-H",
+            "Accept: application/vnd.github.diff",
+        ])
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run gh api: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("gh api failed: {}", stderr));
+    }
+
+    let diff_text =
+        String::from_utf8(output.stdout).map_err(|e| format!("Invalid UTF-8 in diff: {}", e))?;
+
+    Ok(diff_text)
 }
 
 /// Convert gh-client PullRequest to domain Pr

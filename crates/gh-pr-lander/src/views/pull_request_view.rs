@@ -3,7 +3,8 @@
 //! Renders the repository tabs and PR table.
 
 use crate::actions::{
-    Action, AvailableAction, BuildLogAction, ContextAction, NavigationAction, PullRequestAction,
+    Action, AvailableAction, BuildLogAction, ContextAction, DiffViewerAction, NavigationAction,
+    PullRequestAction,
 };
 use crate::capabilities::PanelCapabilities;
 use crate::command_id::CommandId;
@@ -24,15 +25,15 @@ use ratatui::{
 
 /// Main application view
 #[derive(Debug, Clone)]
-pub struct MainView;
+pub struct PullRequestView;
 
-impl MainView {
+impl PullRequestView {
     pub fn new() -> Self {
         Self
     }
 }
 
-impl View for MainView {
+impl View for PullRequestView {
     fn view_id(&self) -> crate::views::ViewId {
         crate::views::ViewId::PullRequestView
     }
@@ -74,6 +75,7 @@ impl View for MainView {
         matches!(
             action,
             Action::PullRequest(_)
+                | Action::DiffViewer(DiffViewerAction::Open)
                 | Action::BuildLog(BuildLogAction::Open)
                 | Action::ViewContext(_)
                 | Action::Navigate(_)
@@ -87,6 +89,7 @@ impl View for MainView {
             AvailableAction::primary(CommandId::Confirm, "Open"),
             AvailableAction::primary(CommandId::PrMerge, "Merge"),
             AvailableAction::primary(CommandId::PrOpenBuildLogs, "Build Logs"),
+            AvailableAction::primary(CommandId::DiffViewerOpen, "Diffs"),
             AvailableAction::selection(CommandId::ToggleSelect, "Select"),
             AvailableAction::navigation(CommandId::RepositoryNext, "Next Repo"),
         ]

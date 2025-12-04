@@ -5,7 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::views::KeyBindingsView;
+use crate::{actions::RepositoryAction, views::KeyBindingsView};
 
 /// Unique identifier for each command in the application.
 ///
@@ -133,6 +133,22 @@ pub enum CommandId {
     /// Collapse all nodes in build logs
     BuildLogCollapseAll,
 
+    // === Diff Viewer ===
+    /// Open diff viewer for current PR
+    DiffViewerOpen,
+    /// Switch focus between file tree and diff content pane
+    DiffViewerSwitchPane,
+    /// Add a comment on the current line
+    DiffViewerAddComment,
+    /// Submit the current comment
+    DiffViewerSubmitComment,
+    /// Cancel comment editing
+    DiffViewerCancelComment,
+    /// Enter visual mode for line selection
+    DiffViewerVisualMode,
+    /// Show review submission popup
+    DiffViewerShowReviewPopup,
+
     // === General ===
     /// Close the current view/panel
     GlobalClose,
@@ -164,7 +180,7 @@ impl CommandId {
                 Action::Global(GlobalAction::PushView(Box::new(AddRepositoryView::new())))
             }
             Self::RepositoryOpenInBrowser => {
-                Action::PullRequest(PullRequestAction::OpenRepositoryInBrowser)
+                Action::Repository(RepositoryAction::OpenRepositoryInBrowser)
             }
             Self::RepositoryNext => Action::PullRequest(PullRequestAction::RepositoryNext),
             Self::RepositoryPrevious => Action::PullRequest(PullRequestAction::RepositoryPrevious),
@@ -236,6 +252,27 @@ impl CommandId {
             Self::BuildLogExpandAll => Action::BuildLog(crate::actions::BuildLogAction::ExpandAll),
             Self::BuildLogCollapseAll => {
                 Action::BuildLog(crate::actions::BuildLogAction::CollapseAll)
+            }
+
+            // Diff Viewer
+            Self::DiffViewerOpen => Action::DiffViewer(crate::actions::DiffViewerAction::Open),
+            Self::DiffViewerSwitchPane => {
+                Action::DiffViewer(crate::actions::DiffViewerAction::SwitchPane)
+            }
+            Self::DiffViewerAddComment => {
+                Action::DiffViewer(crate::actions::DiffViewerAction::AddComment)
+            }
+            Self::DiffViewerSubmitComment => {
+                Action::DiffViewer(crate::actions::DiffViewerAction::CommitComment)
+            }
+            Self::DiffViewerCancelComment => {
+                Action::DiffViewer(crate::actions::DiffViewerAction::CancelComment)
+            }
+            Self::DiffViewerVisualMode => {
+                Action::DiffViewer(crate::actions::DiffViewerAction::EnterVisualMode)
+            }
+            Self::DiffViewerShowReviewPopup => {
+                Action::DiffViewer(crate::actions::DiffViewerAction::ShowReviewPopup)
             }
 
             // General
@@ -318,6 +355,15 @@ impl CommandId {
             Self::BuildLogExpandAll => "Expand all",
             Self::BuildLogCollapseAll => "Collapse all",
 
+            // Diff Viewer
+            Self::DiffViewerOpen => "Open diff viewer",
+            Self::DiffViewerSwitchPane => "Switch pane",
+            Self::DiffViewerAddComment => "Add comment",
+            Self::DiffViewerSubmitComment => "Submit comment",
+            Self::DiffViewerCancelComment => "Cancel comment",
+            Self::DiffViewerVisualMode => "Visual mode",
+            Self::DiffViewerShowReviewPopup => "Submit review",
+
             // General
             Self::GlobalClose => "Close",
             Self::GlobalQuit => "Quit",
@@ -398,6 +444,19 @@ impl CommandId {
             Self::BuildLogExpandAll => "Expand all nodes in the build log tree",
             Self::BuildLogCollapseAll => "Collapse all nodes in the build log tree",
 
+            // Diff Viewer
+            Self::DiffViewerOpen => {
+                "Open the diff viewer to review PR changes with syntax highlighting"
+            }
+            Self::DiffViewerSwitchPane => "Switch focus between file tree and diff content pane",
+            Self::DiffViewerAddComment => "Add a comment on the current line or selection",
+            Self::DiffViewerSubmitComment => "Submit the current comment",
+            Self::DiffViewerCancelComment => "Cancel comment editing and discard changes",
+            Self::DiffViewerVisualMode => "Enter visual mode for multi-line selection",
+            Self::DiffViewerShowReviewPopup => {
+                "Show the review submission popup (Approve, Request Changes, Comment)"
+            }
+
             // General
             Self::GlobalClose => "Close the current view or panel",
             Self::GlobalQuit => "Exit the application",
@@ -454,6 +513,14 @@ impl CommandId {
             | Self::BuildLogExpandAll
             | Self::BuildLogCollapseAll => "Build Log",
 
+            Self::DiffViewerOpen
+            | Self::DiffViewerSwitchPane
+            | Self::DiffViewerAddComment
+            | Self::DiffViewerSubmitComment
+            | Self::DiffViewerCancelComment
+            | Self::DiffViewerVisualMode
+            | Self::DiffViewerShowReviewPopup => "Diff Viewer",
+
             Self::GlobalClose | Self::GlobalQuit => "General",
         }
     }
@@ -465,6 +532,7 @@ impl CommandId {
             "Repository",
             "Pull Request",
             "Build Log",
+            "Diff Viewer",
             "Merge Bot",
             "Command Palette",
             "Debug",
@@ -497,7 +565,15 @@ impl CommandId {
             | Self::BuildLogExpandAll
             | Self::BuildLogCollapseAll => false,
 
-            // All others are shown (including BuildLogOpen)
+            // Diff viewer view-specific commands are keyboard-driven
+            Self::DiffViewerSwitchPane
+            | Self::DiffViewerAddComment
+            | Self::DiffViewerSubmitComment
+            | Self::DiffViewerCancelComment
+            | Self::DiffViewerVisualMode
+            | Self::DiffViewerShowReviewPopup => false,
+
+            // All others are shown (including DiffViewerOpen)
             _ => true,
         }
     }

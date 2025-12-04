@@ -6,10 +6,11 @@
 //! - Listens for LoadRecentRepositoriesDone to dispatch BootstrapEnd
 //! - Stops tick thread on BootstrapEnd
 
-use crate::actions::{Action, BootstrapAction, GlobalAction};
+use crate::actions::{Action, BootstrapAction, GlobalAction, SplashAction};
 use crate::dispatcher::Dispatcher;
 use crate::middleware::Middleware;
 use crate::state::AppState;
+use crate::views::{PullRequestView, SplashView};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -74,8 +75,8 @@ impl Middleware for BootstrapMiddleware {
                     log::debug!("Bootstrap: Tick thread started");
                 }
 
-                // Trigger loading of recent repositories
-                dispatcher.dispatch(Action::Bootstrap(BootstrapAction::LoadRecentRepositories));
+                // NOTE: Repository loading is now triggered by ClientReady from github_middleware
+                // after the async client initialization completes
 
                 // Pass through
                 true
@@ -84,6 +85,9 @@ impl Middleware for BootstrapMiddleware {
             Action::Bootstrap(BootstrapAction::LoadRecentRepositoriesDone) => {
                 log::info!("BootstrapMiddleware: Repository loading done, ending bootstrap");
                 dispatcher.dispatch(Action::Bootstrap(BootstrapAction::End));
+                dispatcher.dispatch(Action::Global(GlobalAction::ReplaceView(Box::new(
+                    PullRequestView::new(),
+                ))));
                 true
             }
 
