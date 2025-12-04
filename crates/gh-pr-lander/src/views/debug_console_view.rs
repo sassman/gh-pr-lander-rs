@@ -57,7 +57,11 @@ impl View for DebugConsoleView {
         Some(Action::DebugConsole(action))
     }
 
-    fn translate_context_action(&self, _action: ContextAction, _state: &AppState) -> Option<Action> {
+    fn translate_context_action(
+        &self,
+        _action: ContextAction,
+        _state: &AppState,
+    ) -> Option<Action> {
         // Debug console is read-only log viewer, no context actions apply
         None
     }
@@ -65,7 +69,10 @@ impl View for DebugConsoleView {
     fn accepts_action(&self, action: &Action) -> bool {
         matches!(
             action,
-            Action::DebugConsole(_) | Action::ViewContext(_) | Action::Navigate(_) | Action::Global(_)
+            Action::DebugConsole(_)
+                | Action::ViewContext(_)
+                | Action::Navigate(_)
+                | Action::Global(_)
         )
     }
 }

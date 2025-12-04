@@ -4,9 +4,10 @@ use super::{CommentEditor, NavigationState};
 use crate::action::DiffAction;
 use crate::event::{DiffEvent, ExpandDirection};
 use crate::model::{
-    DiffLine, DiffSide, FileDiff, FileTreeNode, LineKind, PendingComment, PullRequestDiff,
-    ReviewEvent,
+    DiffLine, DiffSide, FileDiff, FileTreeNode, FlatFileEntry, LineKind, PendingComment,
+    PullRequestDiff, ReviewEvent,
 };
+use std::collections::HashSet;
 
 /// Main state for the diff viewer widget.
 #[derive(Debug, Clone)]
@@ -27,6 +28,12 @@ pub struct DiffViewerState {
     pub selected_review_event: ReviewEvent,
     /// Viewport height (for scroll calculations)
     pub viewport_height: usize,
+
+    // === Cached state for rendering performance ===
+    /// Cached flattened file tree (invalidated on expand/collapse).
+    cached_flat_tree: Option<Vec<FlatFileEntry>>,
+    /// Cached comment line numbers per file path (invalidated on comment add/remove).
+    cached_comment_lines: Option<std::collections::HashMap<String, HashSet<u32>>>,
 }
 
 impl DiffViewerState {
@@ -34,7 +41,7 @@ impl DiffViewerState {
     pub fn new(diff: PullRequestDiff) -> Self {
         let file_tree = FileTreeNode::from_files(&diff.files);
 
-        Self {
+        let mut state = Self {
             diff,
             file_tree,
             nav: NavigationState::new(),
@@ -43,7 +50,86 @@ impl DiffViewerState {
             show_review_popup: false,
             selected_review_event: ReviewEvent::Comment,
             viewport_height: 20, // Default, will be updated by orchestrator
+            cached_flat_tree: None,
+            cached_comment_lines: None,
+        };
+
+        // Sync file tree cursor to the first actual file (skip directories)
+        state.sync_file_tree_cursor_to_selected_file();
+        state
+    }
+
+    /// Sync the file tree cursor position to match the currently selected file.
+    /// This finds the first file entry in the flattened tree that matches
+    /// the selected file index and moves the cursor there.
+    fn sync_file_tree_cursor_to_selected_file(&mut self) {
+        // Clone the target path to avoid borrow issues
+        let target_path = self
+            .diff
+            .files
+            .get(self.nav.selected_file)
+            .map(|f| f.path.clone());
+
+        if let Some(target_path) = target_path {
+            let entries = self.flat_tree();
+            for (i, entry) in entries.iter().enumerate() {
+                if let Some(ref path) = entry.path {
+                    if *path == target_path {
+                        self.nav.file_tree_cursor = i;
+                        return;
+                    }
+                }
+            }
         }
+    }
+
+    // === Cache accessors ===
+
+    /// Get flattened file tree (cached).
+    pub fn flat_tree(&mut self) -> &[FlatFileEntry] {
+        if self.cached_flat_tree.is_none() {
+            self.cached_flat_tree = Some(self.file_tree.flatten());
+        }
+        self.cached_flat_tree.as_ref().unwrap()
+    }
+
+    /// Get the length of the flattened file tree (uses cache).
+    pub fn flat_tree_len(&mut self) -> usize {
+        self.flat_tree().len()
+    }
+
+    /// Get comment line numbers for a file (cached).
+    /// Returns a cloned HashSet to avoid borrow issues.
+    pub fn comment_lines_for_file(&mut self, path: &str) -> HashSet<u32> {
+        if self.cached_comment_lines.is_none() {
+            let mut map: std::collections::HashMap<String, HashSet<u32>> =
+                std::collections::HashMap::new();
+            for comment in &self.pending_comments {
+                map.entry(comment.path.clone())
+                    .or_default()
+                    .insert(comment.position.line);
+            }
+            self.cached_comment_lines = Some(map);
+        }
+
+        self.cached_comment_lines
+            .as_ref()
+            .unwrap()
+            .get(path)
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    // === Cache invalidation ===
+
+    /// Invalidate the flat tree cache (call after expand/collapse).
+    fn invalidate_flat_tree_cache(&mut self) {
+        self.cached_flat_tree = None;
+    }
+
+    /// Invalidate the comment lines cache (call after comment add/remove).
+    fn invalidate_comment_cache(&mut self) {
+        self.cached_comment_lines = None;
     }
 
     /// Get the currently selected file diff.
@@ -89,6 +175,53 @@ impl DiffViewerState {
     /// Get total number of display lines for current file.
     pub fn current_file_line_count(&self) -> usize {
         self.current_file().map(|f| f.total_lines()).unwrap_or(0)
+    }
+
+    /// Get display line indices of all hunk headers in the current file.
+    fn hunk_header_lines(&self) -> Vec<usize> {
+        let Some(file) = self.current_file() else {
+            return Vec::new();
+        };
+
+        let mut indices = Vec::new();
+        let mut display_idx = 0;
+
+        for hunk in &file.hunks {
+            // The hunk header is at display_idx
+            indices.push(display_idx);
+            // Move past the header
+            display_idx += 1;
+            // Move past all lines in the hunk
+            display_idx += hunk.lines.len();
+        }
+
+        indices
+    }
+
+    /// Jump to the next hunk header (returns true if jumped).
+    fn jump_to_next_hunk(&mut self) -> bool {
+        let headers = self.hunk_header_lines();
+        // Find first header after current cursor
+        if let Some(&next) = headers.iter().find(|&&idx| idx > self.nav.cursor_line) {
+            self.nav.cursor_line = next;
+            self.nav.ensure_cursor_visible(self.viewport_height);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Jump to the previous hunk header (returns true if jumped).
+    fn jump_to_prev_hunk(&mut self) -> bool {
+        let headers = self.hunk_header_lines();
+        // Find last header before current cursor
+        if let Some(&prev) = headers.iter().rev().find(|&&idx| idx < self.nav.cursor_line) {
+            self.nav.cursor_line = prev;
+            self.nav.ensure_cursor_visible(self.viewport_height);
+            true
+        } else {
+            false
+        }
     }
 
     /// Check if the comment editor is currently active.
@@ -150,28 +283,50 @@ impl DiffViewerState {
             // === Cursor Navigation ===
             DiffAction::CursorDown => {
                 if self.nav.file_tree_focused {
-                    self.nav.cursor_down(self.file_tree.flatten().len());
+                    let len = self.flat_tree_len();
+                    if self.nav.file_tree_cursor + 1 < len {
+                        self.nav.file_tree_cursor += 1;
+                    }
+                    // Auto-select file when navigating in file tree
+                    self.auto_select_file_at_cursor()
                 } else {
                     self.nav.cursor_down(self.current_file_line_count());
+                    self.nav.ensure_cursor_visible(self.viewport_height);
+                    self.emit_selection_changed()
                 }
-                self.emit_selection_changed()
             }
             DiffAction::CursorUp => {
-                self.nav.cursor_up();
-                self.emit_selection_changed()
+                if self.nav.file_tree_focused {
+                    self.nav.file_tree_cursor = self.nav.file_tree_cursor.saturating_sub(1);
+                    // Auto-select file when navigating in file tree
+                    self.auto_select_file_at_cursor()
+                } else {
+                    self.nav.cursor_up();
+                    self.nav.ensure_cursor_visible(self.viewport_height);
+                    self.emit_selection_changed()
+                }
             }
             DiffAction::CursorFirst => {
-                self.nav.cursor_first();
-                self.emit_selection_changed()
+                if self.nav.file_tree_focused {
+                    self.nav.file_tree_cursor = 0;
+                    self.auto_select_file_at_cursor()
+                } else {
+                    self.nav.cursor_first();
+                    // cursor_first already sets scroll_offset to 0
+                    self.emit_selection_changed()
+                }
             }
             DiffAction::CursorLast => {
-                let max = if self.nav.file_tree_focused {
-                    self.file_tree.flatten().len()
+                if self.nav.file_tree_focused {
+                    let len = self.flat_tree_len();
+                    self.nav.file_tree_cursor = len.saturating_sub(1);
+                    self.auto_select_file_at_cursor()
                 } else {
-                    self.current_file_line_count()
-                };
-                self.nav.cursor_last(max);
-                self.emit_selection_changed()
+                    let max = self.current_file_line_count();
+                    self.nav.cursor_last(max);
+                    self.nav.ensure_cursor_visible(self.viewport_height);
+                    self.emit_selection_changed()
+                }
             }
 
             // === File Navigation ===
@@ -185,6 +340,20 @@ impl DiffViewerState {
             }
             DiffAction::SelectFile(idx) => {
                 self.nav.select_file(*idx, self.diff.files.len());
+                self.emit_selection_changed()
+            }
+
+            // === Hunk Navigation ===
+            DiffAction::NextHunk => {
+                if !self.nav.file_tree_focused {
+                    self.jump_to_next_hunk();
+                }
+                self.emit_selection_changed()
+            }
+            DiffAction::PrevHunk => {
+                if !self.nav.file_tree_focused {
+                    self.jump_to_prev_hunk();
+                }
                 self.emit_selection_changed()
             }
 
@@ -267,7 +436,9 @@ impl DiffViewerState {
                 self.show_review_popup = false;
                 None
             }
-            DiffAction::ReviewOptionNext | DiffAction::ReviewOptionPrev | DiffAction::SubmitReview => {
+            DiffAction::ReviewOptionNext
+            | DiffAction::ReviewOptionPrev
+            | DiffAction::SubmitReview => {
                 // These are only valid in review popup mode
                 None
             }
@@ -405,6 +576,7 @@ impl DiffViewerState {
         let comment = PendingComment::new(editor.file_path, editor.position, editor.body);
 
         self.pending_comments.push(comment.clone());
+        self.invalidate_comment_cache();
         Some(DiffEvent::CommentAdded(comment))
     }
 
@@ -429,21 +601,27 @@ impl DiffViewerState {
     }
 
     /// Select the file at the current cursor position in the file tree.
+    /// This also switches focus to the diff content pane.
     fn select_file_at_cursor(&mut self) -> Option<DiffEvent> {
-        let entries = self.file_tree.flatten();
-        let entry = entries.get(self.nav.cursor_line)?;
+        // Get entry info from cache - extract file_tree_cursor first to avoid borrow issues
+        let cursor_pos = self.nav.file_tree_cursor;
+        let (is_dir, path, name) = {
+            let entries = self.flat_tree();
+            let entry = entries.get(cursor_pos)?;
+            (entry.is_dir, entry.path.clone(), entry.name.clone())
+        };
 
-        if entry.is_dir {
+        if is_dir {
             // Toggle directory
-            self.toggle_directory_at_cursor();
+            self.toggle_directory_by_name(&name);
             None
-        } else if let Some(ref path) = entry.path {
+        } else if let Some(path) = path {
             // Find the file index
-            let file_idx = self.diff.files.iter().position(|f| &f.path == path)?;
+            let file_idx = self.diff.files.iter().position(|f| f.path == path)?;
             self.nav.select_file(file_idx, self.diff.files.len());
             self.nav.file_tree_focused = false;
             Some(DiffEvent::FileSelected {
-                file_path: path.clone(),
+                file_path: path,
                 file_index: file_idx,
             })
         } else {
@@ -451,13 +629,51 @@ impl DiffViewerState {
         }
     }
 
+    /// Auto-select the file at cursor without switching focus.
+    /// Used during navigation to preview files while staying in file tree.
+    fn auto_select_file_at_cursor(&mut self) -> Option<DiffEvent> {
+        let cursor_pos = self.nav.file_tree_cursor;
+        let path = {
+            let entries = self.flat_tree();
+            let entry = entries.get(cursor_pos)?;
+            // Only select if it's a file, not a directory
+            if entry.is_dir {
+                return None;
+            }
+            entry.path.clone()
+        };
+
+        if let Some(path) = path {
+            // Find the file index and select it (but don't switch focus)
+            let file_idx = self.diff.files.iter().position(|f| f.path == path)?;
+            self.nav.select_file(file_idx, self.diff.files.len());
+            Some(DiffEvent::FileSelected {
+                file_path: path,
+                file_index: file_idx,
+            })
+        } else {
+            None
+        }
+    }
+
+    /// Toggle a directory by name and invalidate cache.
+    fn toggle_directory_by_name(&mut self, name: &str) {
+        self.file_tree.toggle_at_path(name);
+        self.invalidate_flat_tree_cache();
+    }
+
     /// Toggle a directory at the current cursor position.
     fn toggle_directory_at_cursor(&mut self) {
-        let entries = self.file_tree.flatten();
-        if let Some(entry) = entries.get(self.nav.cursor_line) {
-            if entry.is_dir {
-                self.file_tree.toggle_at_path(&entry.name);
-            }
+        let cursor_pos = self.nav.file_tree_cursor;
+        let name = {
+            let entries = self.flat_tree();
+            entries
+                .get(cursor_pos)
+                .filter(|e| e.is_dir)
+                .map(|e| e.name.clone())
+        };
+        if let Some(name) = name {
+            self.toggle_directory_by_name(&name);
         }
     }
 
@@ -576,6 +792,9 @@ mod tests {
     fn test_navigation() {
         let diff = sample_diff();
         let mut state = DiffViewerState::new(diff);
+
+        // Focus diff content pane for navigation test
+        state.nav.file_tree_focused = false;
 
         // Move down
         let events = state.handle_action(DiffAction::CursorDown);

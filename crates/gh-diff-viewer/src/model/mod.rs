@@ -5,5 +5,8 @@ mod diff;
 mod file_tree;
 
 pub use comment::{CommentPosition, DiffSide, PendingComment, ReviewEvent};
-pub use diff::{DiffLine, FileDiff, FileStatus, HighlightedSpan, Hunk, LineKind, PullRequestDiff};
+pub use diff::{
+    DiffLine, DisplayLineInfo, FileDiff, FileStatus, HighlightedSpan, Hunk, LineKind,
+    PullRequestDiff,
+};
 pub use file_tree::{FileTreeNode, FlatFileEntry};

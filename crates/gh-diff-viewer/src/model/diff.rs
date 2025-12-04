@@ -36,6 +36,10 @@ impl PullRequestDiff {
     }
 }
 
+/// Display info for a line: (hunk_index, optional_line_index).
+/// None for line_index means hunk header.
+pub type DisplayLineInfo = (usize, Option<usize>);
+
 /// A single file's diff.
 #[derive(Debug, Clone)]
 pub struct FileDiff {
@@ -51,6 +55,14 @@ pub struct FileDiff {
     pub additions: usize,
     /// Number of deleted lines.
     pub deletions: usize,
+
+    // === Cached state for rendering performance ===
+    /// Cached flattened display info (hunk_idx, line_idx).
+    cached_display_info: Option<Vec<DisplayLineInfo>>,
+    /// Cached max line number for width calculation.
+    cached_max_line_no: Option<u32>,
+    /// Cached display name.
+    cached_display_name: Option<String>,
 }
 
 impl FileDiff {
@@ -63,17 +75,75 @@ impl FileDiff {
             hunks: Vec::new(),
             additions: 0,
             deletions: 0,
+            cached_display_info: None,
+            cached_max_line_no: None,
+            cached_display_name: None,
         }
     }
 
-    /// Get the display name for the file (handles renames).
-    pub fn display_name(&self) -> String {
-        if let Some(ref old) = self.old_path {
-            if old != &self.path {
-                return format!("{} → {}", old, self.path);
-            }
+    /// Get the display name for the file (handles renames) - cached.
+    pub fn display_name(&mut self) -> &str {
+        if self.cached_display_name.is_none() {
+            let name = if let Some(ref old) = self.old_path {
+                if old != &self.path {
+                    format!("{} → {}", old, self.path)
+                } else {
+                    self.path.clone()
+                }
+            } else {
+                self.path.clone()
+            };
+            self.cached_display_name = Some(name);
         }
-        self.path.clone()
+        self.cached_display_name.as_ref().unwrap()
+    }
+
+    /// Get flattened display info for rendering (cached).
+    pub fn display_info(&mut self) -> &[DisplayLineInfo] {
+        if self.cached_display_info.is_none() {
+            let mut result = Vec::new();
+            for (hunk_idx, hunk) in self.hunks.iter().enumerate() {
+                result.push((hunk_idx, None)); // Hunk header
+                for line_idx in 0..hunk.lines.len() {
+                    result.push((hunk_idx, Some(line_idx)));
+                }
+            }
+            self.cached_display_info = Some(result);
+        }
+        self.cached_display_info.as_ref().unwrap()
+    }
+
+    /// Get max line number for width calculation (cached).
+    pub fn max_line_no(&mut self) -> u32 {
+        if self.cached_max_line_no.is_none() {
+            let max = self
+                .hunks
+                .iter()
+                .flat_map(|h| h.lines.iter())
+                .filter_map(|l| l.new_line.or(l.old_line))
+                .max()
+                .unwrap_or(1);
+            self.cached_max_line_no = Some(max);
+        }
+        self.cached_max_line_no.unwrap()
+    }
+
+    /// Get line number width for display (cached via max_line_no).
+    pub fn line_no_width(&mut self) -> usize {
+        self.max_line_no().to_string().len().max(4)
+    }
+
+    /// Invalidate all caches (call when hunks change).
+    pub fn invalidate_caches(&mut self) {
+        self.cached_display_info = None;
+        self.cached_max_line_no = None;
+        self.cached_display_name = None;
+    }
+
+    /// Set old_path and invalidate display name cache.
+    pub fn set_old_path(&mut self, old_path: Option<String>) {
+        self.old_path = old_path;
+        self.cached_display_name = None;
     }
 
     /// Recalculate line statistics from hunks.
@@ -289,7 +359,7 @@ impl LineKind {
     /// Get the background color for this line type.
     pub fn background_color(&self) -> Option<Color> {
         match self {
-            LineKind::Addition => Some(Color::Rgb(30, 60, 30)),  // dark green
+            LineKind::Addition => Some(Color::Rgb(30, 60, 30)), // dark green
             LineKind::Deletion => Some(Color::Rgb(60, 30, 30)), // dark red
             LineKind::HunkHeader => Some(Color::Rgb(40, 40, 60)), // dark blue
             LineKind::Expansion => Some(Color::Rgb(40, 40, 40)), // dark gray
@@ -350,11 +420,11 @@ mod tests {
         let mut file = FileDiff::new("src/new.rs");
         assert_eq!(file.display_name(), "src/new.rs");
 
-        file.old_path = Some("src/old.rs".to_string());
+        file.set_old_path(Some("src/old.rs".to_string()));
         assert_eq!(file.display_name(), "src/old.rs → src/new.rs");
 
         // Same path shouldn't show arrow
-        file.old_path = Some("src/new.rs".to_string());
+        file.set_old_path(Some("src/new.rs".to_string()));
         assert_eq!(file.display_name(), "src/new.rs");
     }
 

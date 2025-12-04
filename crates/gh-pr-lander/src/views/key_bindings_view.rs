@@ -56,7 +56,11 @@ impl View for KeyBindingsView {
         Some(Action::KeyBindings(action))
     }
 
-    fn translate_context_action(&self, _action: ContextAction, _state: &AppState) -> Option<Action> {
+    fn translate_context_action(
+        &self,
+        _action: ContextAction,
+        _state: &AppState,
+    ) -> Option<Action> {
         // Key bindings panel is read-only, no context actions apply
         None
     }
@@ -64,7 +68,10 @@ impl View for KeyBindingsView {
     fn accepts_action(&self, action: &Action) -> bool {
         matches!(
             action,
-            Action::KeyBindings(_) | Action::ViewContext(_) | Action::Navigate(_) | Action::Global(_)
+            Action::KeyBindings(_)
+                | Action::ViewContext(_)
+                | Action::Navigate(_)
+                | Action::Global(_)
         )
     }
 }

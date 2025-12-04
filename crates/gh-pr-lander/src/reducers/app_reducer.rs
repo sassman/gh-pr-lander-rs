@@ -15,7 +15,7 @@ use crate::reducers::{
     splash_reducer, status_bar_reducer,
 };
 use crate::state::AppState;
-use crate::views::{DiffViewerView, PullRequestView};
+use crate::views::DiffViewerView;
 
 /// Reducer - pure function that produces new state from current state + action
 ///

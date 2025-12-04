@@ -8,6 +8,7 @@ use ratatui::{
     Terminal,
 };
 use std::io;
+use std::time::{Duration, Instant};
 
 mod actions;
 mod capabilities;
@@ -44,7 +45,7 @@ fn main() -> io::Result<()> {
     // Initialize file-based logger (returns log file path for debug console)
     let log_file = logger::init();
 
-    log::info!("Starting gh-pr-lander");
+    log::info!("Starting GitHub PR Lander");
 
     // Setup terminal
     enable_raw_mode()?;
@@ -87,18 +88,31 @@ fn main() -> io::Result<()> {
     Ok(())
 }
 
+/// Maximum time budget for processing actions before rendering
+/// This ensures smooth animations even when many actions are queued
+const ACTION_BUDGET: Duration = Duration::from_millis(16); // ~60fps frame budget
+
 fn run_app(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     store: &mut Store,
 ) -> io::Result<()> {
-    // Start bootstrap process
-    store.dispatch(Action::Bootstrap(BootstrapAction::Start));
+    // Queue bootstrap to be processed by the main loop (not synchronously)
+    // This ensures renders happen during bootstrap, not just after
+    store
+        .dispatcher()
+        .dispatch(Action::Bootstrap(BootstrapAction::Start));
 
     loop {
-        // Process any pending actions from background threads
-        let pending = store.dispatcher().drain();
-        for action in pending {
+        // Process pending actions with a time budget to avoid blocking renders
+        let start = Instant::now();
+
+        while let Some(action) = store.dispatcher().pop() {
             store.dispatch(action);
+
+            // Check budget after each action - remaining actions stay in queue
+            if start.elapsed() >= ACTION_BUDGET {
+                break;
+            }
         }
 
         // Render
@@ -117,6 +131,21 @@ fn run_app(
             store.dispatch(Action::DebugConsole(
                 crate::actions::DebugConsoleAction::SetVisibleHeight(debug_console_height),
             ));
+        }
+
+        // Update diff viewer viewport height based on terminal size
+        // (full height minus 3 for status bar and borders)
+        let terminal_width = terminal.size()?.width;
+        let diff_viewport_height = terminal_height.saturating_sub(3) as usize;
+        if let Some(ref inner) = store.state().diff_viewer.inner {
+            if inner.viewport_height != diff_viewport_height {
+                store.dispatch(Action::DiffViewer(
+                    crate::actions::DiffViewerAction::SetViewport {
+                        width: terminal_width,
+                        height: diff_viewport_height as u16,
+                    },
+                ));
+            }
         }
 
         // Check if we should quit

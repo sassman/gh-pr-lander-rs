@@ -1,11 +1,12 @@
 //! Main diff viewer composite widget.
 
-use super::{DiffContentWidget, FileTreeWidget, ReviewPopupWidget};
+use super::{DiffContentWidget, DiffRenderData, FileTreeWidget, ReviewPopupWidget};
 use crate::highlight::DiffHighlighter;
 use crate::state::DiffViewerState;
 use crate::traits::ThemeProvider;
 use ratatui::prelude::*;
 use ratatui::widgets::Widget;
+use std::collections::HashSet;
 
 /// The main diff viewer widget.
 ///
@@ -57,48 +58,77 @@ impl<T: ThemeProvider> Widget for DiffViewer<'_, T> {
 impl<T: ThemeProvider> DiffViewer<'_, T> {
     /// Render the diff viewer with state.
     pub fn render_with_state(mut self, area: Rect, buf: &mut Buffer, state: &mut DiffViewerState) {
+        // Update viewport height from actual render area (for scroll calculations)
+        // Subtract 2 for borders
+        state.viewport_height = area.height.saturating_sub(2) as usize;
+
         // Calculate layout
         let chunks = if state.nav.show_file_tree {
-            Layout::horizontal([
-                Constraint::Percentage(22),
-                Constraint::Percentage(78),
-            ])
-            .split(area)
+            Layout::horizontal([Constraint::Percentage(22), Constraint::Percentage(78)]).split(area)
         } else {
-            Layout::horizontal([
-                Constraint::Length(0),
-                Constraint::Percentage(100),
-            ])
-            .split(area)
+            Layout::horizontal([Constraint::Length(0), Constraint::Percentage(100)]).split(area)
         };
 
-        // Render file tree (left pane)
+        // Extract navigation state first to avoid borrow issues
+        let file_tree_focused = state.nav.file_tree_focused;
+        let cursor_line = state.nav.cursor_line;
+        let file_tree_cursor = state.nav.file_tree_cursor;
+        let scroll_offset = state.nav.scroll_offset;
+        let visual_selection = state.nav.visual_selection();
+
+        // Render file tree (left pane) using cached flat entries
         if state.nav.show_file_tree {
+            // Get flat entries (populates cache if needed)
+            let flat_entries = state.flat_tree().to_vec();
             let file_tree = FileTreeWidget::new(
-                &state.file_tree,
-                if state.nav.file_tree_focused { state.nav.cursor_line } else { state.nav.selected_file },
-                state.nav.file_tree_focused,
+                &flat_entries,
+                file_tree_cursor,
+                file_tree_focused,
                 self.theme,
             );
             file_tree.render(chunks[0], buf);
         }
 
-        // Render diff content (right pane)
-        let current_file = state.current_file();
-        let comments: Vec<_> = current_file
-            .map(|f| state.comments_for_file(&f.path))
+        // Prepare cached render data for diff content
+        let file_path = state.current_file().map(|f| f.path.clone());
+        let comment_lines: HashSet<u32> = file_path
+            .as_ref()
+            .map(|p| state.comment_lines_for_file(p))
             .unwrap_or_default();
+
+        // Get cached values from current file (only small values, no large copies)
+        let render_data = if let Some(file) = state.current_file_mut() {
+            let line_no_width = file.line_no_width();
+            let display_name = file.display_name().to_string();
+            let total_lines = file.total_lines();
+            Some((line_no_width, display_name, total_lines))
+        } else {
+            None
+        };
+
+        // Get immutable reference for widget
+        let current_file = state.current_file();
+
+        // Build DiffRenderData with owned data (no large vector copies)
+        let render_data_struct = render_data.as_ref().map(|(line_no_width, display_name, total_lines)| {
+            DiffRenderData {
+                line_no_width: *line_no_width,
+                comment_lines: &comment_lines,
+                display_name,
+                total_lines: *total_lines,
+            }
+        });
 
         let diff_content = DiffContentWidget::new(
             current_file,
-            if state.nav.file_tree_focused { 0 } else { state.nav.cursor_line },
-            state.nav.scroll_offset,
-            &comments,
+            render_data_struct,
+            if file_tree_focused { 0 } else { cursor_line },
+            scroll_offset,
             &mut self.highlighter,
             self.theme,
-            !state.nav.file_tree_focused,
+            !file_tree_focused,
         )
-        .with_selection(state.nav.visual_selection());
+        .with_selection(visual_selection);
 
         diff_content.render(chunks[1], buf);
 
@@ -139,10 +169,7 @@ impl<T: ThemeProvider> DiffViewer<'_, T> {
         Clear.render(popup_area, buf);
 
         // Draw border
-        let title = format!(
-            " Comment on line {} ",
-            editor.position.line
-        );
+        let title = format!(" Comment on line {} ", editor.position.line);
         let block = Block::default()
             .borders(Borders::ALL)
             .border_style(Style::default().fg(Color::Yellow))
@@ -186,7 +213,7 @@ impl<T: ThemeProvider> DiffViewer<'_, T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{FileDiff, Hunk, DiffLine, PullRequestDiff};
+    use crate::model::{DiffLine, FileDiff, Hunk, PullRequestDiff};
     use crate::traits::DefaultTheme;
 
     fn sample_diff() -> PullRequestDiff {
@@ -194,7 +221,8 @@ mod tests {
         let mut file = FileDiff::new("src/main.rs");
         let mut hunk = Hunk::new(1, 3, 1, 4);
         hunk.lines.push(DiffLine::context("fn main() {", 1, 1));
-        hunk.lines.push(DiffLine::addition("    println!(\"Hello\");", 2));
+        hunk.lines
+            .push(DiffLine::addition("    println!(\"Hello\");", 2));
         hunk.lines.push(DiffLine::context("}", 2, 3));
         file.hunks.push(hunk);
         file.recalculate_stats();

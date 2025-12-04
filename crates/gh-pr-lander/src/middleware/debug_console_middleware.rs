@@ -91,9 +91,7 @@ impl DebugConsoleMiddleware {
                     if let Ok(mut reader_guard) = reader.lock() {
                         if let Some(reader) = reader_guard.as_mut() {
                             match reader.poll_new_lines() {
-                                Ok(new_count) if new_count > 0 => {
-                                    Some(reader.lines().to_vec())
-                                }
+                                Ok(new_count) if new_count > 0 => Some(reader.lines().to_vec()),
                                 _ => None,
                             }
                         } else {

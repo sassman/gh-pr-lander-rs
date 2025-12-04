@@ -44,12 +44,6 @@ pub struct PrRowViewModel {
     pub bg_color: Color, // Background (alternating, selected, etc.)
     pub fg_color: Color,     // Text color
     pub status_color: Color, // Status-specific color
-
-    /// Metadata for interactions (not displayed)
-    /// Is this row at the cursor position
-    pub is_cursor: bool,
-    /// Is this PR selected for bulk operations
-    pub is_multi_selected: bool,
 }
 
 impl PrTableViewModel {
@@ -144,8 +138,6 @@ impl PrTableViewModel {
             bg_color,
             fg_color,
             status_color,
-            is_cursor,
-            is_multi_selected,
         }
     }
 

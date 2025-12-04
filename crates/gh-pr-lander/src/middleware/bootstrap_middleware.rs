@@ -6,11 +6,11 @@
 //! - Listens for LoadRecentRepositoriesDone to dispatch BootstrapEnd
 //! - Stops tick thread on BootstrapEnd
 
-use crate::actions::{Action, BootstrapAction, GlobalAction, SplashAction};
+use crate::actions::{Action, BootstrapAction, GlobalAction};
 use crate::dispatcher::Dispatcher;
 use crate::middleware::Middleware;
 use crate::state::AppState;
-use crate::views::{PullRequestView, SplashView};
+use crate::views::PullRequestView;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -50,7 +50,7 @@ impl Middleware for BootstrapMiddleware {
 
                     // Spawn tick generation thread
                     thread::spawn(move || {
-                        let tick_rate = Duration::from_millis(250);
+                        let tick_rate = Duration::from_millis(200);
                         let mut last_tick = Instant::now();
 
                         loop {

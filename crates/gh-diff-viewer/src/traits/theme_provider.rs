@@ -61,6 +61,11 @@ pub trait ThemeProvider: Send + Sync {
         Color::Rgb(50, 50, 80)
     }
 
+    /// Foreground color for the cursor/selected line.
+    fn cursor_foreground(&self) -> Color {
+        Color::White
+    }
+
     /// Foreground color for comment indicators.
     fn comment_indicator_foreground(&self) -> Color {
         Color::Yellow

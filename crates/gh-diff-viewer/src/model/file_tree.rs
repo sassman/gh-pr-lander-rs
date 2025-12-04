@@ -70,15 +70,15 @@ impl FileTreeNode {
 
         if parts.len() == 1 {
             // Leaf node (file)
-            self.children.push(FileTreeNode::file(
-                parts[0],
-                &file_diff.path,
-                file_diff,
-            ));
+            self.children
+                .push(FileTreeNode::file(parts[0], &file_diff.path, file_diff));
         } else {
             // Find or create directory
             let dir_name = parts[0];
-            let child = self.children.iter_mut().find(|c| c.name == dir_name && c.path.is_none());
+            let child = self
+                .children
+                .iter_mut()
+                .find(|c| c.name == dir_name && c.path.is_none());
 
             if let Some(dir) = child {
                 dir.insert_path(&parts[1..], file_diff);
@@ -122,11 +122,16 @@ impl FileTreeNode {
     /// Flatten the tree into a list for rendering (respecting expanded state).
     pub fn flatten(&self) -> Vec<FlatFileEntry> {
         let mut result = Vec::new();
-        self.flatten_recursive(0, &mut result);
+        self.flatten_recursive(0, &mut result, &[]);
         result
     }
 
-    fn flatten_recursive(&self, depth: usize, result: &mut Vec<FlatFileEntry>) {
+    fn flatten_recursive(
+        &self,
+        depth: usize,
+        result: &mut Vec<FlatFileEntry>,
+        ancestor_has_next: &[bool],
+    ) {
         // Skip root node itself
         if !self.name.is_empty() {
             result.push(FlatFileEntry {
@@ -138,14 +143,40 @@ impl FileTreeNode {
                 status: self.status,
                 additions: self.additions,
                 deletions: self.deletions,
+                is_last: false, // Will be set by parent
+                ancestor_has_next: ancestor_has_next.to_vec(),
             });
         }
 
         // Add children if directory is expanded (or if this is root)
         if self.expanded || self.name.is_empty() {
             let child_depth = if self.name.is_empty() { 0 } else { depth + 1 };
-            for child in &self.children {
-                child.flatten_recursive(child_depth, result);
+            let child_count = self.children.len();
+
+            for (i, child) in self.children.iter().enumerate() {
+                let is_last = i == child_count - 1;
+
+                // Build ancestor_has_next for children
+                let mut child_ancestor_has_next = ancestor_has_next.to_vec();
+                // Only add entry if this is not root
+                if !self.name.is_empty() {
+                    // This node has more siblings if it's not the last
+                    child_ancestor_has_next.push(!is_last);
+                }
+
+                child.flatten_recursive(child_depth, result, &child_ancestor_has_next);
+
+                // Mark the entry we just added as last if applicable
+                if is_last {
+                    // Find the entry we just added for this child
+                    if let Some(entry) = result.iter_mut().rev().find(|e| {
+                        e.name == child.name
+                            && e.depth == child_depth
+                            && e.path == child.path
+                    }) {
+                        entry.is_last = true;
+                    }
+                }
             }
         }
     }
@@ -190,10 +221,7 @@ impl FileTreeNode {
 
     /// Get file paths in display order.
     pub fn file_paths(&self) -> Vec<String> {
-        self.flatten()
-            .into_iter()
-            .filter_map(|e| e.path)
-            .collect()
+        self.flatten().into_iter().filter_map(|e| e.path).collect()
     }
 }
 
@@ -216,21 +244,63 @@ pub struct FlatFileEntry {
     pub additions: usize,
     /// Number of deletions.
     pub deletions: usize,
+    /// Whether this is the last item in its parent.
+    pub is_last: bool,
+    /// For each ancestor level, whether that ancestor has more siblings below.
+    /// Used to determine where to draw vertical continuation lines (│).
+    pub ancestor_has_next: Vec<bool>,
 }
 
 impl FlatFileEntry {
     /// Get the icon for this entry.
     pub fn icon(&self) -> &'static str {
         if self.is_dir {
-            if self.is_expanded { "▼ " } else { "▶ " }
+            if self.is_expanded {
+                "▼ "
+            } else {
+                "▶ "
+            }
         } else {
             "  "
         }
     }
 
-    /// Get indent string based on depth.
+    /// Get indent string based on depth (legacy, use tree_prefix for tree lines).
     pub fn indent(&self) -> String {
         "  ".repeat(self.depth)
+    }
+
+    /// Get the tree prefix with guide lines.
+    /// Example output for different positions:
+    /// - Top level: ""
+    /// - First child of root: "├─ "
+    /// - Last child of root: "└─ "
+    /// - Nested with siblings above: "│  ├─ "
+    /// - Nested last item: "│  └─ "
+    pub fn tree_prefix(&self) -> String {
+        if self.depth == 0 {
+            return String::new();
+        }
+
+        let mut prefix = String::new();
+
+        // Add continuation lines for ancestors
+        for &has_next in &self.ancestor_has_next {
+            if has_next {
+                prefix.push_str("│  ");
+            } else {
+                prefix.push_str("   ");
+            }
+        }
+
+        // Add branch for this node
+        if self.is_last {
+            prefix.push_str("└─ ");
+        } else {
+            prefix.push_str("├─ ");
+        }
+
+        prefix
     }
 }
 
@@ -299,6 +369,8 @@ mod tests {
             status: None,
             additions: 0,
             deletions: 0,
+            is_last: false,
+            ancestor_has_next: vec![],
         };
         assert_eq!(dir.icon(), "▼ ");
 
@@ -314,5 +386,67 @@ mod tests {
             ..dir
         };
         assert_eq!(file.icon(), "  ");
+    }
+
+    #[test]
+    fn test_tree_prefix() {
+        // Top level directory - no prefix
+        let top_level = FlatFileEntry {
+            depth: 0,
+            name: "src".to_string(),
+            path: None,
+            is_dir: true,
+            is_expanded: true,
+            status: None,
+            additions: 0,
+            deletions: 0,
+            is_last: false,
+            ancestor_has_next: vec![],
+        };
+        assert_eq!(top_level.tree_prefix(), "");
+
+        // First child (not last) - uses ├─
+        let first_child = FlatFileEntry {
+            depth: 1,
+            name: "lib.rs".to_string(),
+            path: Some("src/lib.rs".to_string()),
+            is_dir: false,
+            is_expanded: false,
+            status: None,
+            additions: 0,
+            deletions: 0,
+            is_last: false,
+            ancestor_has_next: vec![],
+        };
+        assert_eq!(first_child.tree_prefix(), "├─ ");
+
+        // Last child - uses └─
+        let last_child = FlatFileEntry {
+            is_last: true,
+            ..first_child.clone()
+        };
+        assert_eq!(last_child.tree_prefix(), "└─ ");
+
+        // Nested child with ancestor that has more siblings
+        let nested = FlatFileEntry {
+            depth: 2,
+            name: "mod.rs".to_string(),
+            path: Some("src/utils/mod.rs".to_string()),
+            is_dir: false,
+            is_expanded: false,
+            status: None,
+            additions: 0,
+            deletions: 0,
+            is_last: true,
+            ancestor_has_next: vec![true], // parent (utils/) has siblings
+        };
+        assert_eq!(nested.tree_prefix(), "│  └─ ");
+
+        // Nested child with ancestor that has no more siblings
+        let nested_no_sibling = FlatFileEntry {
+            ancestor_has_next: vec![false], // parent is last in its group
+            ..nested.clone()
+        };
+        assert_eq!(nested_no_sibling.tree_prefix(), "   └─ ");
     }
 }

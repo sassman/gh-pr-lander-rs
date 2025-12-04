@@ -7,8 +7,10 @@ use crate::model::DiffSide;
 pub struct NavigationState {
     /// Current file index in the files list.
     pub selected_file: usize,
-    /// Cursor line within the current file (display line, not source line).
+    /// Cursor line within the current file's diff content (display line, not source line).
     pub cursor_line: usize,
+    /// Cursor position in the file tree (separate from diff content cursor).
+    pub file_tree_cursor: usize,
     /// Scroll offset (first visible line).
     pub scroll_offset: usize,
     /// Current selection mode.
@@ -25,6 +27,7 @@ impl NavigationState {
         Self {
             selected_file: 0,
             cursor_line: 0,
+            file_tree_cursor: 0,
             scroll_offset: 0,
             selection_mode: SelectionMode::Normal,
             file_tree_focused: true,

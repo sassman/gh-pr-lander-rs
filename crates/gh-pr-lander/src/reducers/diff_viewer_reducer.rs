@@ -74,6 +74,17 @@ pub fn reduce_diff_viewer(
             state
         }
 
+        // === Hunk Navigation ===
+        DiffViewerAction::NextHunk => {
+            forward_action(&mut state, DiffAction::NextHunk);
+            state
+        }
+
+        DiffViewerAction::PrevHunk => {
+            forward_action(&mut state, DiffAction::PrevHunk);
+            state
+        }
+
         // === Scrolling ===
         DiffViewerAction::PageDown => {
             forward_action(&mut state, DiffAction::ScrollPageDown);
@@ -99,6 +110,23 @@ pub fn reduce_diff_viewer(
         // === Focus Management ===
         DiffViewerAction::SwitchPane => {
             forward_action(&mut state, DiffAction::ToggleFocus);
+            state
+        }
+
+        DiffViewerAction::EscapeOrFocusTree => {
+            if let Some(ref inner) = state.inner {
+                if inner.is_editing_comment() {
+                    // Cancel comment if editing
+                    forward_action(&mut state, DiffAction::CancelComment);
+                } else if inner.show_review_popup {
+                    // Hide review popup if visible
+                    forward_action(&mut state, DiffAction::HideReviewPopup);
+                } else if !inner.nav.file_tree_focused {
+                    // If in diff pane, switch to file tree
+                    forward_action(&mut state, DiffAction::FocusFileTree);
+                }
+                // If already in file tree, do nothing
+            }
             state
         }
 

@@ -386,16 +386,10 @@ impl GitHubClient for OctocrabClient {
         repo: &str,
         head_sha: &str,
     ) -> anyhow::Result<CiStatus> {
-        debug!(
-            "Fetching CI status for {}/{} @ {}",
-            owner, repo, head_sha
-        );
+        debug!("Fetching CI status for {}/{} @ {}", owner, repo, head_sha);
 
         // Use the check-runs API endpoint
-        let route = format!(
-            "/repos/{}/{}/commits/{}/check-runs",
-            owner, repo, head_sha
-        );
+        let route = format!("/repos/{}/{}/commits/{}/check-runs", owner, repo, head_sha);
 
         #[derive(serde::Deserialize)]
         struct CheckRunsResponse {

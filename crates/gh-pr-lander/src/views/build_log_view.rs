@@ -3,8 +3,8 @@
 //! Renders the build log panel with tree navigation.
 
 use crate::actions::{Action, AvailableAction, BuildLogAction, ContextAction, NavigationAction};
-use crate::command_id::CommandId;
 use crate::capabilities::PanelCapabilities;
+use crate::command_id::CommandId;
 use crate::state::AppState;
 use crate::view_models::{BuildLogRowStyle, BuildLogViewModel, StatusBarViewModel};
 use crate::views::status_bar::StatusBarWidget;

@@ -38,6 +38,9 @@ bitflags! {
 
         /// Panel accepts text input (characters go to input field, not keybindings)
         const TEXT_INPUT = 1 << 6;
+
+        /// Panel has multiple panes that Tab can switch between
+        const PANE_SWITCHING = 1 << 7;
     }
 }
 
@@ -72,6 +75,13 @@ impl PanelCapabilities {
     /// rather than being processed as keybindings
     pub fn accepts_text_input(self) -> bool {
         self.contains(Self::TEXT_INPUT)
+    }
+
+    /// Check if panel supports pane switching
+    ///
+    /// When true, Tab key switches between panes instead of field navigation
+    pub fn supports_pane_switching(self) -> bool {
+        self.contains(Self::PANE_SWITCHING)
     }
 }
 

@@ -3,7 +3,9 @@
 //! A floating form for adding a new repository to track.
 //! Supports both URL parsing and manual field entry.
 
-use crate::actions::{Action, AddRepositoryAction, ContextAction, NavigationAction, TextInputAction};
+use crate::actions::{
+    Action, AddRepositoryAction, ContextAction, NavigationAction, TextInputAction,
+};
 use crate::capabilities::PanelCapabilities;
 use crate::state::{AddRepoField, AddRepoFormState, AppState};
 use crate::views::View;

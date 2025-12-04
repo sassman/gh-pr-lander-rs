@@ -17,6 +17,8 @@ pub struct DiffHighlighter {
     cache: HashMap<u64, Vec<HighlightedSpan>>,
     /// Maximum cache size.
     max_cache_size: usize,
+    /// Cache of syntax references by file extension (avoids repeated file lookups).
+    syntax_cache: HashMap<String, usize>,
 }
 
 impl std::fmt::Debug for DiffHighlighter {
@@ -45,7 +47,8 @@ impl DiffHighlighter {
             syntax_set,
             theme,
             cache: HashMap::new(),
-            max_cache_size: 1000,
+            max_cache_size: 5000, // Increased for better performance
+            syntax_cache: HashMap::new(),
         }
     }
 
@@ -63,7 +66,8 @@ impl DiffHighlighter {
             syntax_set,
             theme,
             cache: HashMap::new(),
-            max_cache_size: 1000,
+            max_cache_size: 5000,
+            syntax_cache: HashMap::new(),
         }
     }
 
@@ -73,7 +77,8 @@ impl DiffHighlighter {
             syntax_set: SyntaxSet::load_defaults_newlines(),
             theme,
             cache: HashMap::new(),
-            max_cache_size: 1000,
+            max_cache_size: 5000,
+            syntax_cache: HashMap::new(),
         }
     }
 
@@ -100,32 +105,28 @@ impl DiffHighlighter {
     ///
     /// Results are cached for performance.
     pub fn highlight_line(&mut self, path: &str, content: &str) -> Vec<HighlightedSpan> {
-        // Check cache first
+        // Check highlight cache first
         let key = self.cache_key(path, content);
         if let Some(spans) = self.cache.get(&key) {
             return spans.clone();
         }
 
-        // Determine syntax from file extension
+        // Get syntax from extension cache (avoid expensive find_syntax_for_file on every line)
+        let syntax_idx = self.get_syntax_index(path);
         let syntax = self
             .syntax_set
-            .find_syntax_for_file(path)
-            .ok()
-            .flatten()
+            .syntaxes()
+            .get(syntax_idx)
             .unwrap_or_else(|| self.syntax_set.find_syntax_plain_text());
 
         // Highlight the line
         let spans = self.highlight_with_syntax(syntax, content);
 
-        // Cache the result (with simple eviction if cache is full)
+        // Cache the result (with LRU-style eviction if cache is full)
         if self.cache.len() >= self.max_cache_size {
-            // Simple strategy: clear half the cache
-            let keys_to_remove: Vec<_> = self
-                .cache
-                .keys()
-                .take(self.max_cache_size / 2)
-                .copied()
-                .collect();
+            // Remove oldest 20% instead of 50% to reduce thrashing
+            let to_remove = self.max_cache_size / 5;
+            let keys_to_remove: Vec<_> = self.cache.keys().take(to_remove).copied().collect();
             for key in keys_to_remove {
                 self.cache.remove(&key);
             }
@@ -133,6 +134,43 @@ impl DiffHighlighter {
         self.cache.insert(key, spans.clone());
 
         spans
+    }
+
+    /// Get syntax index for a file path (cached by extension).
+    fn get_syntax_index(&mut self, path: &str) -> usize {
+        // Extract extension
+        let ext = std::path::Path::new(path)
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_lowercase();
+
+        // Check syntax cache
+        if let Some(&idx) = self.syntax_cache.get(&ext) {
+            return idx;
+        }
+
+        // Look up syntax (expensive - only do once per extension)
+        let syntax = self
+            .syntax_set
+            .find_syntax_by_extension(&ext)
+            .or_else(|| {
+                // Try finding by full path as fallback
+                self.syntax_set.find_syntax_for_file(path).ok().flatten()
+            })
+            .unwrap_or_else(|| self.syntax_set.find_syntax_plain_text());
+
+        // Find index in syntax set
+        let idx = self
+            .syntax_set
+            .syntaxes()
+            .iter()
+            .position(|s| s.name == syntax.name)
+            .unwrap_or(0);
+
+        // Cache by extension
+        self.syntax_cache.insert(ext, idx);
+        idx
     }
 
     /// Highlight content with a specific syntax.

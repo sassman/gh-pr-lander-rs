@@ -1,23 +1,36 @@
 //! Diff content widget for rendering the actual diff.
 
 use crate::highlight::DiffHighlighter;
-use crate::model::{DiffLine, FileDiff, Hunk, LineKind, PendingComment};
+use crate::model::{DiffLine, FileDiff, LineKind};
 use crate::traits::ThemeProvider;
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, Borders, Widget};
+use std::collections::HashSet;
+
+/// Pre-computed render data to avoid recomputation per frame.
+pub struct DiffRenderData<'a> {
+    /// Line number width (from FileDiff cache).
+    pub line_no_width: usize,
+    /// Comment line numbers for this file (from state cache).
+    pub comment_lines: &'a HashSet<u32>,
+    /// Display name for the file.
+    pub display_name: &'a str,
+    /// Total line count (for scroll bounds).
+    pub total_lines: usize,
+}
 
 /// Widget for rendering the diff content pane.
 pub struct DiffContentWidget<'a, T: ThemeProvider> {
     /// The file diff to render.
     file: Option<&'a FileDiff>,
+    /// Pre-computed render data (None if no file).
+    render_data: Option<DiffRenderData<'a>>,
     /// Current cursor line.
     cursor_line: usize,
     /// Scroll offset.
     scroll_offset: usize,
     /// Visual selection range (if any).
     visual_selection: Option<(usize, usize)>,
-    /// Pending comments for this file.
-    comments: &'a [&'a PendingComment],
     /// Syntax highlighter.
     highlighter: &'a mut DiffHighlighter,
     /// Theme provider.
@@ -27,22 +40,22 @@ pub struct DiffContentWidget<'a, T: ThemeProvider> {
 }
 
 impl<'a, T: ThemeProvider> DiffContentWidget<'a, T> {
-    /// Create a new diff content widget.
+    /// Create a new diff content widget with pre-computed render data.
     pub fn new(
         file: Option<&'a FileDiff>,
+        render_data: Option<DiffRenderData<'a>>,
         cursor_line: usize,
         scroll_offset: usize,
-        comments: &'a [&'a PendingComment],
         highlighter: &'a mut DiffHighlighter,
         theme: &'a T,
         focused: bool,
     ) -> Self {
         Self {
             file,
+            render_data,
             cursor_line,
             scroll_offset,
             visual_selection: None,
-            comments,
             highlighter,
             theme,
             focused,
@@ -65,8 +78,10 @@ impl<T: ThemeProvider> Widget for DiffContentWidget<'_, T> {
             Style::default().fg(Color::DarkGray)
         };
 
-        let title = self.file
-            .map(|f| format!(" {} ", f.display_name()))
+        let title = self
+            .render_data
+            .as_ref()
+            .map(|d| format!(" {} ", d.display_name))
             .unwrap_or_else(|| " No file selected ".to_string());
 
         let block = Block::default()
@@ -77,7 +92,7 @@ impl<T: ThemeProvider> Widget for DiffContentWidget<'_, T> {
         let inner = block.inner(area);
         block.render(area, buf);
 
-        let Some(file) = self.file else {
+        let (Some(file), Some(render_data)) = (self.file, &self.render_data) else {
             // Render empty state
             let msg = "Select a file from the tree";
             let x = inner.x + (inner.width.saturating_sub(msg.len() as u16)) / 2;
@@ -86,88 +101,91 @@ impl<T: ThemeProvider> Widget for DiffContentWidget<'_, T> {
             return;
         };
 
-        // Calculate line number width
-        let max_line_no = file.hunks.iter()
-            .flat_map(|h| h.lines.iter())
-            .filter_map(|l| l.new_line.or(l.old_line))
-            .max()
-            .unwrap_or(1);
-        let line_no_width = max_line_no.to_string().len().max(4);
-
-        // Flatten hunks into display lines - collect indices only
-        let display_info = flatten_hunk_info(&file.hunks);
+        // Use pre-computed values from render_data
+        let line_no_width = render_data.line_no_width;
+        let comment_lines = render_data.comment_lines;
         let visible_height = inner.height as usize;
         let file_path = file.path.as_str();
 
-        // Render visible lines
-        for (i, (hunk_idx, line_idx)) in display_info
-            .iter()
-            .skip(self.scroll_offset)
-            .take(visible_height)
-            .enumerate()
-        {
-            let y = inner.y + i as u16;
-            if y >= inner.y + inner.height {
-                break;
-            }
+        // Render visible lines by iterating directly over hunks
+        // This avoids copying the entire display_info vector
+        let scroll_end = self.scroll_offset + visible_height;
+        let mut current_idx = 0;
+        let mut rendered = 0;
 
-            let display_idx = i + self.scroll_offset;
-            let is_cursor = display_idx == self.cursor_line;
-            let in_selection = self.visual_selection
-                .map(|(start, end)| display_idx >= start && display_idx <= end)
-                .unwrap_or(false);
-
-            // Get the actual line data
-            let hunk = &file.hunks[*hunk_idx];
-            if let Some(line_idx) = line_idx {
-                let line = &hunk.lines[*line_idx];
-                self.render_diff_line(
-                    line,
-                    inner.x,
-                    y,
-                    inner.width,
-                    line_no_width,
-                    is_cursor,
-                    in_selection,
-                    file_path,
-                    buf,
-                );
-            } else {
-                // Hunk header
+        'outer: for hunk in &file.hunks {
+            // Hunk header
+            if current_idx >= self.scroll_offset && current_idx < scroll_end {
+                let y = inner.y + rendered as u16;
+                let is_cursor = current_idx == self.cursor_line;
                 self.render_hunk_header(&hunk.header, inner.x, y, inner.width, is_cursor, buf);
+                rendered += 1;
+            }
+            current_idx += 1;
+
+            // Skip ahead if we haven't reached scroll offset yet
+            if current_idx + hunk.lines.len() <= self.scroll_offset {
+                current_idx += hunk.lines.len();
+                continue;
+            }
+
+            // Render lines
+            for line in &hunk.lines {
+                if current_idx >= scroll_end {
+                    break 'outer;
+                }
+
+                if current_idx >= self.scroll_offset {
+                    let y = inner.y + rendered as u16;
+                    let is_cursor = current_idx == self.cursor_line;
+                    let in_selection = self
+                        .visual_selection
+                        .map(|(start, end)| current_idx >= start && current_idx <= end)
+                        .unwrap_or(false);
+
+                    self.render_diff_line(
+                        line,
+                        inner.x,
+                        y,
+                        inner.width,
+                        line_no_width,
+                        is_cursor,
+                        in_selection,
+                        file_path,
+                        comment_lines,
+                        buf,
+                    );
+                    rendered += 1;
+                }
+                current_idx += 1;
             }
         }
     }
-}
-
-/// Flatten hunks into (hunk_idx, Option<line_idx>) pairs for iteration.
-fn flatten_hunk_info(hunks: &[Hunk]) -> Vec<(usize, Option<usize>)> {
-    let mut result = Vec::new();
-
-    for (hunk_idx, hunk) in hunks.iter().enumerate() {
-        // Hunk header
-        result.push((hunk_idx, None));
-
-        // Lines
-        for line_idx in 0..hunk.lines.len() {
-            result.push((hunk_idx, Some(line_idx)));
-        }
-    }
-
-    result
 }
 
 impl<T: ThemeProvider> DiffContentWidget<'_, T> {
-    fn render_hunk_header(&self, header: &str, x: u16, y: u16, width: u16, is_cursor: bool, buf: &mut Buffer) {
-        let bg = if is_cursor {
-            self.theme.cursor_background()
+    fn render_hunk_header(
+        &self,
+        header: &str,
+        x: u16,
+        y: u16,
+        width: u16,
+        is_cursor: bool,
+        buf: &mut Buffer,
+    ) {
+        let (fg, bg) = if is_cursor {
+            (
+                self.theme.cursor_foreground(),
+                self.theme.cursor_background(),
+            )
         } else {
-            self.theme.hunk_header_background()
+            (
+                self.theme.hunk_header_foreground(),
+                self.theme.hunk_header_background(),
+            )
         };
 
-        let style = Style::default()
-            .fg(self.theme.hunk_header_foreground())
-            .bg(bg);
+        let style = Style::default().fg(fg).bg(bg);
 
         // Fill background
         for i in 0..width {
@@ -193,23 +211,32 @@ impl<T: ThemeProvider> DiffContentWidget<'_, T> {
         is_cursor: bool,
         in_selection: bool,
         file_path: &str,
+        comment_lines: &HashSet<u32>,
         buf: &mut Buffer,
     ) {
-        // Determine background color
-        let bg = if is_cursor {
-            self.theme.cursor_background()
+        // Determine background and foreground colors
+        let (fg, bg) = if is_cursor {
+            (
+                Some(self.theme.cursor_foreground()),
+                self.theme.cursor_background(),
+            )
         } else if in_selection {
-            Color::Rgb(60, 60, 80) // Selection highlight
+            (None, Color::Rgb(60, 60, 80)) // Selection highlight
         } else {
-            match line.kind {
+            let bg = match line.kind {
                 LineKind::Addition => self.theme.addition_background(),
                 LineKind::Deletion => self.theme.deletion_background(),
                 LineKind::Expansion => self.theme.expansion_marker_background(),
                 _ => self.theme.context_background(),
-            }
+            };
+            (None, bg)
         };
 
-        let base_style = Style::default().bg(bg);
+        let base_style = if let Some(fg) = fg {
+            Style::default().fg(fg).bg(bg)
+        } else {
+            Style::default().bg(bg)
+        };
 
         // Fill background
         for i in 0..width {
@@ -218,16 +245,19 @@ impl<T: ThemeProvider> DiffContentWidget<'_, T> {
 
         let mut current_x = x;
 
+        // Line number style - use cursor foreground on cursor line for contrast
+        let line_no_style = if is_cursor {
+            base_style
+        } else {
+            base_style.fg(self.theme.line_number_foreground())
+        };
+
         // Render old line number
-        let old_no = line.old_line
+        let old_no = line
+            .old_line
             .map(|n| format!("{:>width$}", n, width = line_no_width))
             .unwrap_or_else(|| " ".repeat(line_no_width));
-        buf.set_string(
-            current_x,
-            y,
-            &old_no,
-            base_style.fg(self.theme.line_number_foreground()),
-        );
+        buf.set_string(current_x, y, &old_no, line_no_style);
         current_x += line_no_width as u16;
 
         // Separator
@@ -235,15 +265,11 @@ impl<T: ThemeProvider> DiffContentWidget<'_, T> {
         current_x += 1;
 
         // Render new line number
-        let new_no = line.new_line
+        let new_no = line
+            .new_line
             .map(|n| format!("{:>width$}", n, width = line_no_width))
             .unwrap_or_else(|| " ".repeat(line_no_width));
-        buf.set_string(
-            current_x,
-            y,
-            &new_no,
-            base_style.fg(self.theme.line_number_foreground()),
-        );
+        buf.set_string(current_x, y, &new_no, line_no_style);
         current_x += line_no_width as u16;
 
         // Separator and prefix
@@ -256,11 +282,16 @@ impl<T: ThemeProvider> DiffContentWidget<'_, T> {
             LineKind::Expansion => "~",
             _ => " ",
         };
-        let prefix_style = match line.kind {
-            LineKind::Addition => base_style.fg(Color::Green),
-            LineKind::Deletion => base_style.fg(Color::Red),
-            LineKind::Expansion => base_style.fg(self.theme.expansion_marker_foreground()),
-            _ => base_style,
+        // Prefix style - use cursor foreground on cursor line, otherwise semantic colors
+        let prefix_style = if is_cursor {
+            base_style
+        } else {
+            match line.kind {
+                LineKind::Addition => base_style.fg(Color::Green),
+                LineKind::Deletion => base_style.fg(Color::Red),
+                LineKind::Expansion => base_style.fg(self.theme.expansion_marker_foreground()),
+                _ => base_style,
+            }
         };
         buf.set_string(current_x, y, prefix, prefix_style);
         current_x += 1;
@@ -296,8 +327,12 @@ impl<T: ThemeProvider> DiffContentWidget<'_, T> {
                 };
 
                 let mut style = base_style;
-                if let Some(fg) = span.fg {
-                    style = style.fg(fg);
+                // Only apply syntax highlighting colors when not on cursor line
+                // to maintain proper contrast
+                if !is_cursor {
+                    if let Some(fg) = span.fg {
+                        style = style.fg(fg);
+                    }
                 }
                 if span.bold {
                     style = style.add_modifier(Modifier::BOLD);
@@ -319,10 +354,9 @@ impl<T: ThemeProvider> DiffContentWidget<'_, T> {
             }
         }
 
-        // Show comment indicator
-        let has_comment = self.comments.iter().any(|c| {
-            c.position.line == line.new_line.or(line.old_line).unwrap_or(0)
-        });
+        // Show comment indicator (O(1) HashSet lookup instead of O(n) linear search)
+        let line_no = line.new_line.or(line.old_line).unwrap_or(0);
+        let has_comment = comment_lines.contains(&line_no);
         if has_comment {
             let indicator_x = x + width - 4;
             if indicator_x > current_x {
@@ -340,6 +374,8 @@ impl<T: ThemeProvider> DiffContentWidget<'_, T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::highlight::DiffHighlighter;
+    use crate::model::{DiffLine, FileDiff, Hunk};
     use crate::traits::DefaultTheme;
 
     #[test]
@@ -350,15 +386,27 @@ mod tests {
         hunk.lines.push(DiffLine::addition("new line", 2));
         file.hunks.push(hunk);
 
-        let comments: Vec<&PendingComment> = vec![];
+        // Get cached render data (no large copies needed)
+        let line_no_width = file.line_no_width();
+        let display_name = file.display_name().to_string();
+        let total_lines = file.total_lines();
+        let comment_lines = HashSet::new();
+
+        let render_data = DiffRenderData {
+            line_no_width,
+            comment_lines: &comment_lines,
+            display_name: &display_name,
+            total_lines,
+        };
+
         let mut highlighter = DiffHighlighter::new();
         let theme = DefaultTheme;
 
         let _widget = DiffContentWidget::new(
             Some(&file),
+            Some(render_data),
             0,
             0,
-            &comments,
             &mut highlighter,
             &theme,
             true,

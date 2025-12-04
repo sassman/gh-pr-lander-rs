@@ -20,7 +20,11 @@ pub struct PendingComment {
 
 impl PendingComment {
     /// Create a new pending comment.
-    pub fn new(path: impl Into<String>, position: CommentPosition, body: impl Into<String>) -> Self {
+    pub fn new(
+        path: impl Into<String>,
+        position: CommentPosition,
+        body: impl Into<String>,
+    ) -> Self {
         Self {
             id: Uuid::new_v4(),
             path: path.into(),
@@ -140,7 +144,10 @@ mod tests {
     #[test]
     fn test_review_event_github_str() {
         assert_eq!(ReviewEvent::Approve.as_github_str(), "APPROVE");
-        assert_eq!(ReviewEvent::RequestChanges.as_github_str(), "REQUEST_CHANGES");
+        assert_eq!(
+            ReviewEvent::RequestChanges.as_github_str(),
+            "REQUEST_CHANGES"
+        );
         assert_eq!(ReviewEvent::Comment.as_github_str(), "COMMENT");
     }
 }

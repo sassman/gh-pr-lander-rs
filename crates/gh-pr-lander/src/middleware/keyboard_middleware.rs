@@ -41,9 +41,7 @@ impl KeyboardMiddleware {
     /// Handle a key event using the three-layer approach
     fn handle_key(&mut self, key: KeyEvent, state: &AppState, dispatcher: &Dispatcher) -> bool {
         let view = state.view_stack.last();
-        let capabilities = view
-            .map(|v| v.capabilities(state))
-            .unwrap_or_default();
+        let capabilities = view.map(|v| v.capabilities(state)).unwrap_or_default();
 
         // ═══════════════════════════════════════════════════════════════════
         // LAYER 1: Priority keys (always work)

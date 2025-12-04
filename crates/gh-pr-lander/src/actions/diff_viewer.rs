@@ -34,6 +34,10 @@ pub enum DiffViewerAction {
     NavigateToTop,
     /// Navigate to bottom
     NavigateToBottom,
+    /// Jump to next hunk header
+    NextHunk,
+    /// Jump to previous hunk header
+    PrevHunk,
 
     // === Scrolling ===
     /// Page down
@@ -52,6 +56,8 @@ pub enum DiffViewerAction {
     // === Focus Management ===
     /// Switch focus between file tree and diff content
     SwitchPane,
+    /// Escape key: if editing comment, cancel; if in diff pane, focus file tree
+    EscapeOrFocusTree,
 
     // === Visual Mode ===
     /// Enter visual mode for line selection

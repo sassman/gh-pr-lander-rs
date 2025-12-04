@@ -1,4 +1,6 @@
-use crate::actions::{Action, CommandPaletteAction, ContextAction, NavigationAction, TextInputAction};
+use crate::actions::{
+    Action, CommandPaletteAction, ContextAction, NavigationAction, TextInputAction,
+};
 use crate::capabilities::PanelCapabilities;
 use crate::state::AppState;
 use crate::view_models::CommandPaletteViewModel;

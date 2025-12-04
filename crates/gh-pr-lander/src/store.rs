@@ -52,10 +52,8 @@ impl Store {
             self.state = reduce(self.state.clone(), &action);
         }
 
-        // Process any actions dispatched by middleware
-        let pending_actions = self.dispatcher.drain();
-        for action in pending_actions {
-            self.dispatch(action);
-        }
+        // NOTE: We intentionally do NOT recursively drain pending actions here.
+        // The main loop is responsible for draining the dispatcher between renders.
+        // This ensures the UI updates during long-running operations like bootstrap.
     }
 }

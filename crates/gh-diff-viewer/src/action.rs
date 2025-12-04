@@ -25,6 +25,10 @@ pub enum DiffAction {
     PrevFile,
     /// Select a specific file by index
     SelectFile(usize),
+    /// Jump to next hunk header
+    NextHunk,
+    /// Jump to previous hunk header
+    PrevHunk,
 
     // === Scrolling ===
     /// Scroll down half page
@@ -140,6 +144,8 @@ impl DiffAction {
                 | DiffAction::NextFile
                 | DiffAction::PrevFile
                 | DiffAction::SelectFile(_)
+                | DiffAction::NextHunk
+                | DiffAction::PrevHunk
         )
     }
 

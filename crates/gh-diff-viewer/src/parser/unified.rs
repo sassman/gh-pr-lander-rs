@@ -31,7 +31,9 @@ pub fn parse_unified_diff(
     head_sha: impl Into<String>,
 ) -> Result<PullRequestDiff, ParseError> {
     let mut patch_set = PatchSet::new();
-    patch_set.parse(diff_text).map_err(|e| ParseError::ParseFailed(e.to_string()))?;
+    patch_set
+        .parse(diff_text)
+        .map_err(|e| ParseError::ParseFailed(e.to_string()))?;
 
     let mut diff = PullRequestDiff::new(base_sha, head_sha);
 
@@ -80,9 +82,7 @@ fn parse_hunk(hunk: &UnidiffHunk) -> Result<Hunk, ParseError> {
     if !header.is_empty() {
         parsed.header = format!(
             "@@ -{},{} +{},{} @@ {}",
-            parsed.old_start, parsed.old_count,
-            parsed.new_start, parsed.new_count,
-            header
+            parsed.old_start, parsed.old_count, parsed.new_start, parsed.new_count, header
         );
     }
 
@@ -282,7 +282,11 @@ index abc123..def456 100644
         assert_eq!(hunk.lines[0].new_line, Some(1));
 
         // Addition line
-        let addition = hunk.lines.iter().find(|l| l.kind == LineKind::Addition).unwrap();
+        let addition = hunk
+            .lines
+            .iter()
+            .find(|l| l.kind == LineKind::Addition)
+            .unwrap();
         assert!(addition.old_line.is_none());
         assert!(addition.new_line.is_some());
     }

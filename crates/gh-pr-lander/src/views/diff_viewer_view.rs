@@ -62,6 +62,10 @@ impl ThemeProvider for LanderThemeAdapter<'_> {
         self.0.selected_bg
     }
 
+    fn cursor_foreground(&self) -> Color {
+        self.0.selected_fg
+    }
+
     fn comment_indicator_foreground(&self) -> Color {
         self.0.accent_primary
     }
@@ -190,6 +194,7 @@ impl View for DiffViewerView {
             | PanelCapabilities::VIM_NAVIGATION_BINDINGS
             | PanelCapabilities::ITEM_NAVIGATION
             | PanelCapabilities::TEXT_INPUT
+            | PanelCapabilities::PANE_SWITCHING
     }
 
     fn clone_box(&self) -> Box<dyn View> {
@@ -210,13 +215,44 @@ impl View for DiffViewerView {
 
     fn translate_text_input(&self, input: TextInputAction) -> Option<Action> {
         match input {
+            // === Navigation keys (temporary mapping until keyboard middleware is fixed) ===
+            // j/k for up/down navigation
+            TextInputAction::Char('j') => Some(Action::DiffViewer(DiffViewerAction::NavigateDown)),
+            TextInputAction::Char('k') => Some(Action::DiffViewer(DiffViewerAction::NavigateUp)),
+            // h/l for left/right (file tree / diff pane focus)
+            TextInputAction::Char('h') => Some(Action::DiffViewer(DiffViewerAction::NavigateLeft)),
+            TextInputAction::Char('l') => Some(Action::DiffViewer(DiffViewerAction::NavigateRight)),
+            // g for top, G for bottom
+            TextInputAction::Char('g') => {
+                Some(Action::DiffViewer(DiffViewerAction::NavigateToTop))
+            }
+            TextInputAction::Char('G') => {
+                Some(Action::DiffViewer(DiffViewerAction::NavigateToBottom))
+            }
+            // n for next hunk, N for previous hunk
+            TextInputAction::Char('n') => Some(Action::DiffViewer(DiffViewerAction::NextHunk)),
+            TextInputAction::Char('N') => Some(Action::DiffViewer(DiffViewerAction::PrevHunk)),
+
+            // === Pane switching ===
+            // Space switches panes
+            TextInputAction::Char(' ') => Some(Action::DiffViewer(DiffViewerAction::SwitchPane)),
+            // Tab also switches panes
+            TextInputAction::Char('\t') => Some(Action::DiffViewer(DiffViewerAction::SwitchPane)),
+
+            // === Comment editing ===
+            TextInputAction::Char('c') => Some(Action::DiffViewer(DiffViewerAction::AddComment)),
             TextInputAction::Char(c) => Some(Action::DiffViewer(DiffViewerAction::CommentChar(c))),
             TextInputAction::Backspace => {
                 Some(Action::DiffViewer(DiffViewerAction::CommentBackspace))
             }
             TextInputAction::ClearLine => None,
-            TextInputAction::Escape => Some(Action::DiffViewer(DiffViewerAction::CancelComment)),
-            TextInputAction::Confirm => Some(Action::DiffViewer(DiffViewerAction::CommitComment)),
+
+            // Escape: if editing comment, cancel; otherwise switch to file tree
+            TextInputAction::Escape => {
+                Some(Action::DiffViewer(DiffViewerAction::EscapeOrFocusTree))
+            }
+            // Enter: in file tree selects and switches, in diff does toggle
+            TextInputAction::Confirm => Some(Action::DiffViewer(DiffViewerAction::Toggle)),
         }
     }
 

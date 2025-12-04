@@ -3,7 +3,9 @@
 //! A reusable floating popup for confirming PR operations with editable message.
 //! Used for approve, comment, request changes, and close actions.
 
-use crate::actions::{Action, ConfirmationPopupAction, ContextAction, NavigationAction, TextInputAction};
+use crate::actions::{
+    Action, ConfirmationPopupAction, ContextAction, NavigationAction, TextInputAction,
+};
 use crate::capabilities::PanelCapabilities;
 use crate::state::AppState;
 use crate::view_models::ConfirmationPopupViewModel;
@@ -72,7 +74,9 @@ impl View for ConfirmationPopupView {
     fn translate_context_action(&self, action: ContextAction, _state: &AppState) -> Option<Action> {
         match action {
             // Confirm submits the popup
-            ContextAction::Confirm => Some(Action::ConfirmationPopup(ConfirmationPopupAction::Confirm)),
+            ContextAction::Confirm => {
+                Some(Action::ConfirmationPopup(ConfirmationPopupAction::Confirm))
+            }
             // Selection actions don't apply to a popup
             _ => None,
         }

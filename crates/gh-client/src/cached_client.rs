@@ -355,10 +355,7 @@ impl<C: GitHubClient + Clone> GitHubClient for CachedGitHubClient<C> {
         repo: &str,
         head_sha: &str,
     ) -> anyhow::Result<CiStatus> {
-        let url = format!(
-            "/repos/{}/{}/commits/{}/check-runs",
-            owner, repo, head_sha
-        );
+        let url = format!("/repos/{}/{}/commits/{}/check-runs", owner, repo, head_sha);
         let params: &[(&str, &str)] = &[];
 
         // Try cache first
