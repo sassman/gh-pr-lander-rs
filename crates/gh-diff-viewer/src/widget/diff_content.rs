@@ -4,6 +4,7 @@ use crate::highlight::DiffHighlighter;
 use crate::model::{DiffLine, FileDiff, LineKind};
 use crate::traits::ThemeProvider;
 use ratatui::prelude::*;
+use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Widget};
 use std::collections::HashSet;
 
@@ -17,6 +18,25 @@ pub struct DiffRenderData<'a> {
     pub display_name: &'a str,
     /// Total line count (for scroll bounds).
     pub total_lines: usize,
+}
+
+/// A single hint entry for the footer.
+#[derive(Debug, Clone)]
+pub struct FooterHint {
+    /// The key (e.g., "c", "R").
+    pub key: String,
+    /// The description (e.g., "Comment", "Review").
+    pub description: String,
+}
+
+impl FooterHint {
+    /// Create a new footer hint.
+    pub fn new(key: impl Into<String>, description: impl Into<String>) -> Self {
+        Self {
+            key: key.into(),
+            description: description.into(),
+        }
+    }
 }
 
 /// Widget for rendering the diff content pane.
@@ -37,6 +57,8 @@ pub struct DiffContentWidget<'a, T: ThemeProvider> {
     theme: &'a T,
     /// Whether this pane is focused.
     focused: bool,
+    /// Footer hints to display at the bottom border.
+    footer_hints: Vec<FooterHint>,
 }
 
 impl<'a, T: ThemeProvider> DiffContentWidget<'a, T> {
@@ -59,12 +81,19 @@ impl<'a, T: ThemeProvider> DiffContentWidget<'a, T> {
             highlighter,
             theme,
             focused,
+            footer_hints: Vec::new(),
         }
     }
 
     /// Set visual selection range.
     pub fn with_selection(mut self, selection: Option<(usize, usize)>) -> Self {
         self.visual_selection = selection;
+        self
+    }
+
+    /// Set footer hints to display at the bottom border.
+    pub fn with_footer_hints(mut self, hints: Vec<FooterHint>) -> Self {
+        self.footer_hints = hints;
         self
     }
 }
@@ -84,10 +113,41 @@ impl<T: ThemeProvider> Widget for DiffContentWidget<'_, T> {
             .map(|d| format!(" {} ", d.display_name))
             .unwrap_or_else(|| " No file selected ".to_string());
 
-        let block = Block::default()
+        // Build footer hints line
+        let footer_line = if !self.footer_hints.is_empty() {
+            let mut spans = vec![Span::raw(" ")];
+            for (i, hint) in self.footer_hints.iter().enumerate() {
+                if i > 0 {
+                    spans.push(Span::styled(
+                        " │ ",
+                        Style::default().fg(self.theme.hint_text_foreground()),
+                    ));
+                }
+                spans.push(Span::styled(
+                    &hint.key,
+                    Style::default()
+                        .fg(self.theme.hint_key_foreground())
+                        .add_modifier(Modifier::BOLD),
+                ));
+                spans.push(Span::styled(
+                    format!(" {}", hint.description),
+                    Style::default().fg(self.theme.hint_text_foreground()),
+                ));
+            }
+            spans.push(Span::raw(" "));
+            Some(Line::from(spans))
+        } else {
+            None
+        };
+
+        let mut block = Block::default()
             .borders(Borders::ALL)
             .border_style(border_style)
             .title(title);
+
+        if let Some(footer) = footer_line {
+            block = block.title_bottom(footer);
+        }
 
         let inner = block.inner(area);
         block.render(area, buf);

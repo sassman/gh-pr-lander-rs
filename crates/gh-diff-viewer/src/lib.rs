@@ -64,4 +64,4 @@ pub use state::DiffViewerState;
 pub use traits::{
     CommentError, CommentHandler, ContextError, ContextProvider, DefaultTheme, ThemeProvider,
 };
-pub use widget::DiffViewer;
+pub use widget::{DiffViewer, FooterHint};

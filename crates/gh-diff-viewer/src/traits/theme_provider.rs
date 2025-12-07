@@ -100,6 +100,16 @@ pub trait ThemeProvider: Send + Sync {
     fn file_tree_directory_foreground(&self) -> Color {
         Color::Blue
     }
+
+    /// Foreground color for key hints (the key part like "c", "R").
+    fn hint_key_foreground(&self) -> Color {
+        Color::Yellow
+    }
+
+    /// Foreground color for hint descriptions.
+    fn hint_text_foreground(&self) -> Color {
+        Color::DarkGray
+    }
 }
 
 /// Default theme with sensible dark-mode colors.

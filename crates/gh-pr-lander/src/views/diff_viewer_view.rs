@@ -11,7 +11,7 @@ use crate::state::AppState;
 use crate::view_models::StatusBarViewModel;
 use crate::views::status_bar::StatusBarWidget;
 use crate::views::{View, ViewId};
-use gh_diff_viewer::{DiffHighlighter, DiffViewer, ThemeProvider};
+use gh_diff_viewer::{DiffHighlighter, DiffViewer, FooterHint, ThemeProvider};
 use ratatui::{prelude::*, widgets::*};
 
 /// Diff viewer view - displays PR diff with syntax highlighting
@@ -93,6 +93,14 @@ impl ThemeProvider for LanderThemeAdapter<'_> {
     fn file_tree_directory_foreground(&self) -> Color {
         self.0.accent_primary
     }
+
+    fn hint_key_foreground(&self) -> Color {
+        self.0.accent_primary
+    }
+
+    fn hint_text_foreground(&self) -> Color {
+        self.0.text_muted
+    }
 }
 
 impl View for DiffViewerView {
@@ -157,8 +165,29 @@ impl View for DiffViewerView {
             // Create a mutable copy of the highlighter for rendering
             let mut highlighter = DiffHighlighter::new();
 
-            // Create the diff viewer widget with theme
-            let widget = DiffViewer::new(&mut highlighter, &theme_adapter);
+            // Build footer hints based on current mode
+            let hints = if inner_state.is_editing_comment() {
+                vec![
+                    FooterHint::new("Enter", "Submit"),
+                    FooterHint::new("Esc", "Cancel"),
+                ]
+            } else if inner_state.show_review_popup {
+                vec![
+                    FooterHint::new("Enter", "Submit"),
+                    FooterHint::new("←/→", "Select"),
+                    FooterHint::new("Esc", "Cancel"),
+                ]
+            } else {
+                vec![
+                    FooterHint::new("c", "Comment"),
+                    FooterHint::new("R", "Review"),
+                    FooterHint::new("q", "Close"),
+                ]
+            };
+
+            // Create the diff viewer widget with theme and hints
+            let widget = DiffViewer::new(&mut highlighter, &theme_adapter)
+                .with_footer_hints(hints);
 
             // We need to clone the inner state for rendering since render_with_state requires &mut
             let mut render_state = inner_state.clone();
@@ -272,8 +301,7 @@ impl View for DiffViewerView {
             Action::DiffViewer(_)
                 | Action::ViewContext(_)
                 | Action::Navigate(_)
-                | Action::TextInput(_)
-                | Action::Global(_)
+                | Action::TextInput(_) // | Action::Global(_)
         )
     }
 

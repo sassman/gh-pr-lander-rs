@@ -1,6 +1,6 @@
 //! Main diff viewer composite widget.
 
-use super::{DiffContentWidget, DiffRenderData, FileTreeWidget, ReviewPopupWidget};
+use super::{DiffContentWidget, DiffRenderData, FileTreeWidget, FooterHint, ReviewPopupWidget};
 use crate::highlight::DiffHighlighter;
 use crate::state::DiffViewerState;
 use crate::traits::ThemeProvider;
@@ -32,12 +32,24 @@ pub struct DiffViewer<'a, T: ThemeProvider> {
     highlighter: &'a mut DiffHighlighter,
     /// Theme provider.
     theme: &'a T,
+    /// Footer hints to display.
+    footer_hints: Vec<FooterHint>,
 }
 
 impl<'a, T: ThemeProvider> DiffViewer<'a, T> {
     /// Create a new diff viewer widget.
     pub fn new(highlighter: &'a mut DiffHighlighter, theme: &'a T) -> Self {
-        Self { highlighter, theme }
+        Self {
+            highlighter,
+            theme,
+            footer_hints: Vec::new(),
+        }
+    }
+
+    /// Set footer hints to display in the diff content pane.
+    pub fn with_footer_hints(mut self, hints: Vec<FooterHint>) -> Self {
+        self.footer_hints = hints;
+        self
     }
 }
 
@@ -128,7 +140,8 @@ impl<T: ThemeProvider> DiffViewer<'_, T> {
             self.theme,
             !file_tree_focused,
         )
-        .with_selection(visual_selection);
+        .with_selection(visual_selection)
+        .with_footer_hints(self.footer_hints.clone());
 
         diff_content.render(chunks[1], buf);
 
