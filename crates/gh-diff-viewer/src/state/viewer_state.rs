@@ -539,6 +539,7 @@ impl DiffViewerState {
     }
 
     /// Open the comment editor for the current line/selection.
+    /// If a comment already exists at this position, edit it instead of creating a new one.
     fn open_comment_editor(&mut self) -> Option<DiffEvent> {
         let file = self.current_file()?;
         let file_path = file.path.clone();
@@ -556,11 +557,29 @@ impl DiffViewerState {
         };
 
         // Check for visual selection
-        self.comment_editor = if let Some((start_idx, end_idx)) = self.nav.visual_selection() {
-            // Multi-line comment
+        let visual_selection = self.nav.visual_selection();
+
+        // Check if there's an existing comment at this position
+        let existing_comment = self
+            .pending_comments
+            .iter()
+            .enumerate()
+            .find(|(_, c)| c.path == file_path && c.position.line == line);
+
+        self.comment_editor = if let Some((idx, comment)) = existing_comment {
+            // Edit existing comment
+            Some(CommentEditor::edit_existing(
+                file_path,
+                comment.position.clone(),
+                &comment.body,
+                idx,
+            ))
+        } else if let Some((start_idx, end_idx)) = visual_selection {
+            // New multi-line comment
             let start_line = line.saturating_sub((end_idx - start_idx) as u32);
             Some(CommentEditor::new_range(file_path, side, start_line, line))
         } else {
+            // New single-line comment
             Some(CommentEditor::new(file_path, side, line))
         };
 
@@ -574,11 +593,31 @@ impl DiffViewerState {
         let editor = self.comment_editor.take()?;
 
         if editor.is_empty() {
+            // If editing an existing comment and body is now empty, delete it
+            if let Some(idx) = editor.editing_index {
+                if idx < self.pending_comments.len() {
+                    self.pending_comments.remove(idx);
+                    self.invalidate_comment_cache();
+                    return Some(DiffEvent::CommentDeleted(idx));
+                }
+            }
             return None;
         }
 
-        let comment = PendingComment::new(editor.file_path, editor.position, editor.body);
+        if let Some(idx) = editor.editing_index {
+            // Update existing comment
+            if let Some(comment) = self.pending_comments.get_mut(idx) {
+                comment.body = editor.body.clone();
+                self.invalidate_comment_cache();
+                return Some(DiffEvent::CommentEdited {
+                    index: idx,
+                    body: editor.body,
+                });
+            }
+        }
 
+        // Add new comment
+        let comment = PendingComment::new(editor.file_path, editor.position, editor.body);
         self.pending_comments.push(comment.clone());
         self.invalidate_comment_cache();
         Some(DiffEvent::CommentAdded(comment))
