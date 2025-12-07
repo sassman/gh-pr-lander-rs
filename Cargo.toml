@@ -33,7 +33,7 @@ log = "0.4"
 ansi-parser = "0.9"
 
 # GitHub API
-octocrab = "0.48.0"
+octocrab = "0.48.1"
 
 # TUI
 ratatui = "0.29.0"
