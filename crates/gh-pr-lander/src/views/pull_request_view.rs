@@ -153,9 +153,17 @@ fn render_pr_table(state: &AppState, area: Rect, f: &mut Frame) {
     // Build header row
     let header_style = theme.table_header();
 
-    let header_cells = ["  #PR", "Title", "Author", "Delta", "Comments", "Status"]
-        .iter()
-        .map(|h| Cell::from(*h).style(header_style));
+    // Column widths: Delta=12, Comments=8
+    let header_cells = [
+        "  #PR".to_string(),
+        "Title".to_string(),
+        "Author".to_string(),
+        format!("{:^12}", "Delta"),
+        format!("{:^8}", "Comments"),
+        "Status".to_string(),
+    ]
+    .into_iter()
+    .map(|h| Cell::from(h).style(header_style));
 
     let header = Row::new(header_cells).style(header_style).height(1);
 
@@ -167,10 +175,13 @@ fn render_pr_table(state: &AppState, area: Rect, f: &mut Frame) {
             let style = Style::default().fg(row_vm.fg_color).bg(row_vm.bg_color);
 
             // Build delta cell with colored additions (green) and deletions (red)
+            // Right-align additions, space, left-align deletions within 12-char column
+            let add_str = format!("+{}", row_vm.additions);
+            let del_str = format!("-{}", row_vm.deletions);
             let delta_line = Line::from(vec![
-                Span::styled(format!("+{}", row_vm.additions), Style::default().fg(Color::Green)),
+                Span::styled(format!("{:>5}", add_str), Style::default().fg(Color::Green)),
                 Span::raw(" "),
-                Span::styled(format!("-{}", row_vm.deletions), Style::default().fg(Color::Red)),
+                Span::styled(format!("{:<6}", del_str), Style::default().fg(Color::Red)),
             ]);
 
             Row::new(vec![
@@ -178,7 +189,7 @@ fn render_pr_table(state: &AppState, area: Rect, f: &mut Frame) {
                 Cell::from(row_vm.title.clone()),
                 Cell::from(row_vm.author.clone()),
                 Cell::from(delta_line),
-                Cell::from(row_vm.comments.clone()),
+                Cell::from(format!("{:^8}", row_vm.comments)), // Center comments in 8-char column
                 Cell::from(row_vm.status_text.clone()).style(Style::default().fg(row_vm.status_color)),
             ])
             .style(style)
