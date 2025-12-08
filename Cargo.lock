@@ -859,7 +859,6 @@ dependencies = [
  "async-trait",
  "chrono",
  "gh-api-cache",
- "gh-pr-config",
  "log",
  "octocrab",
  "serde",

@@ -58,8 +58,8 @@ pub mod client_manager;
 pub mod octocrab_client;
 pub mod types;
 
-// Re-export DEFAULT_HOST from gh-pr-config for convenience
-pub use gh_pr_config::DEFAULT_HOST;
+/// Default GitHub host (public GitHub)
+pub const DEFAULT_HOST: &str = "github.com";
 
 pub use cached_client::CachedGitHubClient;
 pub use client::{CacheMode, GitHubClient};
