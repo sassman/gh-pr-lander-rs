@@ -54,11 +54,13 @@
 
 pub mod cached_client;
 pub mod client;
+pub mod client_manager;
 pub mod octocrab_client;
 pub mod types;
 
 pub use cached_client::CachedGitHubClient;
 pub use client::{CacheMode, GitHubClient};
+pub use client_manager::{ClientManager, TokenResolver};
 pub use octocrab_client::OctocrabClient;
 pub use types::{
     CheckRun, CheckStatus, CiState, CiStatus, MergeMethod, MergeResult, PullRequest, ReviewComment,

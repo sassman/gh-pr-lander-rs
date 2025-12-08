@@ -19,19 +19,20 @@ use crate::state::{BuildLogJobMetadata, BuildLogJobStatus, BuildLogPrContext};
 use crate::utils::browser::open_url;
 use crate::views::BuildLogView;
 use gh_client::{
-    octocrab::Octocrab, ApiCache, CacheMode, CachedGitHubClient, GitHubClient, MergeMethod,
-    OctocrabClient, PullRequest, ReviewEvent,
+    octocrab::Octocrab, ApiCache, CacheMode, CachedGitHubClient, ClientManager, GitHubClient,
+    MergeMethod, OctocrabClient, PullRequest, ReviewEvent,
 };
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::runtime::Runtime;
+use tokio::sync::Mutex as TokioMutex;
 
 /// Middleware for all GitHub API operations
 pub struct GitHubMiddleware {
     /// Tokio runtime for async operations
     runtime: Runtime,
-    /// Shared client holder (populated asynchronously)
-    client_holder: Arc<Mutex<Option<CachedGitHubClient<OctocrabClient>>>>,
+    /// Client manager for multi-host support
+    client_manager: Arc<TokioMutex<ClientManager>>,
     /// Shared cache instance
     cache: Arc<Mutex<ApiCache>>,
 }
@@ -46,29 +47,42 @@ impl GitHubMiddleware {
             gh_pr_config::api_cache_path().expect("API Cache path should always exist.");
         let cache = Arc::new(Mutex::new(ApiCache::new(cache_file).unwrap_or_default()));
 
+        // Create client manager
+        let client_manager = ClientManager::new(Arc::clone(&cache));
+
         Self {
             runtime,
-            client_holder: Arc::new(Mutex::new(None)),
+            client_manager: Arc::new(TokioMutex::new(client_manager)),
             cache,
         }
     }
 
-    /// Get the client if initialized
-    fn client(&self) -> Option<CachedGitHubClient<OctocrabClient>> {
-        self.client_holder.lock().ok()?.clone()
+    /// Get a client for the default host (github.com) synchronously if available
+    /// This is used for quick checks - actual operations should use get_client_for_repo
+    fn has_default_client(&self) -> bool {
+        // Try to check without blocking
+        if let Ok(guard) = self.client_manager.try_lock() {
+            guard.has_client(None)
+        } else {
+            false
+        }
     }
 
-    /// Initialize the GitHub client with caching (async, non-blocking)
+    /// Get the client manager Arc for use in async tasks
+    fn client_manager_arc(&self) -> Arc<TokioMutex<ClientManager>> {
+        Arc::clone(&self.client_manager)
+    }
+
+    /// Initialize the GitHub client for the default host (async, non-blocking)
     fn initialize_client(&self, dispatcher: &Dispatcher) {
-        let cache = Arc::clone(&self.cache);
-        let client_holder = Arc::clone(&self.client_holder);
+        let client_manager = self.client_manager_arc();
         let dispatcher = dispatcher.clone();
 
         self.runtime.spawn(async move {
-            match init_client(cache).await {
-                Ok(client) => {
-                    log::info!("GitHubMiddleware: GitHub client initialized with caching");
-                    *client_holder.lock().unwrap() = Some(client);
+            let mut manager = client_manager.lock().await;
+            match manager.get_client(None).await {
+                Ok(_) => {
+                    log::info!("GitHubMiddleware: GitHub client initialized for github.com");
                     // Signal that client is ready - trigger any pending operations
                     dispatcher.dispatch(Action::event(Event::ClientReady));
                 }
@@ -79,12 +93,33 @@ impl GitHubMiddleware {
         });
     }
 
+    /// Get the default client (github.com) synchronously if available
+    /// This is for backward compatibility - prefer using client_manager_arc for new code
+    fn client(&self) -> Option<CachedGitHubClient<OctocrabClient>> {
+        // Try to get the default (github.com) client without blocking
+        if let Ok(mut guard) = self.client_manager.try_lock() {
+            // Use blocking approach since we need to return synchronously
+            // This is safe because we only call it when we know the client exists
+            if guard.has_client(None) {
+                // Can't await here, so we use a runtime handle
+                let rt = tokio::runtime::Handle::try_current().ok()?;
+                rt.block_on(async {
+                    guard.clone_client(None).await.ok()
+                })
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    }
+
     /// Get a client configured for force refresh (WriteOnly mode)
     fn force_refresh_client(&self) -> Option<CachedGitHubClient<OctocrabClient>> {
         self.client().map(|c| c.with_mode(CacheMode::WriteOnly))
     }
 
-    /// Get a cloneable octocrab instance for async operations
+    /// Get a cloneable octocrab instance for async operations (default host)
     fn octocrab_arc(&self) -> Option<Arc<Octocrab>> {
         self.client().map(|c| c.inner().octocrab_arc())
     }
@@ -171,8 +206,8 @@ impl GitHubMiddleware {
     }
 
     /// Get target PR info for IDE opening (respects multi-selection)
-    /// Returns: Vec<(pr_number, repo_org, repo_name)>
-    fn get_target_pr_info_for_ide(&self, state: &AppState) -> Vec<(usize, String, String)> {
+    /// Returns: Vec<(pr_number, Repository)>
+    fn get_target_pr_info_for_ide(&self, state: &AppState) -> Vec<(usize, Repository)> {
         let repo_idx = state.main_view.selected_repository;
 
         if let Some(repo) = state.main_view.repositories.get(repo_idx) {
@@ -182,13 +217,13 @@ impl GitHubMiddleware {
                     return repo_data
                         .selected_pr_numbers
                         .iter()
-                        .map(|&pr_num| (pr_num, repo.org.clone(), repo.repo.clone()))
+                        .map(|&pr_num| (pr_num, repo.clone()))
                         .collect();
                 }
 
                 // Otherwise use the cursor PR
                 if let Some(pr) = repo_data.prs.get(repo_data.selected_pr) {
-                    return vec![(pr.number, repo.org.clone(), repo.repo.clone())];
+                    return vec![(pr.number, repo.clone())];
                 }
             }
         }
@@ -253,7 +288,7 @@ impl GitHubMiddleware {
         state: &AppState,
         dispatcher: &Dispatcher,
     ) {
-        if self.client().is_none() {
+        if !self.has_default_client() {
             return;
         }
 
@@ -271,7 +306,7 @@ impl GitHubMiddleware {
                 .cloned()
                 .collect();
 
-            dispatch_ci_status_checks(repo, &prs_needing_status, dispatcher);
+            dispatch_ci_status_checks(repo, &prs_needing_status, dispatcher, self.client_manager_arc());
         }
     }
 
@@ -282,32 +317,11 @@ impl GitHubMiddleware {
         dispatcher: &Dispatcher,
         force_refresh: bool,
     ) -> bool {
-        let client = if force_refresh {
-            let Some(client) = self.force_refresh_client() else {
-                log::error!("PrLoad: client not initialized");
-                // dispatcher.dispatch(Action::PullRequest(PullRequestAction::LoadError(
-                // repo_idx,
-                // "GitHub client not initialized".to_string(),
-                // )));
-                return true;
-            };
-            client
-        } else {
-            let Some(client) = self.client() else {
-                log::error!("PrLoad: client not initialized");
-                // dispatcher.dispatch(Action::PullRequest(PullRequestAction::LoadError(
-                //     repo_idx,
-                //     "GitHub client not initialized".to_string(),
-                // )));
-                return true;
-            };
-            client
-        };
-
         log::info!("PrLoad: Loading PRs for {}/{}", repo.org, repo.repo);
 
         let repo = repo.clone();
         let dispatcher = dispatcher.clone();
+        let client_manager = self.client_manager_arc();
 
         // Spawn async task to load PRs
         let mode = if force_refresh {
@@ -328,6 +342,26 @@ impl GitHubMiddleware {
                 repo.org,
                 repo.repo
             );
+
+            // Get client for this repository's host
+            let client = {
+                let mut manager = client_manager.lock().await;
+                match manager.clone_client(repo.host.as_deref()).await {
+                    Ok(c) => if force_refresh { c.with_mode(CacheMode::WriteOnly) } else { c },
+                    Err(e) => {
+                        log::error!("Failed to get client for host {:?}: {}", repo.host, e);
+                        dispatcher.dispatch(Action::StatusBar(StatusBarAction::error(
+                            format!("Failed to connect to GitHub: {}", e),
+                            "Load",
+                        )));
+                        dispatcher.dispatch(Action::PullRequest(PullRequestAction::LoadError {
+                            repo,
+                            error: e.to_string(),
+                        }));
+                        return;
+                    }
+                }
+            };
 
             match client
                 .fetch_pull_requests(&repo.org, &repo.repo, Some(&repo.branch))
@@ -359,10 +393,10 @@ impl GitHubMiddleware {
 
                     // Then trigger CI status checks for each PR (background fetch)
                     // This must come AFTER Loaded so the PRs exist when BuildStatusUpdated arrives
-                    dispatch_ci_status_checks(&repo, &domain_prs, &dispatcher);
+                    dispatch_ci_status_checks(&repo, &domain_prs, &dispatcher, Arc::clone(&client_manager));
 
                     // Also trigger background fetch for PR stats (additions/deletions)
-                    dispatch_pr_stats_fetch(&repo, &domain_prs, &dispatcher, client);
+                    dispatch_pr_stats_fetch(&repo, &domain_prs, &dispatcher, client, Arc::clone(&client_manager));
                 }
                 Err(e) => {
                     log::error!("Failed to load PRs for {}/{}: {}", repo.org, repo.repo, e);
@@ -443,11 +477,6 @@ impl Middleware for GitHubMiddleware {
 
             // Handle PR refresh request (force refresh - bypass cache)
             Action::PullRequest(PullRequestAction::Refresh) => {
-                if self.client().is_none() {
-                    log::warn!("Cannot refresh PRs: GitHub client not initialized");
-                    return true;
-                }
-
                 let repo_idx = state.main_view.selected_repository;
                 self.handle_pr_load(repo_idx, state, dispatcher, true)
             }
@@ -491,23 +520,17 @@ impl Middleware for GitHubMiddleware {
             }
 
             Action::PullRequest(PullRequestAction::MergeRequest) => {
-                let client = match &self.client() {
-                    Some(c) => c.clone(),
-                    None => {
-                        log::error!("GitHub client not available");
-                        return false;
-                    }
-                };
-
                 let targets = self.get_target_prs(state);
                 if targets.is_empty() {
                     log::warn!("No PRs selected for merge");
                     return false;
                 }
 
+                let client_manager = self.client_manager_arc();
+
                 for (repo, pr_number) in targets {
                     let dispatcher = dispatcher.clone();
-                    let client = client.clone();
+                    let client_manager = Arc::clone(&client_manager);
 
                     dispatcher.dispatch(Action::PullRequest(PullRequestAction::MergeStart {
                         repo: repo.clone(),
@@ -519,6 +542,22 @@ impl Middleware for GitHubMiddleware {
                     )));
 
                     self.runtime.spawn(async move {
+                        // Get client for this repository's host
+                        let client = {
+                            let mut manager = client_manager.lock().await;
+                            match manager.clone_client(repo.host.as_deref()).await {
+                                Ok(c) => c,
+                                Err(e) => {
+                                    log::error!("Failed to get client: {}", e);
+                                    dispatcher.dispatch(Action::StatusBar(StatusBarAction::error(
+                                        format!("Merge error: {}", e),
+                                        "Merge",
+                                    )));
+                                    return;
+                                }
+                            }
+                        };
+
                         match client
                             .merge_pull_request(
                                 &repo.org,
@@ -1049,8 +1088,8 @@ impl Middleware for GitHubMiddleware {
 
                 for (repo, _pr_number, _head_sha, head_branch) in targets {
                     let url = format!(
-                        "https://github.com/{}/{}/actions?query=branch%3A{}",
-                        repo.org, repo.repo, head_branch
+                        "{}/actions?query=branch%3A{}",
+                        repo.web_url(), head_branch
                     );
                     self.runtime.spawn(open_url(url));
                 }
@@ -1071,9 +1110,12 @@ impl Middleware for GitHubMiddleware {
                 let temp_dir_base = state.app_config.temp_dir.clone();
 
                 // Spawn blocking task for each PR to open in IDE
-                for (pr_number, org, repo_name) in targets {
+                for (pr_number, repo) in targets {
                     let ide_command = ide_command.clone();
                     let temp_dir_base = temp_dir_base.clone();
+                    let org = repo.org.clone();
+                    let repo_name = repo.repo.clone();
+                    let ssh_url = repo.ssh_url();
 
                     self.runtime.spawn_blocking(move || {
                         use std::path::PathBuf;
@@ -1144,7 +1186,6 @@ impl Middleware for GitHubMiddleware {
                         }
 
                         // Set origin URL to SSH (gh checkout doesn't do this)
-                        let ssh_url = format!("git@github.com:{}/{}.git", org, repo_name);
                         let set_url_output = Command::new("git")
                             .args(["remote", "set-url", "origin", &ssh_url])
                             .current_dir(&pr_dir)
@@ -2033,46 +2074,13 @@ fn parse_duration(started: &str, completed: &str) -> Option<Duration> {
     }
 }
 
-/// Initialize GitHub client with caching support
-async fn init_client(
-    cache: Arc<Mutex<ApiCache>>,
-) -> anyhow::Result<CachedGitHubClient<OctocrabClient>> {
-    // Try environment variables first
-    let token = if let Ok(token) = std::env::var("GITHUB_TOKEN") {
-        token
-    } else if let Ok(token) = std::env::var("GH_TOKEN") {
-        token
-    } else {
-        // Fallback: try to get token from gh CLI (async to avoid blocking)
-        log::debug!("No GITHUB_TOKEN/GH_TOKEN found, trying gh auth token");
-        let output = tokio::process::Command::new("gh")
-            .args(["auth", "token"])
-            .output()
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to run gh auth token: {}", e))?;
-
-        if output.status.success() {
-            String::from_utf8(output.stdout)
-                .map(|s| s.trim().to_string())
-                .map_err(|e| anyhow::anyhow!("Invalid UTF-8 from gh auth token: {}", e))?
-        } else {
-            return Err(anyhow::anyhow!(
-                "GitHub token not found. Set GITHUB_TOKEN, GH_TOKEN, or run 'gh auth login'"
-            ));
-        }
-    };
-
-    let octocrab = Octocrab::builder().personal_token(token).build()?;
-    let octocrab_client = OctocrabClient::new(Arc::new(octocrab));
-
-    // Wrap with caching (ReadWrite mode by default)
-    let cached_client = CachedGitHubClient::new(octocrab_client, cache, CacheMode::ReadWrite);
-
-    Ok(cached_client)
-}
-
 /// Dispatch CheckBuildStatus actions for the given PRs
-fn dispatch_ci_status_checks(repo: &Repository, prs: &[Pr], dispatcher: &Dispatcher) {
+fn dispatch_ci_status_checks(
+    repo: &Repository,
+    prs: &[Pr],
+    dispatcher: &Dispatcher,
+    _client_manager: Arc<TokioMutex<ClientManager>>,
+) {
     for pr in prs {
         dispatcher.dispatch(Action::PullRequest(PullRequestAction::CheckBuildStatus {
             repo: repo.clone(),
@@ -2091,6 +2099,7 @@ fn dispatch_pr_stats_fetch(
     prs: &[Pr],
     dispatcher: &Dispatcher,
     client: CachedGitHubClient<OctocrabClient>,
+    _client_manager: Arc<TokioMutex<ClientManager>>,
 ) {
     for pr in prs {
         let pr_number = pr.number as u64;

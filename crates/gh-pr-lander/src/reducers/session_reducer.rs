@@ -25,9 +25,19 @@ pub fn reduce_session(mut state: MainViewState, action: &SessionAction) -> MainV
 
         SessionAction::RestoreSelection => {
             // Apply pending session selection if repositories match
-            if let Some((org, name, branch)) = &state.pending_session_repo {
+            if let Some((org, name, branch, host)) = &state.pending_session_repo {
                 for (idx, repo) in state.repositories.iter().enumerate() {
-                    if repo.org == *org && repo.repo == *name && repo.branch == *branch {
+                    // Match all fields including host
+                    // Treat None and Some("github.com") as equivalent
+                    let host_matches = match (&repo.host, host) {
+                        (None, None) => true,
+                        (None, Some(h)) if h == "github.com" => true,
+                        (Some(a), None) if a == "github.com" => true,
+                        (Some(a), Some(b)) => a == b,
+                        _ => false,
+                    };
+
+                    if repo.org == *org && repo.repo == *name && repo.branch == *branch && host_matches {
                         log::info!(
                             "Session: Restoring repository selection to index {} ({}/{})",
                             idx,
