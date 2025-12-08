@@ -191,29 +191,78 @@ impl<T: ThemeProvider> DiffViewer<'_, T> {
         let inner = block.inner(popup_area);
         block.render(popup_area, buf);
 
-        // Render the comment body with cursor
-        let lines: Vec<&str> = if editor.body.is_empty() {
+        // Render the comment body with soft-wrapping
+        let max_width = inner.width as usize;
+        let max_lines = inner.height.saturating_sub(1) as usize; // Reserve 1 line for hints
+
+        // Wrap text into visual lines
+        let mut visual_lines: Vec<String> = Vec::new();
+        let logical_lines: Vec<&str> = if editor.body.is_empty() {
             vec![""]
         } else {
             editor.body.lines().collect()
         };
 
-        for (i, line) in lines.iter().take(inner.height as usize - 1).enumerate() {
+        for line in &logical_lines {
+            if line.is_empty() {
+                visual_lines.push(String::new());
+            } else {
+                // Wrap long lines
+                let mut remaining = *line;
+                while !remaining.is_empty() {
+                    let take_len = remaining
+                        .char_indices()
+                        .take(max_width)
+                        .last()
+                        .map(|(i, c)| i + c.len_utf8())
+                        .unwrap_or(remaining.len());
+                    visual_lines.push(remaining[..take_len].to_string());
+                    remaining = &remaining[take_len..];
+                }
+            }
+        }
+
+        // Render visible lines
+        for (i, line) in visual_lines.iter().take(max_lines).enumerate() {
             buf.set_string(inner.x, inner.y + i as u16, line, Style::default());
         }
 
-        // Show cursor (simple implementation)
+        // Calculate cursor position accounting for soft-wrapping
         let cursor_line = editor.current_line();
         let cursor_col = editor.current_column();
-        if cursor_line < inner.height as usize && cursor_col < inner.width as usize {
-            let cursor_x = inner.x + cursor_col as u16;
-            let cursor_y = inner.y + cursor_line as u16;
-            if cursor_x < inner.x + inner.width && cursor_y < inner.y + inner.height - 1 {
-                buf.set_style(
-                    Rect::new(cursor_x, cursor_y, 1, 1),
-                    Style::default().bg(Color::White).fg(Color::Black),
-                );
+
+        // Find which visual line the cursor is on
+        let mut visual_line = 0;
+        let mut visual_col = cursor_col;
+
+        for (i, line) in logical_lines.iter().enumerate() {
+            if i < cursor_line {
+                // Count visual lines for previous logical lines
+                if line.is_empty() {
+                    visual_line += 1;
+                } else {
+                    visual_line += (line.len() + max_width - 1) / max_width;
+                }
+            } else {
+                // This is the cursor's logical line - find visual position
+                let mut col_remaining = cursor_col;
+                while col_remaining >= max_width && !line.is_empty() {
+                    col_remaining -= max_width;
+                    visual_line += 1;
+                }
+                visual_col = col_remaining;
+                break;
             }
+        }
+
+        // Show cursor
+        if visual_line < max_lines && visual_col < max_width {
+            let cursor_x = inner.x + visual_col as u16;
+            let cursor_y = inner.y + visual_line as u16;
+            buf.set_style(
+                Rect::new(cursor_x, cursor_y, 1, 1),
+                Style::default().bg(Color::White).fg(Color::Black),
+            );
         }
 
         // Render hints
