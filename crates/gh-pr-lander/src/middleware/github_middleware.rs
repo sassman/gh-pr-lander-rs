@@ -33,8 +33,6 @@ pub struct GitHubMiddleware {
     runtime: Runtime,
     /// Client manager for multi-host support
     client_manager: Arc<TokioMutex<ClientManager>>,
-    /// Shared cache instance
-    cache: Arc<Mutex<ApiCache>>,
 }
 
 impl GitHubMiddleware {
@@ -47,13 +45,12 @@ impl GitHubMiddleware {
             gh_pr_config::api_cache_path().expect("API Cache path should always exist.");
         let cache = Arc::new(Mutex::new(ApiCache::new(cache_file).unwrap_or_default()));
 
-        // Create client manager
-        let client_manager = ClientManager::new(Arc::clone(&cache));
+        // Create client manager with shared cache
+        let client_manager = ClientManager::new(cache);
 
         Self {
             runtime,
             client_manager: Arc::new(TokioMutex::new(client_manager)),
-            cache,
         }
     }
 
@@ -91,37 +88,6 @@ impl GitHubMiddleware {
                 }
             }
         });
-    }
-
-    /// Get the default client (github.com) synchronously if available
-    /// This is for backward compatibility - prefer using client_manager_arc for new code
-    fn client(&self) -> Option<CachedGitHubClient<OctocrabClient>> {
-        // Try to get the default (github.com) client without blocking
-        if let Ok(mut guard) = self.client_manager.try_lock() {
-            // Use blocking approach since we need to return synchronously
-            // This is safe because we only call it when we know the client exists
-            if guard.has_client(None) {
-                // Can't await here, so we use a runtime handle
-                let rt = tokio::runtime::Handle::try_current().ok()?;
-                rt.block_on(async {
-                    guard.clone_client(None).await.ok()
-                })
-            } else {
-                None
-            }
-        } else {
-            None
-        }
-    }
-
-    /// Get a client configured for force refresh (WriteOnly mode)
-    fn force_refresh_client(&self) -> Option<CachedGitHubClient<OctocrabClient>> {
-        self.client().map(|c| c.with_mode(CacheMode::WriteOnly))
-    }
-
-    /// Get a cloneable octocrab instance for async operations (default host)
-    fn octocrab_arc(&self) -> Option<Arc<Octocrab>> {
-        self.client().map(|c| c.inner().octocrab_arc())
     }
 
     /// Get target PRs for an operation (selected PRs or cursor PR)
@@ -600,31 +566,18 @@ impl Middleware for GitHubMiddleware {
             }
 
             Action::PullRequest(PullRequestAction::RebaseRequest) => {
-                let client = match &self.client() {
-                    Some(c) => c.clone(),
-                    None => {
-                        log::error!("GitHub client not available");
-                        return false;
-                    }
-                };
-
-                let octocrab = match self.octocrab_arc() {
-                    Some(c) => c,
-                    None => {
-                        log::error!("Octocrab client not available");
-                        return false;
-                    }
-                };
-
                 let targets = self.get_target_prs_with_author(state);
                 if targets.is_empty() {
                     log::warn!("No PRs selected for rebase");
                     return false;
                 }
 
+                let client_manager = self.client_manager_arc();
+
                 for (repo, pr_number, author) in targets {
                     let is_dependabot = author.to_lowercase().contains("dependabot");
                     let dispatcher = dispatcher.clone();
+                    let client_manager = Arc::clone(&client_manager);
 
                     dispatcher.dispatch(Action::PullRequest(PullRequestAction::RebaseStart {
                         repo: repo.clone(),
@@ -635,10 +588,26 @@ impl Middleware for GitHubMiddleware {
                         "Rebase",
                     )));
 
-                    if is_dependabot {
-                        // For dependabot PRs, post a comment to trigger rebase
-                        let octocrab = Arc::clone(&octocrab);
-                        self.runtime.spawn(async move {
+                    self.runtime.spawn(async move {
+                        // Get client for this repository's host
+                        let client = {
+                            let mut manager = client_manager.lock().await;
+                            match manager.clone_client(repo.host.as_deref()).await {
+                                Ok(c) => c,
+                                Err(e) => {
+                                    log::error!("Failed to get client: {}", e);
+                                    dispatcher.dispatch(Action::StatusBar(StatusBarAction::error(
+                                        format!("Rebase failed: {}", e),
+                                        "Rebase",
+                                    )));
+                                    return;
+                                }
+                            }
+                        };
+
+                        if is_dependabot {
+                            // For dependabot PRs, post a comment to trigger rebase
+                            let octocrab = client.inner().octocrab_arc();
                             match octocrab
                                 .issues(&repo.org, &repo.repo)
                                 .create_comment(pr_number as u64, "@dependabot rebase")
@@ -664,11 +633,8 @@ impl Middleware for GitHubMiddleware {
                                     )));
                                 }
                             }
-                        });
-                    } else {
-                        // For regular PRs, use the update branch API
-                        let client = client.clone();
-                        self.runtime.spawn(async move {
+                        } else {
+                            // For regular PRs, use the update branch API
                             match client
                                 .update_pull_request_branch(&repo.org, &repo.repo, pr_number as u64)
                                 .await
@@ -693,8 +659,8 @@ impl Middleware for GitHubMiddleware {
                                     )));
                                 }
                             }
-                        });
-                    }
+                        }
+                    });
                 }
                 false // Consume action
             }
@@ -768,14 +734,6 @@ impl Middleware for GitHubMiddleware {
                 pr_numbers,
                 message,
             }) => {
-                let client = match &self.client() {
-                    Some(c) => c.clone(),
-                    None => {
-                        log::error!("GitHub client not available");
-                        return false;
-                    }
-                };
-
                 let repo_idx = state.main_view.selected_repository;
                 let Some(repo) = state.main_view.repositories.get(repo_idx).cloned() else {
                     log::error!("No repository selected");
@@ -788,9 +746,11 @@ impl Middleware for GitHubMiddleware {
                     Some(message.clone())
                 };
 
+                let client_manager = self.client_manager_arc();
+
                 for pr_number in pr_numbers {
                     let dispatcher = dispatcher.clone();
-                    let client = client.clone();
+                    let client_manager = Arc::clone(&client_manager);
                     let message = message.clone();
                     let pr_num = *pr_number as usize;
                     let pr_number_owned = *pr_number;
@@ -806,6 +766,21 @@ impl Middleware for GitHubMiddleware {
                     )));
 
                     self.runtime.spawn(async move {
+                        let client = {
+                            let mut manager = client_manager.lock().await;
+                            match manager.clone_client(repo.host.as_deref()).await {
+                                Ok(c) => c,
+                                Err(e) => {
+                                    log::error!("Failed to get client: {}", e);
+                                    dispatcher.dispatch(Action::StatusBar(StatusBarAction::error(
+                                        format!("Approve failed: {}", e),
+                                        "Approve",
+                                    )));
+                                    return;
+                                }
+                            }
+                        };
+
                         match client
                             .create_review(
                                 &repo.org,
@@ -840,23 +815,17 @@ impl Middleware for GitHubMiddleware {
                 pr_numbers,
                 message,
             }) => {
-                let client = match self.octocrab_arc() {
-                    Some(c) => c,
-                    None => {
-                        log::error!("GitHub client not available");
-                        return false;
-                    }
-                };
-
                 let repo_idx = state.main_view.selected_repository;
                 let Some(repo) = state.main_view.repositories.get(repo_idx).cloned() else {
                     log::error!("No repository selected");
                     return false;
                 };
 
+                let client_manager = self.client_manager_arc();
+
                 for pr_number in pr_numbers {
                     let dispatcher = dispatcher.clone();
-                    let client = Arc::clone(&client);
+                    let client_manager = Arc::clone(&client_manager);
                     let message = message.clone();
                     let pr_num = *pr_number as usize;
                     let pr_number_owned = *pr_number;
@@ -872,7 +841,23 @@ impl Middleware for GitHubMiddleware {
                     )));
 
                     self.runtime.spawn(async move {
-                        match client
+                        let client = {
+                            let mut manager = client_manager.lock().await;
+                            match manager.clone_client(repo.host.as_deref()).await {
+                                Ok(c) => c,
+                                Err(e) => {
+                                    log::error!("Failed to get client: {}", e);
+                                    dispatcher.dispatch(Action::StatusBar(StatusBarAction::error(
+                                        format!("Comment failed: {}", e),
+                                        "Comment",
+                                    )));
+                                    return;
+                                }
+                            }
+                        };
+
+                        let octocrab = client.inner().octocrab_arc();
+                        match octocrab
                             .issues(&repo.org, &repo.repo)
                             .create_comment(pr_number_owned, &message)
                             .await
@@ -901,23 +886,17 @@ impl Middleware for GitHubMiddleware {
                 pr_numbers,
                 message,
             }) => {
-                let client = match &self.client() {
-                    Some(c) => c.clone(),
-                    None => {
-                        log::error!("GitHub client not available");
-                        return false;
-                    }
-                };
-
                 let repo_idx = state.main_view.selected_repository;
                 let Some(repo) = state.main_view.repositories.get(repo_idx).cloned() else {
                     log::error!("No repository selected");
                     return false;
                 };
 
+                let client_manager = self.client_manager_arc();
+
                 for pr_number in pr_numbers {
                     let dispatcher = dispatcher.clone();
-                    let client = client.clone();
+                    let client_manager = Arc::clone(&client_manager);
                     let message = message.clone();
                     let pr_num = *pr_number as usize;
                     let pr_number_owned = *pr_number;
@@ -935,6 +914,21 @@ impl Middleware for GitHubMiddleware {
                     )));
 
                     self.runtime.spawn(async move {
+                        let client = {
+                            let mut manager = client_manager.lock().await;
+                            match manager.clone_client(repo.host.as_deref()).await {
+                                Ok(c) => c,
+                                Err(e) => {
+                                    log::error!("Failed to get client: {}", e);
+                                    dispatcher.dispatch(Action::StatusBar(StatusBarAction::error(
+                                        format!("Request changes failed: {}", e),
+                                        "Request Changes",
+                                    )));
+                                    return;
+                                }
+                            }
+                        };
+
                         match client
                             .create_review(
                                 &repo.org,
@@ -993,36 +987,21 @@ impl Middleware for GitHubMiddleware {
                 pr_numbers,
                 message,
             }) => {
-                let client = match self.octocrab_arc() {
-                    Some(c) => c,
-                    None => {
-                        log::error!("GitHub client not available");
-                        return false;
-                    }
-                };
-
-                let cached_client = match &self.client() {
-                    Some(c) => c.clone(),
-                    None => {
-                        log::error!("GitHub client not available");
-                        return false;
-                    }
-                };
-
                 let repo_idx = state.main_view.selected_repository;
                 let Some(repo) = state.main_view.repositories.get(repo_idx).cloned() else {
                     log::error!("No repository selected");
                     return false;
                 };
 
+                let client_manager = Arc::clone(&self.client_manager);
+
                 for pr_number in pr_numbers {
                     let dispatcher = dispatcher.clone();
-                    let client = Arc::clone(&client);
-                    let cached_client = cached_client.clone();
                     let message = message.clone();
                     let pr_num = *pr_number as usize;
                     let pr_number_owned = *pr_number;
                     let repo = repo.clone();
+                    let client_manager = Arc::clone(&client_manager);
 
                     dispatcher.dispatch(Action::PullRequest(PullRequestAction::CloseStart {
                         repo: repo.clone(),
@@ -1034,9 +1013,27 @@ impl Middleware for GitHubMiddleware {
                     )));
 
                     self.runtime.spawn(async move {
+                        // Get client inside async task
+                        let client = {
+                            let mut manager = client_manager.lock().await;
+                            match manager.clone_client(repo.host.as_deref()).await {
+                                Ok(c) => c,
+                                Err(e) => {
+                                    log::error!("Failed to get client: {}", e);
+                                    dispatcher.dispatch(Action::StatusBar(StatusBarAction::error(
+                                        format!("Close failed: {}", e),
+                                        "Close",
+                                    )));
+                                    return;
+                                }
+                            }
+                        };
+
                         // Post comment if message is not empty
                         if !message.is_empty() {
                             if let Err(e) = client
+                                .inner()
+                                .octocrab_arc()
                                 .issues(&repo.org, &repo.repo)
                                 .create_comment(pr_number_owned, &message)
                                 .await
@@ -1050,7 +1047,7 @@ impl Middleware for GitHubMiddleware {
                         }
 
                         // Close the PR
-                        match cached_client
+                        match client
                             .close_pull_request(&repo.org, &repo.repo, pr_number_owned)
                             .await
                         {
@@ -1217,14 +1214,6 @@ impl Middleware for GitHubMiddleware {
             }
 
             Action::PullRequest(PullRequestAction::RerunFailedJobs) => {
-                let client = match &self.client() {
-                    Some(c) => c.clone(),
-                    None => {
-                        log::error!("GitHub client not available");
-                        return false;
-                    }
-                };
-
                 let targets = self.get_target_pr_ci_info(state);
                 if targets.is_empty() {
                     log::warn!("No PRs selected for rerunning jobs");
@@ -1233,13 +1222,31 @@ impl Middleware for GitHubMiddleware {
 
                 log::info!("Rerunning failed jobs for {} PR(s)", targets.len());
 
+                let client_manager = Arc::clone(&self.client_manager);
+
                 // Rerun failed jobs for each target PR
                 for (repo, pr_number, head_sha, _head_branch) in targets {
                     let dispatcher = dispatcher.clone();
-                    let client = client.clone();
+                    let client_manager = Arc::clone(&client_manager);
 
                     // Fetch workflow runs, then rerun failed ones
                     self.runtime.spawn(async move {
+                        // Get client inside async task
+                        let client = {
+                            let mut manager = client_manager.lock().await;
+                            match manager.clone_client(repo.host.as_deref()).await {
+                                Ok(c) => c,
+                                Err(e) => {
+                                    log::error!("Failed to get client for rerun: {}", e);
+                                    dispatcher.dispatch(Action::StatusBar(StatusBarAction::error(
+                                        format!("Rerun failed: {}", e),
+                                        "Rerun",
+                                    )));
+                                    return;
+                                }
+                            }
+                        };
+
                         // Fetch workflow runs for this commit
                         match client.fetch_workflow_runs(&repo.org, &repo.repo, &head_sha).await {
                             Ok(runs) => {
@@ -1317,7 +1324,7 @@ impl Middleware for GitHubMiddleware {
                 let repo_idx = state.main_view.selected_repository;
 
                 // Get repository info
-                let Some(repo) = state.main_view.repositories.get(repo_idx) else {
+                let Some(repo) = state.main_view.repositories.get(repo_idx).cloned() else {
                     dispatcher.dispatch(Action::StatusBar(StatusBarAction::warning(
                         "No repository selected",
                         "Build Logs",
@@ -1343,15 +1350,6 @@ impl Middleware for GitHubMiddleware {
                     return false;
                 };
 
-                // Get octocrab client
-                let Some(octocrab) = self.octocrab_arc() else {
-                    dispatcher.dispatch(Action::StatusBar(StatusBarAction::error(
-                        "GitHub client not initialized",
-                        "Build Logs",
-                    )));
-                    return false;
-                };
-
                 // Capture PR context
                 let pr_context = BuildLogPrContext {
                     number: pr.number,
@@ -1363,6 +1361,7 @@ impl Middleware for GitHubMiddleware {
                 let repo_org = repo.org.clone();
                 let repo_name = repo.repo.clone();
                 let dispatcher = dispatcher.clone();
+                let client_manager = Arc::clone(&self.client_manager);
 
                 // Dispatch loading state and push view
                 dispatcher.dispatch(Action::BuildLog(BuildLogAction::LoadStart));
@@ -1376,6 +1375,25 @@ impl Middleware for GitHubMiddleware {
 
                 // Spawn async task to fetch build logs
                 self.runtime.spawn(async move {
+                    // Get octocrab client inside async task
+                    let octocrab = {
+                        let mut manager = client_manager.lock().await;
+                        match manager.clone_client(repo.host.as_deref()).await {
+                            Ok(c) => c.inner().octocrab_arc(),
+                            Err(e) => {
+                                log::error!("Failed to get client for build logs: {}", e);
+                                dispatcher.dispatch(Action::BuildLog(BuildLogAction::LoadError(
+                                    e.to_string(),
+                                )));
+                                dispatcher.dispatch(Action::StatusBar(StatusBarAction::error(
+                                    format!("Failed to load build logs: {}", e),
+                                    "Build Logs",
+                                )));
+                                return;
+                            }
+                        }
+                    };
+
                     match fetch_build_logs(
                         &octocrab,
                         &repo_org,
@@ -1417,22 +1435,27 @@ impl Middleware for GitHubMiddleware {
                 pr_number,
                 head_sha,
             }) => {
-                let client = match &self.client() {
-                    Some(c) => c.clone(),
-                    None => {
-                        log::warn!("Cannot check build status: GitHub client not initialized");
-                        return true;
-                    }
-                };
-
                 let repo = repo.clone();
                 let pr_number = *pr_number;
                 let head_sha = head_sha.clone();
                 let dispatcher = dispatcher.clone();
+                let client_manager = self.client_manager_arc();
 
                 // Spawn async task to fetch CI status
                 log::info!("Spawning CI status fetch for PR #{}", pr_number);
                 self.runtime.spawn(async move {
+                    // Get client for this repository's host
+                    let client = {
+                        let mut manager = client_manager.lock().await;
+                        match manager.clone_client(repo.host.as_deref()).await {
+                            Ok(c) => c,
+                            Err(e) => {
+                                log::warn!("Cannot check build status: {}", e);
+                                return;
+                            }
+                        }
+                    };
+
                     match client.fetch_ci_status(&repo.org, &repo.repo, &head_sha).await {
                         Ok(ci_status) => {
                             // Convert CiState to MergeableStatus using From trait
@@ -1469,18 +1492,6 @@ impl Middleware for GitHubMiddleware {
 
             // === Diff Viewer Operations ===
             Action::DiffViewer(DiffViewerAction::SubmitReviewRequest { pr_number, event }) => {
-                let client = match &self.client() {
-                    Some(c) => c.clone(),
-                    None => {
-                        log::error!("GitHub client not available for review submission");
-                        dispatcher.dispatch(Action::StatusBar(StatusBarAction::error(
-                            "GitHub client not available",
-                            "Review",
-                        )));
-                        return false;
-                    }
-                };
-
                 let repo_idx = state.main_view.selected_repository;
                 let Some(repo) = state.main_view.repositories.get(repo_idx).cloned() else {
                     log::error!("No repository selected for review submission");
@@ -1494,6 +1505,7 @@ impl Middleware for GitHubMiddleware {
                 let pr_number = *pr_number;
                 let event = *event;
                 let dispatcher = dispatcher.clone();
+                let client_manager = self.client_manager_arc();
 
                 // Convert gh_diff_viewer::ReviewEvent to gh_client::ReviewEvent
                 let api_event = match event {
@@ -1514,6 +1526,21 @@ impl Middleware for GitHubMiddleware {
                 )));
 
                 self.runtime.spawn(async move {
+                    let client = {
+                        let mut manager = client_manager.lock().await;
+                        match manager.clone_client(repo.host.as_deref()).await {
+                            Ok(c) => c,
+                            Err(e) => {
+                                log::error!("Failed to get client: {}", e);
+                                dispatcher.dispatch(Action::StatusBar(StatusBarAction::error(
+                                    format!("Review failed: {}", e),
+                                    "Review",
+                                )));
+                                return;
+                            }
+                        }
+                    };
+
                     match client
                         .create_review(&repo.org, &repo.repo, pr_number, api_event, None)
                         .await
@@ -1550,18 +1577,6 @@ impl Middleware for GitHubMiddleware {
                 side,
                 body,
             }) => {
-                let client = match &self.client() {
-                    Some(c) => c.clone(),
-                    None => {
-                        log::error!("GitHub client not available for comment submission");
-                        dispatcher.dispatch(Action::StatusBar(StatusBarAction::error(
-                            "GitHub client not available",
-                            "Comment",
-                        )));
-                        return false;
-                    }
-                };
-
                 let repo_idx = state.main_view.selected_repository;
                 let Some(repo) = state.main_view.repositories.get(repo_idx).cloned() else {
                     log::error!("No repository selected for comment submission");
@@ -1579,6 +1594,7 @@ impl Middleware for GitHubMiddleware {
                 let side = side.clone();
                 let body = body.clone();
                 let dispatcher = dispatcher.clone();
+                let client_manager = self.client_manager_arc();
 
                 dispatcher.dispatch(Action::StatusBar(StatusBarAction::running(
                     format!("Posting comment on PR #{}...", pr_number),
@@ -1588,6 +1604,21 @@ impl Middleware for GitHubMiddleware {
                 let path_clone = path.clone();
                 let side_clone = side.clone();
                 self.runtime.spawn(async move {
+                    let client = {
+                        let mut manager = client_manager.lock().await;
+                        match manager.clone_client(repo.host.as_deref()).await {
+                            Ok(c) => c,
+                            Err(e) => {
+                                log::error!("Failed to get client: {}", e);
+                                dispatcher.dispatch(Action::StatusBar(StatusBarAction::error(
+                                    format!("Comment failed: {}", e),
+                                    "Comment",
+                                )));
+                                return;
+                            }
+                        }
+                    };
+
                     match client
                         .create_review_comment(
                             &repo.org, &repo.repo, pr_number, &head_sha, &path, line, &side, &body,
@@ -1636,18 +1667,6 @@ impl Middleware for GitHubMiddleware {
                 line,
                 side,
             }) => {
-                let client = match &self.client() {
-                    Some(c) => c.clone(),
-                    None => {
-                        log::error!("GitHub client not available for comment deletion");
-                        dispatcher.dispatch(Action::StatusBar(StatusBarAction::error(
-                            "GitHub client not available",
-                            "Comment",
-                        )));
-                        return false;
-                    }
-                };
-
                 let repo_idx = state.main_view.selected_repository;
                 let Some(repo) = state.main_view.repositories.get(repo_idx).cloned() else {
                     log::error!("No repository selected for comment deletion");
@@ -1664,6 +1683,7 @@ impl Middleware for GitHubMiddleware {
                 let line = *line;
                 let side = side.clone();
                 let dispatcher = dispatcher.clone();
+                let client_manager = self.client_manager_arc();
 
                 log::info!(
                     "Deleting comment {} on PR #{} at {}:{}",
@@ -1681,6 +1701,21 @@ impl Middleware for GitHubMiddleware {
                 let path_clone = path.clone();
                 let side_clone = side.clone();
                 self.runtime.spawn(async move {
+                    let client = {
+                        let mut manager = client_manager.lock().await;
+                        match manager.clone_client(repo.host.as_deref()).await {
+                            Ok(c) => c,
+                            Err(e) => {
+                                log::error!("Failed to get client: {}", e);
+                                dispatcher.dispatch(Action::StatusBar(StatusBarAction::error(
+                                    format!("Delete failed: {}", e),
+                                    "Comment",
+                                )));
+                                return;
+                            }
+                        }
+                    };
+
                     match client
                         .delete_review_comment(&repo.org, &repo.repo, github_id)
                         .await
@@ -1723,7 +1758,7 @@ impl Middleware for GitHubMiddleware {
                 let repo_idx = state.main_view.selected_repository;
 
                 // Get repository info
-                let Some(repo) = state.main_view.repositories.get(repo_idx) else {
+                let Some(repo) = state.main_view.repositories.get(repo_idx).cloned() else {
                     dispatcher.dispatch(Action::StatusBar(StatusBarAction::warning(
                         "No repository selected",
                         "Diff Viewer",
@@ -1749,18 +1784,6 @@ impl Middleware for GitHubMiddleware {
                     return false;
                 };
 
-                // Get octocrab client
-                let Some(octocrab) = self.octocrab_arc() else {
-                    dispatcher.dispatch(Action::StatusBar(StatusBarAction::error(
-                        "GitHub client not initialized",
-                        "Diff Viewer",
-                    )));
-                    return false;
-                };
-
-                // Get GitHub client for fetching comments
-                let github_client = self.client();
-
                 // Capture PR context
                 let pr_number = pr.number as u64;
                 let pr_title = pr.title.clone();
@@ -1769,6 +1792,7 @@ impl Middleware for GitHubMiddleware {
                 let repo_org = repo.org.clone();
                 let repo_name = repo.repo.clone();
                 let dispatcher = dispatcher.clone();
+                let client_manager = self.client_manager_arc();
 
                 // Dispatch loading state
                 dispatcher.dispatch(Action::DiffViewer(DiffViewerAction::LoadStart));
@@ -1779,23 +1803,39 @@ impl Middleware for GitHubMiddleware {
 
                 // Spawn async task to fetch diff and comments
                 self.runtime.spawn(async move {
+                    // Get client for this repository's host
+                    let client = {
+                        let mut manager = client_manager.lock().await;
+                        match manager.clone_client(repo.host.as_deref()).await {
+                            Ok(c) => c,
+                            Err(e) => {
+                                log::error!("Failed to get client: {}", e);
+                                dispatcher.dispatch(Action::StatusBar(StatusBarAction::error(
+                                    format!("Failed to load diff: {}", e),
+                                    "Diff Viewer",
+                                )));
+                                dispatcher.dispatch(Action::DiffViewer(DiffViewerAction::LoadError(
+                                    e.to_string(),
+                                )));
+                                return;
+                            }
+                        }
+                    };
+
+                    let octocrab = client.inner().octocrab_arc();
+
                     // Fetch diff
                     let diff_result: Result<String, String> =
                         fetch_pr_diff(&octocrab, &repo_org, &repo_name, pr_number).await;
 
                     // Fetch comments (non-blocking failure)
-                    let api_comments: Vec<gh_client::ReviewComment> =
-                        if let Some(client) = &github_client {
-                            client
-                                .fetch_review_comments(&repo_org, &repo_name, pr_number)
-                                .await
-                                .unwrap_or_else(|e| {
-                                    log::warn!("Failed to fetch review comments: {}", e);
-                                    vec![]
-                                })
-                        } else {
+                    let api_comments: Vec<gh_client::ReviewComment> = client
+                        .fetch_review_comments(&repo_org, &repo_name, pr_number)
+                        .await
+                        .unwrap_or_else(|e| {
+                            log::warn!("Failed to fetch review comments: {}", e);
                             vec![]
-                        };
+                        });
 
                     match diff_result {
                         Ok(diff_text) => {
