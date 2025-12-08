@@ -4,6 +4,7 @@
 //! memory-efficient command references that can be serialized/deserialized.
 
 use serde::{Deserialize, Serialize};
+use strum::EnumIter;
 
 use crate::{actions::RepositoryAction, views::KeyBindingsView};
 
@@ -13,7 +14,7 @@ use crate::{actions::RepositoryAction, views::KeyBindingsView};
 /// has a unique ID that can be referenced in keybindings and the command palette.
 ///
 /// The enum is serialized as snake_case (e.g., `RepositoryAdd` -> `"repository_add"`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, EnumIter)]
 #[serde(rename_all = "snake_case")]
 pub enum CommandId {
     // === Semantic/Context actions (translated by views) ===
@@ -30,6 +31,8 @@ pub enum CommandId {
     // === Repository management ===
     /// Add a new repository to track
     RepositoryAdd,
+    /// Remove the current repository from the list
+    RepositoryRemove,
     /// Open the current repository in the browser
     RepositoryOpenInBrowser,
     /// Switch to the next repository
@@ -177,6 +180,7 @@ impl CommandId {
             Self::RepositoryAdd => {
                 Action::Global(GlobalAction::PushView(Box::new(AddRepositoryView::new())))
             }
+            Self::RepositoryRemove => Action::Repository(RepositoryAction::RemoveCurrentRepository),
             Self::RepositoryOpenInBrowser => {
                 Action::Repository(RepositoryAction::OpenRepositoryInBrowser)
             }
@@ -289,6 +293,7 @@ impl CommandId {
 
             // Repository
             Self::RepositoryAdd => "Add repository",
+            Self::RepositoryRemove => "Remove repository",
             Self::RepositoryOpenInBrowser => "Open repository in browser",
             Self::RepositoryNext => "Next repository",
             Self::RepositoryPrevious => "Previous repository",
@@ -377,6 +382,7 @@ impl CommandId {
 
             // Repository
             Self::RepositoryAdd => "Add a new repository to track",
+            Self::RepositoryRemove => "Remove the current repository from the list",
             Self::RepositoryOpenInBrowser => "Open the current repository in your browser",
             Self::RepositoryNext => "Switch to the next repository",
             Self::RepositoryPrevious => "Switch to the previous repository",
@@ -464,6 +470,7 @@ impl CommandId {
             Self::Confirm | Self::ToggleSelect | Self::SelectAll | Self::DeselectAll => "Selection",
 
             Self::RepositoryAdd
+            | Self::RepositoryRemove
             | Self::RepositoryOpenInBrowser
             | Self::RepositoryNext
             | Self::RepositoryPrevious => "Repository",
@@ -537,6 +544,10 @@ impl CommandId {
     }
 
     /// Check if this command should appear in the command palette
+    /// there is a `palette_command_ids()` in `crates/gh-pr-lander/src/commands.rs`
+    /// that always gets forgotten and needs manual maintenance,
+    /// its defining which commands are in the pallette,
+    /// its actaully a semantical duplication to this very function here
     pub fn show_in_palette(&self) -> bool {
         match self {
             // Semantic/context commands are keyboard-driven, not shown in palette
@@ -568,8 +579,18 @@ impl CommandId {
             | Self::DiffViewerVisualMode
             | Self::DiffViewerShowReviewPopup => false,
 
+            // MergeBot is not yet tested nor stable
+            Self::MergeBotAddToQueue | Self::MergeBotStart | Self::MergeBotStop => false,
+
             // All others are shown (including DiffViewerOpen)
             _ => true,
         }
+    }
+
+    /// Get all command IDs that should appear in the command palette
+    pub fn palette_command_ids() -> Vec<CommandId> {
+        use strum::IntoEnumIterator;
+
+        Self::iter().filter(|id| id.show_in_palette()).collect()
     }
 }

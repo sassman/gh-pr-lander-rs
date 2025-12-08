@@ -13,6 +13,9 @@ pub enum RepositoryAction {
     /// Adds a new repository to the list
     AddRepository(Repository),
 
+    /// Remove the currently selected repository from the list
+    RemoveCurrentRepository,
+
     /// Load all repository related data (e.g., pull requests etc.)
     LoadRepositoryData(Repository),
 

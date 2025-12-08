@@ -17,6 +17,32 @@ pub fn reduce_repository(mut state: MainViewState, action: &RepositoryAction) ->
             log::info!("Adding repository: {}", repo.display_name());
             state.repositories.push(repo.clone());
         }
+        RepositoryAction::RemoveCurrentRepository => {
+            if !state.repositories.is_empty() {
+                let idx = state.selected_repository;
+                let removed = state.repositories.remove(idx);
+                log::info!("Removed repository: {}", removed.display_name());
+
+                // Also remove associated repo_data
+                state.repo_data.remove(&idx);
+
+                // Re-index repo_data for indices above the removed one
+                let keys_to_update: Vec<usize> =
+                    state.repo_data.keys().filter(|&&k| k > idx).copied().collect();
+                for old_key in keys_to_update {
+                    if let Some(data) = state.repo_data.remove(&old_key) {
+                        state.repo_data.insert(old_key - 1, data);
+                    }
+                }
+
+                // Adjust selected index if necessary
+                if state.selected_repository >= state.repositories.len()
+                    && !state.repositories.is_empty()
+                {
+                    state.selected_repository = state.repositories.len() - 1;
+                }
+            }
+        }
         RepositoryAction::LoadRepositoryData(_) => {
             // Side effect handled by middleware
         }
@@ -114,6 +140,7 @@ pub fn reduce_add_repo_form(
         // Non-form actions don't affect form state
         RepositoryAction::OpenRepositoryInBrowser
         | RepositoryAction::AddRepository(_)
+        | RepositoryAction::RemoveCurrentRepository
         | RepositoryAction::LoadRepositoryData(_) => {}
     }
 

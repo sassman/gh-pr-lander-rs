@@ -924,6 +924,7 @@ dependencies = [
  "ratatui",
  "serde",
  "simplelog",
+ "strum",
  "tokio",
 ]
 

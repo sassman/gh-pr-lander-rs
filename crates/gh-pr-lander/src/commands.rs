@@ -48,31 +48,12 @@ impl Command {
     }
 }
 
-/// Get all command IDs that should appear in the command palette
-fn palette_command_ids() -> Vec<CommandId> {
-    use CommandId::*;
-
-    vec![
-        RepositoryAdd,
-        RepositoryNext,
-        RepositoryPrevious,
-        DebugToggleConsoleView,
-        DebugClearLogs,
-        CommandPaletteOpen,
-        GlobalClose,
-        GlobalQuit,
-    ]
-    .into_iter()
-    .filter(|id| id.show_in_palette())
-    .collect()
-}
-
 /// Get all commands with shortcut hints populated from the keymap
 ///
 /// Uses `compact_hint_for_command` to show all keybindings for a command
 /// (e.g., "q/Esc" for GlobalClose instead of just "q")
 pub fn get_palette_commands_with_hints(keymap: &Keymap) -> Vec<Command> {
-    palette_command_ids()
+    CommandId::palette_command_ids()
         .into_iter()
         .map(|id| {
             if let Some(hint) = keymap.compact_hint_for_command(id) {
