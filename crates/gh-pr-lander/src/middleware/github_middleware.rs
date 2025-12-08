@@ -1112,6 +1112,7 @@ impl Middleware for GitHubMiddleware {
                     let temp_dir_base = temp_dir_base.clone();
                     let org = repo.org.clone();
                     let repo_name = repo.repo.clone();
+                    let repo_host = repo.host.clone();
                     let ssh_url = repo.ssh_url();
 
                     self.runtime.spawn_blocking(move || {
@@ -1126,8 +1127,15 @@ impl Middleware for GitHubMiddleware {
                             return;
                         }
 
-                        // Create unique directory for this PR
-                        let dir_name = format!("{}-{}-pr-{}", org, repo_name, pr_number);
+                        // Create unique directory for this PR (include host for GHE)
+                        let host_prefix = match &repo_host {
+                            Some(h) if h != gh_client::DEFAULT_HOST => {
+                                // Sanitize hostname for filesystem (replace dots with dashes)
+                                format!("{}-", h.replace('.', "-"))
+                            }
+                            _ => String::new(),
+                        };
+                        let dir_name = format!("{}{}-{}-pr-{}", host_prefix, org, repo_name, pr_number);
                         let pr_dir = temp_dir.join(dir_name);
 
                         // Remove existing directory if present
@@ -1140,13 +1148,21 @@ impl Middleware for GitHubMiddleware {
 
                         // Clone the repository using gh repo clone
                         log::info!("Cloning {}/{} to {:?}", org, repo_name, pr_dir);
+                        let mut clone_args = vec![
+                            "repo".to_string(),
+                            "clone".to_string(),
+                            format!("{}/{}", org, repo_name),
+                            pr_dir.to_string_lossy().to_string(),
+                        ];
+                        // Add --hostname for GitHub Enterprise hosts
+                        if let Some(ref host) = repo_host {
+                            if host != gh_client::DEFAULT_HOST {
+                                clone_args.push("--hostname".to_string());
+                                clone_args.push(host.clone());
+                            }
+                        }
                         let clone_output = Command::new("gh")
-                            .args([
-                                "repo",
-                                "clone",
-                                &format!("{}/{}", org, repo_name),
-                                &pr_dir.to_string_lossy(),
-                            ])
+                            .args(&clone_args)
                             .output();
 
                         match clone_output {
@@ -1791,6 +1807,7 @@ impl Middleware for GitHubMiddleware {
                 let base_sha = String::new(); // We'll get this from the API
                 let repo_org = repo.org.clone();
                 let repo_name = repo.repo.clone();
+                let repo_host = repo.host.clone();
                 let dispatcher = dispatcher.clone();
                 let client_manager = self.client_manager_arc();
 
@@ -1826,7 +1843,7 @@ impl Middleware for GitHubMiddleware {
 
                     // Fetch diff
                     let diff_result: Result<String, String> =
-                        fetch_pr_diff(&octocrab, &repo_org, &repo_name, pr_number).await;
+                        fetch_pr_diff(&octocrab, &repo_org, &repo_name, pr_number, repo_host.as_deref()).await;
 
                     // Fetch comments (non-blocking failure)
                     let api_comments: Vec<gh_client::ReviewComment> = client
@@ -2181,16 +2198,27 @@ async fn fetch_pr_diff(
     owner: &str,
     repo: &str,
     pr_number: u64,
+    host: Option<&str>,
 ) -> Result<String, String> {
     // Use gh CLI to fetch the diff with the correct Accept header
     // This is the most reliable way to get the diff in unified format
+    let mut args = vec![
+        "api".to_string(),
+        format!("/repos/{}/{}/pulls/{}", owner, repo, pr_number),
+        "-H".to_string(),
+        "Accept: application/vnd.github.diff".to_string(),
+    ];
+
+    // Add --hostname for GitHub Enterprise hosts
+    if let Some(h) = host {
+        if h != gh_client::DEFAULT_HOST {
+            args.push("--hostname".to_string());
+            args.push(h.to_string());
+        }
+    }
+
     let output = tokio::process::Command::new("gh")
-        .args([
-            "api",
-            &format!("/repos/{}/{}/pulls/{}", owner, repo, pr_number),
-            "-H",
-            "Accept: application/vnd.github.diff",
-        ])
+        .args(&args)
         .output()
         .await
         .map_err(|e| format!("Failed to run gh api: {}", e))?;
