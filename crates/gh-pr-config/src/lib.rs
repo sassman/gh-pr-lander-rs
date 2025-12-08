@@ -20,7 +20,7 @@ pub use paths::{
     api_cache_path, app_config_path, cache_dir, config_dir, global_session_path,
     has_local_session, local_session_path, recent_repositories_path,
 };
-pub use recent_repositories::{load_recent_repositories, RecentRepository};
+pub use recent_repositories::{load_recent_repositories, save_recent_repositories, RecentRepository};
 pub use session::Session;
 
 // Re-export deprecated functions for backward compatibility

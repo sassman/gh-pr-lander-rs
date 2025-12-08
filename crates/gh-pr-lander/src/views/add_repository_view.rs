@@ -3,9 +3,7 @@
 //! A floating form for adding a new repository to track.
 //! Supports both URL parsing and manual field entry.
 
-use crate::actions::{
-    Action, AddRepositoryAction, ContextAction, NavigationAction, TextInputAction,
-};
+use crate::actions::{Action, ContextAction, NavigationAction, RepositoryAction, TextInputAction};
 use crate::capabilities::PanelCapabilities;
 use crate::state::{AddRepoField, AddRepoFormState, AppState};
 use crate::views::View;
@@ -48,32 +46,32 @@ impl View for AddRepositoryView {
 
     fn translate_navigation(&self, nav: NavigationAction) -> Option<Action> {
         let action = match nav {
-            NavigationAction::Next => AddRepositoryAction::NextField,
-            NavigationAction::Previous => AddRepositoryAction::PrevField,
+            NavigationAction::Next => RepositoryAction::FormNextField,
+            NavigationAction::Previous => RepositoryAction::FormPrevField,
             // Form doesn't use horizontal or jump navigation
             NavigationAction::Left
             | NavigationAction::Right
             | NavigationAction::ToTop
             | NavigationAction::ToBottom => return None,
         };
-        Some(Action::AddRepository(action))
+        Some(Action::Repository(action))
     }
 
     fn translate_text_input(&self, input: TextInputAction) -> Option<Action> {
         let action = match input {
-            TextInputAction::Char(c) => AddRepositoryAction::Char(c),
-            TextInputAction::Backspace => AddRepositoryAction::Backspace,
-            TextInputAction::ClearLine => AddRepositoryAction::ClearField,
-            TextInputAction::Escape => AddRepositoryAction::Close,
-            TextInputAction::Confirm => AddRepositoryAction::Confirm,
+            TextInputAction::Char(c) => RepositoryAction::FormChar(c),
+            TextInputAction::Backspace => RepositoryAction::FormBackspace,
+            TextInputAction::ClearLine => RepositoryAction::FormClearField,
+            TextInputAction::Escape => RepositoryAction::FormClose,
+            TextInputAction::Confirm => RepositoryAction::FormConfirm,
         };
-        Some(Action::AddRepository(action))
+        Some(Action::Repository(action))
     }
 
     fn translate_context_action(&self, action: ContextAction, _state: &AppState) -> Option<Action> {
         match action {
             // Confirm submits the form
-            ContextAction::Confirm => Some(Action::AddRepository(AddRepositoryAction::Confirm)),
+            ContextAction::Confirm => Some(Action::Repository(RepositoryAction::FormConfirm)),
             // Selection actions don't apply to a form
             _ => None,
         }
@@ -82,7 +80,7 @@ impl View for AddRepositoryView {
     fn accepts_action(&self, action: &Action) -> bool {
         matches!(
             action,
-            Action::AddRepository(_)
+            Action::Repository(_)
                 | Action::ViewContext(_)
                 | Action::Navigate(_)
                 | Action::TextInput(_)

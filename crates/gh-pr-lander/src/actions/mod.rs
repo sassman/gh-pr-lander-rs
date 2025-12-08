@@ -15,7 +15,6 @@ pub mod navigation;
 pub mod text_input;
 
 // Screen-specific action types
-pub mod add_repository;
 pub mod bootstrap;
 pub mod build_log;
 pub mod command_palette;
@@ -31,7 +30,6 @@ pub mod splash;
 pub mod status_bar;
 
 // Re-export all action types for convenience
-pub use add_repository::AddRepositoryAction;
 pub use available_action::AvailableAction;
 pub use bootstrap::BootstrapAction;
 pub use build_log::BuildLogAction;
@@ -84,8 +82,6 @@ pub enum Action {
     PullRequest(PullRequestAction),
     /// Command Palette screen actions
     CommandPalette(CommandPaletteAction),
-    /// Add Repository form actions
-    AddRepository(AddRepositoryAction),
     /// Key Bindings panel actions
     KeyBindings(KeyBindingsAction),
     /// Debug Console actions

@@ -14,7 +14,7 @@ use crate::actions::{Action, BootstrapAction, GlobalAction, SessionAction};
 use crate::dispatcher::Dispatcher;
 use crate::middleware::Middleware;
 use crate::state::AppState;
-use gh_pr_config::Session;
+use gh_pr_config::{save_recent_repositories, RecentRepository, Session};
 use std::sync::{Arc, Mutex};
 
 /// Middleware for session state persistence
@@ -49,6 +49,19 @@ impl SessionMiddleware {
 
         if let Err(e) = session.save() {
             log::error!("Failed to save session: {}", e);
+        }
+    }
+
+    fn save_repositories(&self, state: &AppState) {
+        let repos: Vec<RecentRepository> = state
+            .main_view
+            .repositories
+            .iter()
+            .map(|r| RecentRepository::new(&r.org, &r.repo, &r.branch))
+            .collect();
+
+        if let Err(e) = save_recent_repositories(&repos) {
+            log::error!("Failed to save recent repositories: {}", e);
         }
     }
 }
@@ -93,10 +106,11 @@ impl Middleware for SessionMiddleware {
                 true // Pass through
             }
 
-            // Save session on quit
-            Action::Global(GlobalAction::Quit) => {
-                log::info!("SessionMiddleware: Saving session before quit");
+            // Save session and repositories on on close, when at root view
+            Action::Global(GlobalAction::Close) if state.view_stack.len() == 1 => {
+                log::info!("SessionMiddleware: Saving state before quit");
                 self.save_session(state);
+                self.save_repositories(state);
                 true
             }
 

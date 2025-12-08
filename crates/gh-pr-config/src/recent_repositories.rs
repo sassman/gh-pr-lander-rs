@@ -3,7 +3,7 @@
 //! Handles loading and saving recently used repositories.
 
 #[allow(deprecated)] // Intentionally using legacy path until migration complete
-use crate::files::open_recent_repositories_file;
+use crate::files::{create_recent_repositories_file, open_recent_repositories_file};
 use serde::{Deserialize, Serialize};
 use std::io::BufReader;
 
@@ -57,6 +57,20 @@ pub fn load_recent_repositories() -> Vec<RecentRepository> {
             Vec::new()
         }
     }
+}
+
+/// Save recent repositories to the config file
+///
+/// Returns an error if the file cannot be created or written.
+pub fn save_recent_repositories(repos: &[RecentRepository]) -> anyhow::Result<()> {
+    #[allow(deprecated)] // Intentionally using legacy path until migration complete
+    let file = create_recent_repositories_file()?;
+    serde_json::to_writer_pretty(file, repos)?;
+    log::info!(
+        "Saved {} recent repositories to .recent-repositories.json",
+        repos.len()
+    );
+    Ok(())
 }
 
 #[cfg(test)]

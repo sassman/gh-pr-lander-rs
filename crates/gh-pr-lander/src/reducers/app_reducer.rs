@@ -6,13 +6,13 @@
 //! - No ViewId matching - views own their action translation
 
 use crate::actions::{
-    Action, AddRepositoryAction, BootstrapAction, CommandPaletteAction, GlobalAction,
-    KeyBindingsAction,
+    Action, BootstrapAction, CommandPaletteAction, GlobalAction, KeyBindingsAction,
+    RepositoryAction,
 };
 use crate::reducers::{
-    add_repo_reducer, build_log_reducer, command_palette_reducer, confirmation_popup_reducer,
+    build_log_reducer, command_palette_reducer, confirmation_popup_reducer,
     debug_console_reducer, diff_viewer_reducer, key_bindings_reducer, pull_request_reducer,
-    session_reducer, splash_reducer, status_bar_reducer,
+    repository_reducer, session_reducer, splash_reducer, status_bar_reducer,
 };
 use crate::state::AppState;
 use crate::views::DiffViewerView;
@@ -159,31 +159,6 @@ pub fn reduce(mut state: AppState, action: &Action) -> AppState {
             state
         }
 
-        Action::AddRepository(sub) => {
-            // Handle Close here for form reset and view stack management
-            if matches!(sub, AddRepositoryAction::Close) {
-                state.add_repo_form.reset();
-                if state.view_stack.len() > 1 {
-                    state.view_stack.pop();
-                }
-            }
-            // Handle Confirm - add repository if valid
-            if matches!(sub, AddRepositoryAction::Confirm) {
-                if state.add_repo_form.is_valid() {
-                    state.add_repo_form.reset();
-                    if state.view_stack.len() > 1 {
-                        state.view_stack.pop();
-                    }
-                } else {
-                    log::warn!(
-                        "Cannot add repository: form is not valid (org and repo are required)"
-                    );
-                }
-            }
-            state.add_repo_form = add_repo_reducer::reduce_add_repository(state.add_repo_form, sub);
-            state
-        }
-
         Action::KeyBindings(sub) => {
             // Handle Close here for view stack management
             if matches!(sub, KeyBindingsAction::Close) && state.view_stack.len() > 1 {
@@ -271,9 +246,19 @@ pub fn reduce(mut state: AppState, action: &Action) -> AppState {
         }
 
         Action::Repository(sub) => {
-            // Handled by repository reducer
-            state.main_view =
-                crate::reducers::repository_reducer::reduce_repository(state.main_view, sub);
+            // View stack management for form actions
+            let should_close = match sub {
+                RepositoryAction::FormClose => true,
+                RepositoryAction::FormConfirm => state.add_repo_form.is_valid(),
+                _ => false,
+            };
+            if should_close && state.view_stack.len() > 1 {
+                state.view_stack.pop();
+            }
+
+            // Delegate to repository reducer for both main view and form state
+            state.main_view = repository_reducer::reduce_repository(state.main_view, sub);
+            state.add_repo_form = repository_reducer::reduce_add_repo_form(state.add_repo_form, sub);
             state
         }
 

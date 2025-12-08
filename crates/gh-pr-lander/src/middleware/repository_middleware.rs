@@ -9,15 +9,13 @@
 use std::collections::HashSet;
 
 use crate::actions::{
-    Action, AddRepositoryAction, BootstrapAction, GlobalAction, PullRequestAction,
-    RepositoryAction, StatusBarAction,
+    Action, BootstrapAction, PullRequestAction, RepositoryAction, StatusBarAction,
 };
 use crate::dispatcher::Dispatcher;
 use crate::domain_models::Repository;
 use crate::middleware::Middleware;
 use crate::state::AppState;
 use crate::utils::browser::open_url;
-use crate::views::ViewId;
 use gh_pr_config::load_recent_repositories;
 use tokio::runtime::Runtime;
 
@@ -36,11 +34,6 @@ impl RepositoryMiddleware {
             runtime: Runtime::new().expect("Failed to create tokio runtime"),
             pending_bulk_load: HashSet::new(),
         }
-    }
-
-    /// Check if the add repository view is the active view
-    fn is_add_repo_active(state: &AppState) -> bool {
-        state.active_view().view_id() == ViewId::AddRepository
     }
 
     /// Get the GitHub URL for the currently selected repository
@@ -119,25 +112,22 @@ impl Middleware for RepositoryMiddleware {
                 true // Let action pass through
             }
 
-            // When a single repository is added via confirm
-            Action::AddRepository(AddRepositoryAction::Confirm) => {
+            // When a single repository is added via form confirm
+            Action::Repository(RepositoryAction::FormConfirm) => {
                 if state.add_repo_form.is_valid() {
-                    dispatcher.dispatch(Action::Repository(RepositoryAction::LoadRepositoryData(
-                        state.add_repo_form.to_repository(),
+                    let repo = state.add_repo_form.to_repository();
+                    // First add the repository to the list
+                    dispatcher.dispatch(Action::Repository(RepositoryAction::AddRepository(
+                        repo.clone(),
                     )));
-                    dispatcher.dispatch(Action::Global(GlobalAction::Close));
+                    // Then load its data (PRs, etc.)
+                    dispatcher.dispatch(Action::Repository(RepositoryAction::LoadRepositoryData(
+                        repo,
+                    )));
+                    // Note: View closing is handled by the reducer, not here
                 }
 
                 true // Let action pass through to reducer
-            }
-
-            // Handle closing the add repository view
-            Action::AddRepository(AddRepositoryAction::Close) => {
-                if Self::is_add_repo_active(state) && state.view_stack.len() > 1 {
-                    log::debug!("Closing add repository form");
-                    dispatcher.dispatch(Action::Global(GlobalAction::Close));
-                }
-                true // Let action pass through to reducer to reset form
             }
 
             // Handle opening repository in browser

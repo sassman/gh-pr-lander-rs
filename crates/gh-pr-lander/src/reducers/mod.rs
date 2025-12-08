@@ -1,4 +1,3 @@
-pub mod add_repo_reducer;
 pub mod app_reducer;
 pub mod build_log_reducer;
 pub mod command_palette_reducer;
