@@ -47,6 +47,8 @@ pub enum PullRequestAction {
     OpenInIDE,
     /// Open CI build logs in browser
     OpenBuildLogs,
+    /// Open a related issue in external tracker (Jira, Linear, etc.)
+    OpenRelatedIssue { url: String },
     /// Refresh PRs for the current repository
     Refresh,
     // Merge operations

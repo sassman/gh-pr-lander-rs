@@ -507,6 +507,12 @@ impl Middleware for GitHubMiddleware {
                 false // Consume action
             }
 
+            Action::PullRequest(PullRequestAction::OpenRelatedIssue { url }) => {
+                log::info!("Opening related issue: {}", url);
+                self.runtime.spawn(open_url(url.clone()));
+                false // Consume action
+            }
+
             Action::PullRequest(PullRequestAction::MergeRequest) => {
                 let targets = self.get_target_prs(state);
                 if targets.is_empty() {

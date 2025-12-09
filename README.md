@@ -176,6 +176,43 @@ request_changes_message = "Please address the following:"
 close_message = "Closing this PR."
 ```
 
+### Issue Tracker Integration
+
+Configure external issue trackers (Jira, Linear, GitHub Issues, etc.) to open related issues directly from the command palette. The tool extracts issue references from PR titles and descriptions using regex patterns.
+
+```toml
+# GitHub Issues - uses repo context variables
+[[issue_tracker]]
+name = "GitHub"
+pattern = "#(\\d+)"
+url = "https://$HOST/$ORG/$REPO/issues/$ISSUE_NO"
+
+# Jira - with repo filter (only for specific orgs)
+[[issue_tracker]]
+name = "Jira"
+pattern = "PROJ-\\d+"
+url = "https://jira.example.com/browse/$ISSUE_NO"
+repos = ["my-org/*"]
+
+# Linear
+[[issue_tracker]]
+name = "Linear"
+pattern = "LIN-\\d+"
+url = "https://linear.app/team/issue/$ISSUE_NO"
+```
+
+**Configuration options:**
+- `name`: Display name in command palette
+- `pattern`: Regex to match issue references. Use capture groups like `#(\\d+)` to extract just the number for the URL while showing `#42` in the palette
+- `url`: URL template with placeholders:
+  - `$ISSUE_NO` - matched issue (or first capture group if present)
+  - `$ORG` - repository owner
+  - `$REPO` - repository name
+  - `$HOST` - GitHub host (supports GHE)
+- `repos` (optional): Glob patterns to restrict tracker to specific repos (e.g., `["my-org/*", "other/specific-repo"]`)
+
+When viewing a PR, open the command palette (`Ctrl+P`) to see "Open GitHub: #42" or "Open Jira: PROJ-123" if the PR references an issue.
+
 ## Architecture
 
 Clean Redux-inspired architecture with middleware, reducers, and unidirectional data flow. See [ARCHITECTURE.md](./ARCHITECTURE.md) for details.

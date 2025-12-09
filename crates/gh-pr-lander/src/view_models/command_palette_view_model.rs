@@ -4,8 +4,9 @@
 //! data preparation from rendering logic.
 
 use crate::command_id::CommandId;
-use crate::commands::{filter_commands, get_palette_commands_with_hints};
+use crate::commands::{filter_commands, get_issue_commands, get_palette_commands_with_hints};
 use crate::state::AppState;
+use crate::utils::issue_extractor::RepoContext;
 use ratatui::style::Color;
 
 /// View model for the command palette
@@ -70,7 +71,27 @@ impl CommandPaletteViewModel {
     /// Build view model from application state
     pub fn from_state(state: &AppState) -> Self {
         let theme = &state.theme;
-        let all_commands = get_palette_commands_with_hints(&state.keymap);
+
+        // Get static commands
+        let mut all_commands = get_palette_commands_with_hints(&state.keymap);
+
+        // Add dynamic issue commands based on selected PRs and repo context
+        let pr_texts = Self::get_selected_pr_texts(state);
+        let repo_ctx = Self::get_repo_context(state);
+        log::debug!(
+            "CommandPaletteViewModel: issue_tracker config count={}, pr_texts={:?}, repo_ctx={:?}",
+            state.app_config.issue_tracker.len(),
+            pr_texts,
+            repo_ctx
+        );
+        let issue_commands =
+            get_issue_commands(&state.app_config.issue_tracker, &pr_texts, &repo_ctx);
+        log::debug!(
+            "CommandPaletteViewModel: generated {} issue commands",
+            issue_commands.len()
+        );
+        all_commands.extend(issue_commands);
+
         let total_commands = all_commands.len();
 
         // Filter commands based on query
@@ -167,5 +188,50 @@ impl CommandPaletteViewModel {
             max_category_width,
             footer_hints,
         }
+    }
+
+    /// Get PR texts from currently selected/active PRs for issue extraction
+    fn get_selected_pr_texts(state: &AppState) -> Vec<String> {
+        let repo_idx = state.main_view.selected_repository;
+        let Some(repo_data) = state.main_view.repo_data.get(&repo_idx) else {
+            return vec![];
+        };
+
+        // If PRs are explicitly selected, use those; otherwise use cursor PR
+        let pr_numbers: Vec<usize> = if repo_data.selected_pr_numbers.is_empty() {
+            // Use cursor PR
+            repo_data
+                .prs
+                .get(repo_data.selected_pr)
+                .map(|pr| vec![pr.number])
+                .unwrap_or_default()
+        } else {
+            // Use explicitly selected PRs
+            repo_data.selected_pr_numbers.iter().copied().collect()
+        };
+
+        // Build text for each PR (title + description)
+        pr_numbers
+            .iter()
+            .filter_map(|&num| repo_data.prs.iter().find(|pr| pr.number == num))
+            .map(|pr| format!("{} {}", pr.title, pr.body))
+            .collect()
+    }
+
+    /// Get repository context for issue extraction
+    fn get_repo_context(state: &AppState) -> RepoContext {
+        let repo_idx = state.main_view.selected_repository;
+        state
+            .main_view
+            .repositories
+            .get(repo_idx)
+            .map(|repo| {
+                RepoContext::new(
+                    &repo.org,
+                    &repo.repo,
+                    repo.host.as_deref().unwrap_or(gh_client::DEFAULT_HOST),
+                )
+            })
+            .unwrap_or_default()
     }
 }

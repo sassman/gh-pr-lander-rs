@@ -17,7 +17,7 @@ pub mod paths;
 pub mod recent_repositories;
 pub mod session;
 
-pub use app_config::AppConfig;
+pub use app_config::{AppConfig, IssueTrackerConfig};
 pub use config_file::load_config_file;
 pub use paths::{
     api_cache_path, app_config_path, cache_dir, config_dir, global_session_path, has_local_session,
