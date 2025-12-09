@@ -182,6 +182,8 @@ impl View for DiffViewerView {
                     FooterHint::new("c", "Comment"),
                     FooterHint::new("R", "Review"),
                     FooterHint::new("q", "Close"),
+                    FooterHint::new("Ctrl+f", "Page Down"),
+                    FooterHint::new("Ctrl+b", "Page Up"),
                 ]
             };
 

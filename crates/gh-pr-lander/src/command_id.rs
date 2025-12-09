@@ -149,6 +149,10 @@ pub enum CommandId {
     DiffViewerVisualMode,
     /// Show review submission popup
     DiffViewerShowReviewPopup,
+    /// Page down in diff viewer
+    DiffViewerPageDown,
+    /// Page up in diff viewer
+    DiffViewerPageUp,
 
     // === General ===
     /// Close the current view/panel
@@ -275,6 +279,12 @@ impl CommandId {
             Self::DiffViewerShowReviewPopup => {
                 Action::DiffViewer(crate::actions::DiffViewerAction::ShowReviewPopup)
             }
+            Self::DiffViewerPageDown => {
+                Action::DiffViewer(crate::actions::DiffViewerAction::PageDown)
+            }
+            Self::DiffViewerPageUp => {
+                Action::DiffViewer(crate::actions::DiffViewerAction::PageUp)
+            }
 
             // General
             Self::GlobalClose => Action::Global(GlobalAction::Close),
@@ -364,6 +374,8 @@ impl CommandId {
             Self::DiffViewerCancelComment => "Cancel comment",
             Self::DiffViewerVisualMode => "Visual mode",
             Self::DiffViewerShowReviewPopup => "Submit review",
+            Self::DiffViewerPageDown => "Page down",
+            Self::DiffViewerPageUp => "Page up",
 
             // General
             Self::GlobalClose => "Close",
@@ -457,6 +469,8 @@ impl CommandId {
             Self::DiffViewerShowReviewPopup => {
                 "Show the review submission popup (Approve, Request Changes, Comment)"
             }
+            Self::DiffViewerPageDown => "Scroll down one page in the diff viewer",
+            Self::DiffViewerPageUp => "Scroll up one page in the diff viewer",
 
             // General
             Self::GlobalClose => "Close the current view or panel",
@@ -521,7 +535,9 @@ impl CommandId {
             | Self::DiffViewerSubmitComment
             | Self::DiffViewerCancelComment
             | Self::DiffViewerVisualMode
-            | Self::DiffViewerShowReviewPopup => "Diff Viewer",
+            | Self::DiffViewerShowReviewPopup
+            | Self::DiffViewerPageDown
+            | Self::DiffViewerPageUp => "Diff Viewer",
 
             Self::GlobalClose | Self::GlobalQuit => "General",
         }
@@ -577,7 +593,9 @@ impl CommandId {
             | Self::DiffViewerSubmitComment
             | Self::DiffViewerCancelComment
             | Self::DiffViewerVisualMode
-            | Self::DiffViewerShowReviewPopup => false,
+            | Self::DiffViewerShowReviewPopup
+            | Self::DiffViewerPageDown
+            | Self::DiffViewerPageUp => false,
 
             // MergeBot is not yet tested nor stable
             Self::MergeBotAddToQueue | Self::MergeBotStart | Self::MergeBotStop => false,

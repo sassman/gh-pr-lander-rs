@@ -58,6 +58,8 @@ pub fn default_keymap() -> Keymap {
         KeyBinding::new("d r", "d -> r", DiffViewerShowReviewPopup),
         KeyBinding::new("d v", "d -> v", DiffViewerVisualMode),
         KeyBinding::new("tab", "Tab", DiffViewerSwitchPane),
+        KeyBinding::new("ctrl+f", "Ctrl+F", DiffViewerPageDown),
+        KeyBinding::new("ctrl+b", "Ctrl+B", DiffViewerPageUp),
         // Merge Bot
         // KeyBinding::new("M", "M", MergeBotStart),
         // KeyBinding::new("Q", "Q", MergeBotAddToQueue),
