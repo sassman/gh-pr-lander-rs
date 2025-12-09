@@ -38,10 +38,7 @@ Green check, red X, yellow spinner. Know instantly which PRs are ready to merge.
 ## Installation
 
 ```bash
-git clone https://github.com/sassman/gh-pr-tui-rs.git
-cd gh-pr-tui-rs
-cargo build --release
-./target/release/gh-pr-lander
+cargo install --git https://github.com/sassman/gh-pr-lander-rs.git gh-pr-lander
 ```
 
 Requires the [GitHub CLI (`gh`)](https://cli.github.com/) to be installed and authenticated.
