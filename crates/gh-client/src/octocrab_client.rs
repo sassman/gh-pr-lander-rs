@@ -21,7 +21,7 @@ use std::sync::Arc;
 #[derive(Debug, Clone)]
 pub struct OctocrabClient {
     octocrab: Arc<Octocrab>,
-    /// API base URL (e.g., "https://api.github.com" or "https://ghe.example.com/api/v3")
+    /// API base URL (e.g., "<https://api.github.com>" or "<https://ghe.example.com/api/v3>")
     api_base_url: String,
 }
 
