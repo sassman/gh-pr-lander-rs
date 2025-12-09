@@ -43,6 +43,8 @@ cargo install --git https://github.com/sassman/gh-pr-lander-rs.git gh-pr-lander
 
 Requires the [GitHub CLI (`gh`)](https://cli.github.com/) to be installed and authenticated.
 
+:sparkles: To authenticate with your GitHub Enterprise Server run: `gh auth login --web --hostname <your-gh-enterprise.adress>`
+
 ## Quick Start
 
 1. Launch: `./target/release/gh-pr-lander`
