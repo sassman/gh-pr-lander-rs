@@ -922,6 +922,7 @@ dependencies = [
  "gh-pr-lander-theme",
  "log",
  "ratatui",
+ "regex",
  "serde",
  "simplelog",
  "strum",

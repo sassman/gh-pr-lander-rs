@@ -203,6 +203,7 @@ pub fn reduce_pull_request(mut state: MainViewState, action: &PullRequestAction)
         PullRequestAction::OpenInBrowser
         | PullRequestAction::OpenInIDE
         | PullRequestAction::OpenBuildLogs
+        | PullRequestAction::OpenRelatedIssue { .. }
         | PullRequestAction::Refresh
         | PullRequestAction::CycleFilter
         | PullRequestAction::MergeRequest

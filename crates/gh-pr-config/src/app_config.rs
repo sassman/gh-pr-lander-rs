@@ -5,6 +5,20 @@
 use serde::{Deserialize, Serialize};
 use std::env;
 
+/// Configuration for an external issue tracker (Jira, Linear, etc.)
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct IssueTrackerConfig {
+    /// Display name (e.g., "Jira", "Linear")
+    pub name: String,
+    /// Regex pattern to match issue references in PR title/description
+    pub pattern: String,
+    /// URL template with placeholders: $ISSUE_NO, $ORG, $REPO, $HOST
+    pub url: String,
+    /// Optional: glob patterns to restrict this tracker to specific repos (e.g., ["my-org/*"])
+    #[serde(default)]
+    pub repos: Vec<String>,
+}
+
 /// Application configuration loaded from gh-pr-tui.toml
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct AppConfig {
@@ -31,6 +45,10 @@ pub struct AppConfig {
     /// Default message for closing PRs
     #[serde(default = "default_close_message")]
     pub close_message: String,
+
+    /// External issue tracker configurations
+    #[serde(default)]
+    pub issue_tracker: Vec<IssueTrackerConfig>,
 }
 
 fn default_ide_command() -> String {
@@ -69,6 +87,7 @@ impl Default for AppConfig {
             comment_message: default_comment_message(),
             request_changes_message: default_request_changes_message(),
             close_message: default_close_message(),
+            issue_tracker: Vec::new(),
         }
     }
 }
@@ -134,5 +153,43 @@ mod tests {
             config.approval_message,
             ":rocket: thanks for your contribution"
         );
+    }
+
+    #[test]
+    fn test_issue_tracker_config_parsing() {
+        // In TOML, backslash needs escaping: \d becomes \\d in the file
+        // In raw string literals, backslash is literal
+        let toml = r##"
+ide_command = "zed"
+
+[[issue_tracker]]
+name = "GitHub"
+pattern = "#(\\d+)"
+url = "https://$HOST/$ORG/$REPO/issues/$ISSUE_NO"
+        "##;
+        let config: AppConfig = toml::from_str(toml).unwrap();
+        assert_eq!(config.issue_tracker.len(), 1);
+        assert_eq!(config.issue_tracker[0].name, "GitHub");
+        // After TOML parsing, \\d becomes \d
+        assert_eq!(config.issue_tracker[0].pattern, r"#(\d+)");
+        assert_eq!(
+            config.issue_tracker[0].url,
+            "https://$HOST/$ORG/$REPO/issues/$ISSUE_NO"
+        );
+    }
+
+    #[test]
+    fn test_issue_tracker_with_repos_filter() {
+        let toml = r##"
+[[issue_tracker]]
+name = "Jira"
+pattern = "PROJ-\\d+"
+url = "https://jira.example.com/browse/$ISSUE_NO"
+repos = ["my-org/*", "other-org/repo"]
+        "##;
+        let config: AppConfig = toml::from_str(toml).unwrap();
+        assert_eq!(config.issue_tracker.len(), 1);
+        assert_eq!(config.issue_tracker[0].repos.len(), 2);
+        assert_eq!(config.issue_tracker[0].repos[0], "my-org/*");
     }
 }
