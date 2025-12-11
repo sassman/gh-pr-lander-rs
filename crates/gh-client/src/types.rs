@@ -54,6 +54,12 @@ pub struct PullRequest {
 
     /// Number of lines deleted
     pub deletions: u64,
+
+    /// Draft vs Ready state for the PR
+    pub maturity: MaturityState,
+
+    /// Review decision state (summarized from all reviews)
+    pub review_decision: ReviewDecision,
 }
 
 /// Mergeable state as reported by GitHub
@@ -73,6 +79,32 @@ pub enum MergeableState {
     /// State is unknown or not yet computed
     #[default]
     Unknown,
+}
+
+/// Draft vs Ready state for a PR
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MaturityState {
+    /// PR is a draft (not ready for review)
+    Draft,
+    /// PR is ready for review
+    #[default]
+    Ready,
+}
+
+/// Summarized review decision state for a PR
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReviewDecision {
+    /// Review state not yet fetched
+    #[default]
+    Unknown,
+    /// No reviews yet or review requested
+    Pending,
+    /// Has approvals, no blocking reviews
+    Approved,
+    /// Has "changes requested" reviews
+    ChangesRequested,
 }
 
 /// A CI check run from the GitHub API
@@ -362,6 +394,8 @@ mod tests {
             html_url: "https://github.com/owner/repo/pull/42".to_string(),
             additions: 100,
             deletions: 50,
+            maturity: MaturityState::Ready,
+            review_decision: ReviewDecision::Approved,
         };
 
         let json = serde_json::to_string(&pr).unwrap();
@@ -370,6 +404,8 @@ mod tests {
         assert_eq!(deserialized.number, 42);
         assert_eq!(deserialized.title, "Test PR");
         assert_eq!(deserialized.author, "testuser");
+        assert_eq!(deserialized.maturity, MaturityState::Ready);
+        assert_eq!(deserialized.review_decision, ReviewDecision::Approved);
     }
 
     #[test]

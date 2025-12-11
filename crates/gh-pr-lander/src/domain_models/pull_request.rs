@@ -5,6 +5,9 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+// Re-export from gh_client for convenience
+pub use gh_client::types::{MaturityState, ReviewDecision};
+
 /// A GitHub Pull Request
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Pr {
@@ -36,6 +39,10 @@ pub struct Pr {
     pub additions: usize,
     /// Number of lines deleted
     pub deletions: usize,
+    /// Draft vs Ready state
+    pub maturity: MaturityState,
+    /// Review decision state (approved, changes requested, etc.)
+    pub review_decision: ReviewDecision,
 }
 
 impl Pr {
@@ -61,6 +68,8 @@ impl Pr {
             html_url: String::new(),
             additions: 0,
             deletions: 0,
+            maturity: MaturityState::Ready,
+            review_decision: ReviewDecision::Unknown,
         }
     }
 
@@ -112,7 +121,7 @@ impl MergeableStatus {
     /// Icons are aligned with BuildLogJobStatus for consistency.
     pub fn icon(&self) -> &'static str {
         match self {
-            Self::Unknown => "🚧",
+            Self::Unknown => "❓",
             Self::Checking => "⏳",
             Self::Ready => "✅",
             Self::NeedsRebase => "🔂",

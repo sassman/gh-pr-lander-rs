@@ -26,7 +26,7 @@ impl BuildLogJobStatus {
             Self::Cancelled => "🚫",
             Self::Skipped => "⛓️‍💥",
             Self::InProgress => "⏳",
-            Self::Unknown => "🚧",
+            Self::Unknown => "❓",
         }
     }
 

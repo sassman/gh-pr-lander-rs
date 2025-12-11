@@ -825,6 +825,14 @@ impl Middleware for GitHubMiddleware {
                                     format!("PR #{} approved", pr_number_owned),
                                     "Approve",
                                 )));
+                                // Update review decision locally
+                                dispatcher.dispatch(Action::PullRequest(
+                                    PullRequestAction::ReviewDecisionUpdated {
+                                        repo: repo.clone(),
+                                        pr_number: pr_number_owned,
+                                        decision: crate::domain_models::ReviewDecision::Approved,
+                                    },
+                                ));
                             }
                             Err(e) => {
                                 log::error!("Approve error: {}", e);
@@ -976,6 +984,15 @@ impl Middleware for GitHubMiddleware {
                                     format!("Requested changes on PR #{}", pr_number_owned),
                                     "Request Changes",
                                 )));
+                                // Update review decision locally
+                                dispatcher.dispatch(Action::PullRequest(
+                                    PullRequestAction::ReviewDecisionUpdated {
+                                        repo: repo.clone(),
+                                        pr_number: pr_number_owned,
+                                        decision:
+                                            crate::domain_models::ReviewDecision::ChangesRequested,
+                                    },
+                                ));
                             }
                             Err(e) => {
                                 log::error!("Request changes error: {}", e);
@@ -1483,11 +1500,14 @@ impl Middleware for GitHubMiddleware {
 
                 // Spawn async task to fetch CI status
                 log::info!("Spawning CI status fetch for PR #{}", pr_number);
+                let repo_for_ci = repo.clone();
+                let dispatcher_for_ci = dispatcher.clone();
+                let client_manager_for_ci = client_manager.clone();
                 self.runtime.spawn(async move {
                     // Get client for this repository's host
                     let client = {
-                        let mut manager = client_manager.lock().await;
-                        match manager.clone_client(repo.host.as_deref()).await {
+                        let mut manager = client_manager_for_ci.lock().await;
+                        match manager.clone_client(repo_for_ci.host.as_deref()).await {
                             Ok(c) => c,
                             Err(e) => {
                                 log::warn!("Cannot check build status: {}", e);
@@ -1496,7 +1516,7 @@ impl Middleware for GitHubMiddleware {
                         }
                     };
 
-                    match client.fetch_ci_status(&repo.org, &repo.repo, &head_sha).await {
+                    match client.fetch_ci_status(&repo_for_ci.org, &repo_for_ci.repo, &head_sha).await {
                         Ok(ci_status) => {
                             // Convert CiState to MergeableStatus using From trait
                             let status: MergeableStatus = ci_status.state.into();
@@ -1508,9 +1528,9 @@ impl Middleware for GitHubMiddleware {
                                 ci_status.failed,
                                 ci_status.pending
                             );
-                            dispatcher.dispatch(Action::PullRequest(
+                            dispatcher_for_ci.dispatch(Action::PullRequest(
                                 PullRequestAction::BuildStatusUpdated {
-                                    repo,
+                                    repo: repo_for_ci,
                                     pr_number,
                                     status,
                                 },
@@ -1523,6 +1543,50 @@ impl Middleware for GitHubMiddleware {
                                 e
                             );
                             // Don't dispatch error - just leave status as-is
+                        }
+                    }
+                });
+
+                // Spawn async task to fetch review decision
+                log::info!("Spawning review decision fetch for PR #{}", pr_number);
+                self.runtime.spawn(async move {
+                    // Get client for this repository's host
+                    let client = {
+                        let mut manager = client_manager.lock().await;
+                        match manager.clone_client(repo.host.as_deref()).await {
+                            Ok(c) => c,
+                            Err(e) => {
+                                log::warn!("Cannot fetch review decision: {}", e);
+                                return;
+                            }
+                        }
+                    };
+
+                    match client
+                        .fetch_review_decision(&repo.org, &repo.repo, pr_number)
+                        .await
+                    {
+                        Ok(decision) => {
+                            log::info!(
+                                "Review decision fetched for PR #{}: {:?}",
+                                pr_number,
+                                decision
+                            );
+                            dispatcher.dispatch(Action::PullRequest(
+                                PullRequestAction::ReviewDecisionUpdated {
+                                    repo,
+                                    pr_number,
+                                    decision,
+                                },
+                            ));
+                        }
+                        Err(e) => {
+                            log::warn!(
+                                "Failed to fetch review decision for PR #{}: {}",
+                                pr_number,
+                                e
+                            );
+                            // Don't dispatch error - just leave decision as Unknown
                         }
                     }
                 });
@@ -1595,6 +1659,25 @@ impl Middleware for GitHubMiddleware {
                                 format!("{} review submitted for PR #{}", event_name, pr_number),
                                 "Review",
                             )));
+                            // Update review decision locally based on event type
+                            let decision = match event {
+                                gh_diff_viewer::ReviewEvent::Approve => {
+                                    Some(crate::domain_models::ReviewDecision::Approved)
+                                }
+                                gh_diff_viewer::ReviewEvent::RequestChanges => {
+                                    Some(crate::domain_models::ReviewDecision::ChangesRequested)
+                                }
+                                gh_diff_viewer::ReviewEvent::Comment => None, // Comments don't change decision
+                            };
+                            if let Some(decision) = decision {
+                                dispatcher.dispatch(Action::PullRequest(
+                                    PullRequestAction::ReviewDecisionUpdated {
+                                        repo: repo.clone(),
+                                        pr_number,
+                                        decision,
+                                    },
+                                ));
+                            }
                         }
                         Err(e) => {
                             log::error!("Review submission error: {}", e);
@@ -2290,5 +2373,7 @@ fn convert_to_domain_pr(pr: PullRequest) -> Pr {
         html_url: pr.html_url,
         additions: pr.additions as usize,
         deletions: pr.deletions as usize,
+        maturity: pr.maturity,
+        review_decision: pr.review_decision,
     }
 }

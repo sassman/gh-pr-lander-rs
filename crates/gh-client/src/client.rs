@@ -357,6 +357,29 @@ pub trait GitHubClient: Send + Sync {
         repo: &str,
         pr_number: u64,
     ) -> anyhow::Result<Vec<crate::types::ReviewComment>>;
+
+    /// Fetch review decision for a pull request
+    ///
+    /// This fetches all reviews for a PR and determines the overall review state:
+    /// - Any "changes_requested" that isn't dismissed → ChangesRequested
+    /// - Any "approved" (and no blocking changes_requested) → Approved
+    /// - Otherwise → Pending
+    ///
+    /// # Arguments
+    ///
+    /// * `owner` - Repository owner
+    /// * `repo` - Repository name
+    /// * `pr_number` - Pull request number
+    ///
+    /// # Returns
+    ///
+    /// The summarized review decision state
+    async fn fetch_review_decision(
+        &self,
+        owner: &str,
+        repo: &str,
+        pr_number: u64,
+    ) -> anyhow::Result<crate::types::ReviewDecision>;
 }
 
 #[cfg(test)]

@@ -3,7 +3,9 @@
 //! Separates presentation logic from domain models and view rendering.
 //! Pre-computes all display text, colors, and styles in the view model.
 
-use crate::domain_models::{LoadingState, MergeableStatus, Pr, Repository};
+use crate::domain_models::{
+    LoadingState, MaturityState, MergeableStatus, Pr, Repository, ReviewDecision,
+};
 use crate::state::RepositoryData;
 use gh_pr_lander_theme::Theme;
 use ratatui::style::Color;
@@ -35,17 +37,20 @@ pub struct PrTableHeaderViewModel {
 pub struct PrRowViewModel {
     /// Pre-formatted cell texts
     pub pr_number: String, // "#123"
-    pub title: String,       // "Fix: broken tests"
-    pub author: String,      // "sassman"
-    pub comments: String,    // "5"
-    pub status_text: String, // "✓ Ready"
+    pub title: String,         // "Fix: broken tests"
+    pub author: String,        // "sassman"
+    pub maturity_text: String, // "Draft" or ""
+    pub review_text: String,   // "✓", "!", "○", "?"
+    pub status_text: String,   // "✓ Ready"
 
     /// Pre-computed styles
     pub bg_color: Color, // Background (alternating, selected, etc.)
-    pub fg_color: Color,     // Text color
-    pub status_color: Color, // Status-specific color
-    pub additions: usize,    // Raw additions count (for coloring)
-    pub deletions: usize,    // Raw deletions count (for coloring)
+    pub fg_color: Color,       // Text color
+    pub maturity_color: Color, // Maturity-specific color
+    pub review_color: Color,   // Review-specific color
+    pub status_color: Color,   // Status-specific color
+    pub additions: usize,      // Raw additions count (for coloring)
+    pub deletions: usize,      // Raw deletions count (for coloring)
 }
 
 impl PrTableViewModel {
@@ -106,7 +111,14 @@ impl PrTableViewModel {
         let pr_number = format!("{} #{}", selection_indicator, pr.number);
         let title = pr.title.clone();
         let author = pr.author.clone();
-        let comments = pr.comments.to_string();
+
+        // Format maturity (Draft/Ready)
+        let maturity_text = Self::maturity_status_text(pr.maturity).to_string();
+        let maturity_color = Self::maturity_status_color(pr.maturity, theme);
+
+        // Format review status
+        let review_text = Self::review_status_icon(pr.review_decision).to_string();
+        let review_color = Self::review_status_color(pr.review_decision, theme);
 
         // Format status with icon and label
         let status_text = format!("{} {}", pr.mergeable.icon(), pr.mergeable.label());
@@ -135,7 +147,10 @@ impl PrTableViewModel {
             pr_number,
             title,
             author,
-            comments,
+            maturity_text,
+            maturity_color,
+            review_text,
+            review_color,
             status_text,
             bg_color,
             fg_color,
@@ -194,6 +209,42 @@ impl PrTableViewModel {
             MergeableStatus::Blocked => Color::Red,
             MergeableStatus::Rebasing => Color::Cyan,
             MergeableStatus::Merging => Color::Cyan,
+        }
+    }
+
+    // --- Presentation helpers for MaturityState ---
+
+    fn maturity_status_text(maturity: MaturityState) -> &'static str {
+        match maturity {
+            MaturityState::Draft => "🏗️",
+            MaturityState::Ready => "",
+        }
+    }
+
+    fn maturity_status_color(maturity: MaturityState, theme: &Theme) -> Color {
+        match maturity {
+            MaturityState::Draft => theme.muted().fg.unwrap_or(Color::Gray),
+            MaturityState::Ready => Color::Green,
+        }
+    }
+
+    // --- Presentation helpers for ReviewDecision ---
+
+    fn review_status_icon(decision: ReviewDecision) -> &'static str {
+        match decision {
+            ReviewDecision::Unknown => "?",
+            ReviewDecision::Pending => "○",
+            ReviewDecision::Approved => "✓",
+            ReviewDecision::ChangesRequested => "!",
+        }
+    }
+
+    fn review_status_color(decision: ReviewDecision, _theme: &Theme) -> Color {
+        match decision {
+            ReviewDecision::Unknown => Color::Gray,
+            ReviewDecision::Pending => Color::Yellow,
+            ReviewDecision::Approved => Color::Green,
+            ReviewDecision::ChangesRequested => Color::Red,
         }
     }
 }

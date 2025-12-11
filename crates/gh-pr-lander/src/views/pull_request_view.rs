@@ -153,13 +153,14 @@ fn render_pr_table(state: &AppState, area: Rect, f: &mut Frame) {
     // Build header row
     let header_style = theme.table_header();
 
-    // Column widths: Delta=12, Comments=8
+    // Column widths: Delta=12, Maturity=6, Review=6
     let header_cells = [
         "  #PR".to_string(),
         "Title".to_string(),
         "Author".to_string(),
         format!("{:^12}", "Delta"),
-        format!("{:^8}", "Comments"),
+        format!("{:^6}", "Draft?"),
+        format!("{:^6}", "Rev."),
         "Status".to_string(),
     ]
     .into_iter()
@@ -189,7 +190,10 @@ fn render_pr_table(state: &AppState, area: Rect, f: &mut Frame) {
                 Cell::from(row_vm.title.clone()),
                 Cell::from(row_vm.author.clone()),
                 Cell::from(delta_line),
-                Cell::from(format!("{:^8}", row_vm.comments)), // Center comments in 8-char column
+                Cell::from(format!("{:^6}", row_vm.maturity_text))
+                    .style(Style::default().fg(row_vm.maturity_color)),
+                Cell::from(format!("{:^6}", row_vm.review_text))
+                    .style(Style::default().fg(row_vm.review_color)),
                 Cell::from(row_vm.status_text.clone())
                     .style(Style::default().fg(row_vm.status_color)),
             ])
@@ -210,10 +214,11 @@ fn render_pr_table(state: &AppState, area: Rect, f: &mut Frame) {
 
     let widths = [
         Constraint::Length(pr_number_width), // #PR - dynamic width
-        Constraint::Percentage(40),          // Title
-        Constraint::Percentage(12),          // Author
+        Constraint::Percentage(35),          // Title (reduced)
+        Constraint::Percentage(10),          // Author
         Constraint::Length(12),              // Delta (+123 -456)
-        Constraint::Length(8),               // Comments
+        Constraint::Length(6),               // Maturity
+        Constraint::Length(6),               // Review
         Constraint::Percentage(15),          // Status
     ];
 

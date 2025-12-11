@@ -20,7 +20,7 @@ pub use operation_monitor::{OperationMonitor, OperationType};
 pub use pr_filter::PrFilter;
 #[allow(unused_imports)]
 pub use pr_number::PrNumber;
-pub use pull_request::{LoadingState, MergeableStatus, Pr};
+pub use pull_request::{LoadingState, MaturityState, MergeableStatus, Pr, ReviewDecision};
 pub use repository::Repository;
 #[allow(unused_imports)]
 pub use task_status::{TaskStatus, TaskStatusType};

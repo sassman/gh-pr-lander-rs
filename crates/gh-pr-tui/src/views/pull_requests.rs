@@ -43,9 +43,16 @@ pub fn render_pr_table(f: &mut Frame, area: Rect, app: &mut App) {
         .fg(theme.table_header_fg)
         .bg(theme.table_header_bg);
 
-    let header_cells = ["#PR", "Description", "Author", "#Comments", "Status"]
-        .iter()
-        .map(|h| Cell::from(*h).style(header_style));
+    let header_cells = [
+        "#PR",
+        "Description",
+        "Author",
+        "Draft?",
+        "Review",
+        "Status",
+    ]
+    .iter()
+    .map(|h| Cell::from(*h).style(header_style));
 
     let header = Row::new(header_cells)
         .style(Style::default().bg(theme.table_header_bg))
@@ -79,7 +86,9 @@ pub fn render_pr_table(f: &mut Frame, area: Rect, app: &mut App) {
             Cell::from(row_vm.pr_number.clone()),
             Cell::from(row_vm.title.clone()),
             Cell::from(row_vm.author.clone()),
-            Cell::from(row_vm.comments.clone()),
+            Cell::from(row_vm.maturity_text.clone())
+                .style(Style::default().fg(row_vm.maturity_color)),
+            Cell::from(row_vm.review_text.clone()).style(Style::default().fg(row_vm.review_color)),
             Cell::from(row_vm.status_text.clone()).style(Style::default().fg(row_vm.status_color)),
         ])
         .style(Style::default().fg(row_vm.fg_color).bg(row_vm.bg_color))
@@ -87,11 +96,12 @@ pub fn render_pr_table(f: &mut Frame, area: Rect, app: &mut App) {
     });
 
     let widths = [
-        Constraint::Percentage(8),  // #PR
-        Constraint::Percentage(50), // Description
-        Constraint::Percentage(15), // Author
-        Constraint::Percentage(10), // #Comments
-        Constraint::Percentage(17), // Status
+        Constraint::Percentage(6),  // #PR
+        Constraint::Percentage(44), // Description (reduced)
+        Constraint::Percentage(12), // Author
+        Constraint::Percentage(8),  // Maturity
+        Constraint::Percentage(8),  // Review
+        Constraint::Percentage(22), // Status
     ];
 
     let table = Table::new(rows, widths)

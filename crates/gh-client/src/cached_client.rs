@@ -4,9 +4,27 @@
 //! The cache mode determines whether to read from cache, write to cache, or both.
 
 use crate::client::{CacheMode, GitHubClient};
+
+/// URL patterns that return volatile data - should never be read from cache.
+///
+/// Volatile data changes frequently (CI status, review decisions) and caching
+/// it leads to stale UI state. We still write to cache for potential future use,
+/// but never read these endpoints from cache.
+const VOLATILE_URL_PATTERNS: &[&str] = &[
+    "/status",     // Commit status: /repos/{owner}/{repo}/commits/{sha}/status
+    "/check-runs", // Check runs: /repos/{owner}/{repo}/commits/{sha}/check-runs
+    "/reviews",    // PR reviews: /repos/{owner}/{repo}/pulls/{number}/reviews
+];
+
+/// Check if a URL returns volatile data that should not be cached
+fn is_volatile_endpoint(url: &str) -> bool {
+    VOLATILE_URL_PATTERNS
+        .iter()
+        .any(|pattern| url.contains(pattern))
+}
 use crate::types::{
     CheckRun, CheckStatus, CiStatus, MergeMethod, MergeResult, PullRequest, ReviewComment,
-    ReviewEvent, WorkflowRun,
+    ReviewDecision, ReviewEvent, WorkflowRun,
 };
 use async_trait::async_trait;
 use gh_api_cache::{ApiCache, CachedResponse};
@@ -87,8 +105,19 @@ impl<C: GitHubClient + Clone> CachedGitHubClient<C> {
     }
 
     /// Try to get data from cache
+    ///
+    /// Returns `None` if:
+    /// - Cache mode doesn't allow reading
+    /// - URL is a volatile endpoint (CI status, reviews, etc.)
+    /// - Data is not in cache
     fn try_cache_get(&self, method: &str, url: &str, params: &[(&str, &str)]) -> Option<String> {
         if !self.mode.should_read() {
+            return None;
+        }
+
+        // Never read volatile data from cache - it changes too frequently
+        if is_volatile_endpoint(url) {
+            debug!("Skipping cache read for volatile endpoint: {}", url);
             return None;
         }
 
@@ -527,6 +556,45 @@ impl<C: GitHubClient + Clone> GitHubClient for CachedGitHubClient<C> {
 
         Ok(comments)
     }
+
+    async fn fetch_review_decision(
+        &self,
+        owner: &str,
+        repo: &str,
+        pr_number: u64,
+    ) -> anyhow::Result<ReviewDecision> {
+        let url = format!("/repos/{}/{}/pulls/{}/reviews", owner, repo, pr_number);
+        let params: &[(&str, &str)] = &[];
+
+        // Try cache first
+        if let Some(cached_body) = self.try_cache_get("GET", &url, params) {
+            match serde_json::from_str::<ReviewDecision>(&cached_body) {
+                Ok(decision) => {
+                    debug!(
+                        "Cache HIT for {}/{} PR #{} review decision: {:?}",
+                        owner, repo, pr_number, decision
+                    );
+                    return Ok(decision);
+                }
+                Err(e) => {
+                    debug!("Failed to parse cached review decision: {}", e);
+                }
+            }
+        }
+
+        // Fetch from API
+        let decision = self
+            .inner
+            .fetch_review_decision(owner, repo, pr_number)
+            .await?;
+
+        // Cache the result
+        if let Ok(json) = serde_json::to_string(&decision) {
+            self.cache_set("GET", &url, params, &json);
+        }
+
+        Ok(decision)
+    }
 }
 
 #[cfg(test)]
@@ -724,9 +792,21 @@ mod tests {
             *self.call_count.lock().unwrap() += 1;
             Ok(vec![]) // Empty list by default
         }
+
+        async fn fetch_review_decision(
+            &self,
+            _owner: &str,
+            _repo: &str,
+            _pr_number: u64,
+        ) -> anyhow::Result<ReviewDecision> {
+            *self.call_count.lock().unwrap() += 1;
+            Ok(ReviewDecision::Pending)
+        }
     }
 
     fn create_test_pr(number: u64) -> PullRequest {
+        use crate::types::MaturityState;
+
         PullRequest {
             number,
             title: format!("Test PR {}", number),
@@ -743,6 +823,8 @@ mod tests {
             html_url: "https://github.com/test/repo/pull/1".to_string(),
             additions: 100,
             deletions: 50,
+            maturity: MaturityState::Ready,
+            review_decision: ReviewDecision::Pending,
         }
     }
 
@@ -867,5 +949,22 @@ mod tests {
 
         // Original client unchanged
         assert_eq!(client.cache_mode(), CacheMode::ReadWrite);
+    }
+
+    #[test]
+    fn test_volatile_endpoint_detection() {
+        // Volatile endpoints - should NOT be cached
+        assert!(is_volatile_endpoint(
+            "/repos/owner/repo/commits/abc123/status"
+        ));
+        assert!(is_volatile_endpoint(
+            "/repos/owner/repo/commits/abc123/check-runs"
+        ));
+        assert!(is_volatile_endpoint("/repos/owner/repo/pulls/42/reviews"));
+
+        // Stable endpoints - should be cached
+        assert!(!is_volatile_endpoint("/repos/owner/repo/pulls"));
+        assert!(!is_volatile_endpoint("/repos/owner/repo/pulls/42"));
+        assert!(!is_volatile_endpoint("/repos/owner/repo/pulls/42/comments"));
     }
 }

@@ -3,7 +3,7 @@
 //! Separates presentation logic from domain models and view rendering.
 //! Pre-computes all display text, colors, and styles in the view model.
 
-use crate::pr::{MergeableStatus, Pr};
+use crate::pr::{MaturityState, MergeableStatus, Pr, ReviewDecision};
 use crate::state::{LoadingState, PrNumber, Repo, RepoData};
 use crate::theme::Theme;
 use ratatui::style::Color;
@@ -38,21 +38,24 @@ pub struct PrTableHeaderViewModel {
 #[derive(Debug, Clone)]
 pub struct PrRowViewModel {
     /// Pre-formatted cell texts
-    pub pr_number: String, // "#123"
-    pub title: String,       // "Fix: broken tests"
-    pub author: String,      // "sassman"
-    pub comments: String,    // "5"
-    pub status_text: String, // "✓ Ready"
+    pub pr_number: String,    // "#123"
+    pub title: String,        // "Fix: broken tests"
+    pub author: String,       // "sassman"
+    pub maturity_text: String, // "Draft" or ""
+    pub review_text: String,  // "✓", "!", "○", "?"
+    pub status_text: String,  // "✓ Ready"
 
     /// Pre-computed styles
-    pub bg_color: Color, // Background (alternating, selected, etc.)
-    pub fg_color: Color,     // Text color
-    pub status_color: Color, // Status-specific color
+    pub bg_color: Color,       // Background (alternating, selected, etc.)
+    pub fg_color: Color,       // Text color
+    pub maturity_color: Color, // Maturity-specific color
+    pub review_color: Color,   // Review-specific color
+    pub status_color: Color,   // Status-specific color
 
     /// Metadata for interactions (not displayed)
     pub pr_number_raw: usize, // For opening PR
-    pub is_selected: bool, // Space key selection
-    pub is_cursor: bool,   // Keyboard navigation position
+    pub is_selected: bool,    // Space key selection
+    pub is_cursor: bool,      // Keyboard navigation position
     pub row_style: RowStyle,
 }
 
@@ -133,7 +136,14 @@ impl PrTableViewModel {
         let pr_number = pr.number.to_string();
         let title = pr.title.clone();
         let author = pr.author.clone();
-        let comments = pr.no_comments.to_string();
+
+        // Format maturity (Draft/Ready)
+        let maturity_text = Self::maturity_status_text(pr.maturity).to_string();
+        let maturity_color = Self::maturity_status_color(pr.maturity, theme);
+
+        // Format review status
+        let review_text = Self::review_status_icon(pr.review_decision).to_string();
+        let review_color = Self::review_status_color(pr.review_decision, theme);
 
         // Format status with icon and label
         let status_icon = Self::mergeable_status_icon(pr.mergeable);
@@ -176,7 +186,10 @@ impl PrTableViewModel {
             pr_number,
             title,
             author,
-            comments,
+            maturity_text,
+            maturity_color,
+            review_text,
+            review_color,
             status_text,
             bg_color,
             fg_color,
@@ -265,6 +278,42 @@ impl PrTableViewModel {
             MergeableStatus::Blocked => "Blocked",
             MergeableStatus::Rebasing => "Rebasing...",
             MergeableStatus::Merging => "Merging...",
+        }
+    }
+
+    // --- Presentation helpers for MaturityState ---
+
+    fn maturity_status_text(maturity: MaturityState) -> &'static str {
+        match maturity {
+            MaturityState::Draft => "🏗️",
+            MaturityState::Ready => "",
+        }
+    }
+
+    fn maturity_status_color(maturity: MaturityState, theme: &Theme) -> Color {
+        match maturity {
+            MaturityState::Draft => theme.text_muted,
+            MaturityState::Ready => theme.status_success,
+        }
+    }
+
+    // --- Presentation helpers for ReviewDecision ---
+
+    fn review_status_icon(decision: ReviewDecision) -> &'static str {
+        match decision {
+            ReviewDecision::Unknown => "?",
+            ReviewDecision::Pending => "○",
+            ReviewDecision::Approved => "✓",
+            ReviewDecision::ChangesRequested => "!",
+        }
+    }
+
+    fn review_status_color(decision: ReviewDecision, theme: &Theme) -> Color {
+        match decision {
+            ReviewDecision::Unknown => theme.text_muted,
+            ReviewDecision::Pending => theme.status_warning,
+            ReviewDecision::Approved => theme.status_success,
+            ReviewDecision::ChangesRequested => theme.status_error,
         }
     }
 }

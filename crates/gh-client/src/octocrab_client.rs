@@ -6,8 +6,9 @@
 use crate::client::GitHubClient;
 use crate::types::{
     CheckConclusion, CheckRun, CheckRunStatus, CheckState, CheckStatus, CiState, CiStatus,
-    CommitStatus, MergeMethod, MergeResult, MergeableState, PullRequest, ReviewComment,
-    ReviewEvent, WorkflowRun, WorkflowRunConclusion, WorkflowRunStatus,
+    CommitStatus, MaturityState, MergeMethod, MergeResult, MergeableState, PullRequest,
+    ReviewComment, ReviewDecision, ReviewEvent, WorkflowRun, WorkflowRunConclusion,
+    WorkflowRunStatus,
 };
 use async_trait::async_trait;
 use log::debug;
@@ -95,7 +96,7 @@ impl GitHubClient for OctocrabClient {
                 if prs.len() >= MAX_PRS {
                     break;
                 }
-                prs.push(convert_pull_request(&pr));
+                prs.push(PullRequest::from(&pr));
             }
 
             if prs.len() >= MAX_PRS || page_is_empty {
@@ -123,7 +124,7 @@ impl GitHubClient for OctocrabClient {
 
         let pr = self.octocrab.pulls(owner, repo).get(pr_number).await?;
 
-        Ok(convert_pull_request(&pr))
+        Ok(PullRequest::from(&pr))
     }
 
     async fn fetch_check_runs(
@@ -612,6 +613,63 @@ impl GitHubClient for OctocrabClient {
 
         Ok(comments)
     }
+
+    async fn fetch_review_decision(
+        &self,
+        owner: &str,
+        repo: &str,
+        pr_number: u64,
+    ) -> anyhow::Result<ReviewDecision> {
+        debug!(
+            "Fetching review decision for PR #{} in {}/{}",
+            pr_number, owner, repo
+        );
+
+        let route = format!("/repos/{}/{}/pulls/{}/reviews", owner, repo, pr_number);
+
+        #[derive(serde::Deserialize)]
+        struct ReviewItem {
+            state: Option<String>,
+        }
+
+        let reviews: Vec<ReviewItem> = self
+            .octocrab
+            .get(route, None::<&()>)
+            .await
+            .map_err(format_octocrab_error)?;
+
+        // Determine overall review state:
+        // - Any "CHANGES_REQUESTED" → ChangesRequested
+        // - Any "APPROVED" (and no CHANGES_REQUESTED) → Approved
+        // - Otherwise → Pending
+        let mut has_approval = false;
+        let mut has_changes_requested = false;
+
+        for review in &reviews {
+            if let Some(state) = &review.state {
+                match state.to_uppercase().as_str() {
+                    "APPROVED" => has_approval = true,
+                    "CHANGES_REQUESTED" => has_changes_requested = true,
+                    _ => {}
+                }
+            }
+        }
+
+        let decision = if has_changes_requested {
+            ReviewDecision::ChangesRequested
+        } else if has_approval {
+            ReviewDecision::Approved
+        } else {
+            ReviewDecision::Pending
+        };
+
+        debug!(
+            "Review decision for PR #{} in {}/{}: {:?}",
+            pr_number, owner, repo, decision
+        );
+
+        Ok(decision)
+    }
 }
 
 /// Convert workflow run status string to enum
@@ -641,32 +699,39 @@ fn convert_workflow_conclusion(conclusion: &str) -> WorkflowRunConclusion {
     }
 }
 
-/// Convert octocrab PullRequest to our PullRequest type
-fn convert_pull_request(pr: &octocrab::models::pulls::PullRequest) -> PullRequest {
-    PullRequest {
-        number: pr.number,
-        title: pr.title.clone().unwrap_or_default(),
-        body: pr.body.clone(),
-        author: pr
-            .user
-            .as_ref()
-            .map(|u| u.login.clone())
-            .unwrap_or_else(|| "unknown".to_string()),
-        comments: pr.comments.unwrap_or(0),
-        head_sha: pr.head.sha.clone(),
-        base_branch: pr.base.ref_field.clone(),
-        head_branch: pr.head.ref_field.clone(),
-        mergeable: pr.mergeable,
-        mergeable_state: pr.mergeable_state.as_ref().map(convert_mergeable_state),
-        created_at: pr.created_at.unwrap_or_else(chrono::Utc::now),
-        updated_at: pr.updated_at.unwrap_or_else(chrono::Utc::now),
-        html_url: pr
-            .html_url
-            .as_ref()
-            .map(|u| u.to_string())
-            .unwrap_or_default(),
-        additions: pr.additions.unwrap_or(0),
-        deletions: pr.deletions.unwrap_or(0),
+impl From<&octocrab::models::pulls::PullRequest> for PullRequest {
+    fn from(pr: &octocrab::models::pulls::PullRequest) -> Self {
+        Self {
+            number: pr.number,
+            title: pr.title.clone().unwrap_or_default(),
+            body: pr.body.clone(),
+            author: pr
+                .user
+                .as_ref()
+                .map(|u| u.login.clone())
+                .unwrap_or_else(|| "unknown".to_string()),
+            comments: pr.comments.unwrap_or(0),
+            head_sha: pr.head.sha.clone(),
+            base_branch: pr.base.ref_field.clone(),
+            head_branch: pr.head.ref_field.clone(),
+            mergeable: pr.mergeable,
+            mergeable_state: pr.mergeable_state.as_ref().map(convert_mergeable_state),
+            created_at: pr.created_at.unwrap_or_else(chrono::Utc::now),
+            updated_at: pr.updated_at.unwrap_or_else(chrono::Utc::now),
+            html_url: pr
+                .html_url
+                .as_ref()
+                .map(|u| u.to_string())
+                .unwrap_or_default(),
+            additions: pr.additions.unwrap_or(0),
+            deletions: pr.deletions.unwrap_or(0),
+            maturity: if pr.draft.unwrap_or(false) {
+                MaturityState::Draft
+            } else {
+                MaturityState::Ready
+            },
+            review_decision: ReviewDecision::Unknown, // Fetched separately
+        }
     }
 }
 

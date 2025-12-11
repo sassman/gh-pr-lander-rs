@@ -2,7 +2,7 @@
 //!
 //! Actions specific to the main PR view screen.
 
-use crate::domain_models::{MergeableStatus, Pr, Repository};
+use crate::domain_models::{MergeableStatus, Pr, Repository, ReviewDecision};
 use crate::state::PrFilter;
 
 /// Actions for the Pull Request screen
@@ -119,6 +119,12 @@ pub enum PullRequestAction {
         repo: Repository,
         pr_number: u64,
         status: MergeableStatus,
+    },
+    /// Update the review decision of a specific PR after fetching reviews
+    ReviewDecisionUpdated {
+        repo: Repository,
+        pr_number: u64,
+        decision: ReviewDecision,
     },
     /// Update PR stats (additions/deletions) after fetching individual PR details
     StatsUpdated {

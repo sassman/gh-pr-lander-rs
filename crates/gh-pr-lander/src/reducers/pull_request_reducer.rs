@@ -335,6 +335,53 @@ pub fn reduce_pull_request(mut state: MainViewState, action: &PullRequestAction)
                 );
             }
         }
+
+        PullRequestAction::ReviewDecisionUpdated {
+            repo,
+            pr_number,
+            decision,
+        } => {
+            // Find repo index
+            let Some(repo_idx) = find_repo_idx(&state, repo) else {
+                log::warn!(
+                    "Reducer: Repository {}/{} not found when updating PR #{} review decision",
+                    repo.org,
+                    repo.repo,
+                    pr_number
+                );
+                return state;
+            };
+            // Update the PR's review decision
+            if let Some(repo_data) = state.repo_data.get_mut(&repo_idx) {
+                if let Some(pr) = repo_data
+                    .prs
+                    .iter_mut()
+                    .find(|p| p.number == *pr_number as usize)
+                {
+                    log::info!(
+                        "Reducer: Updating PR #{} review decision from {:?} to {:?}",
+                        pr_number,
+                        pr.review_decision,
+                        decision
+                    );
+                    pr.review_decision = *decision;
+                } else {
+                    log::warn!(
+                        "Reducer: PR #{} not found in repo_data for {}/{}",
+                        pr_number,
+                        repo.org,
+                        repo.repo
+                    );
+                }
+            } else {
+                log::warn!(
+                    "Reducer: repo_data not found for {}/{} when updating PR #{} review decision",
+                    repo.org,
+                    repo.repo,
+                    pr_number
+                );
+            }
+        }
     }
 
     state

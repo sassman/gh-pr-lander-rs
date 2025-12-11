@@ -3,6 +3,9 @@ use octocrab::Octocrab;
 
 use crate::Repo;
 
+// Re-export from gh_client for convenience
+pub use gh_client::types::{MaturityState, ReviewDecision};
+
 #[derive(Debug, Clone)]
 pub struct Pr {
     pub number: usize,
@@ -16,6 +19,8 @@ pub struct Pr {
     pub head_sha: String,           // HEAD commit SHA for CI status checks
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    pub maturity: MaturityState,       // Draft vs Ready state
+    pub review_decision: ReviewDecision, // Review status (approved, changes requested, etc.)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -87,6 +92,12 @@ impl Pr {
             head_sha: pr.head.sha.clone(),       // Store head SHA for CI checks
             created_at: pr.created_at.unwrap(),
             updated_at: pr.updated_at.unwrap(),
+            maturity: if pr.draft.unwrap_or(false) {
+                MaturityState::Draft
+            } else {
+                MaturityState::Ready
+            },
+            review_decision: ReviewDecision::Unknown, // Will be fetched in background
         }
     }
 }
