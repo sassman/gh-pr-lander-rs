@@ -24,7 +24,7 @@ fn is_volatile_endpoint(url: &str) -> bool {
 }
 use crate::types::{
     CheckRun, CheckStatus, CiStatus, MergeMethod, MergeResult, PullRequest, ReviewComment,
-    ReviewDecision, ReviewEvent, WorkflowRun,
+    ReviewDecision, ReviewEvent, SortPrsExt, WorkflowRun,
 };
 use async_trait::async_trait;
 use gh_api_cache::{ApiCache, CachedResponse};
@@ -181,8 +181,7 @@ impl<C: GitHubClient + Clone> GitHubClient for CachedGitHubClient<C> {
         if let Some(cached_body) = self.try_cache_get("GET", &url, &params) {
             match serde_json::from_str::<Vec<PullRequest>>(&cached_body) {
                 Ok(mut prs) => {
-                    // Always sort for stable ordering (descending by PR number)
-                    prs.sort_by(|a, b| b.number.cmp(&a.number));
+                    prs.sort_prs();
                     prs.dedup_by_key(|pr| pr.number);
                     debug!("Cache HIT for {}/{}: {} PRs", owner, repo, prs.len());
                     return Ok(prs);

@@ -62,6 +62,23 @@ pub struct PullRequest {
     pub review_decision: ReviewDecision,
 }
 
+pub trait SortPrsExt {
+    fn sort_prs(&mut self);
+}
+
+impl SortPrsExt for Vec<PullRequest> {
+    /// Always sort for stable, first by maturity (Draft last) then descending by PR number
+    fn sort_prs(&mut self) {
+        self.sort_by(|a, b| {
+            let mat = b.maturity.cmp(&a.maturity);
+            if mat == std::cmp::Ordering::Equal {
+                return b.number.cmp(&a.number);
+            }
+            mat
+        });
+    }
+}
+
 /// Mergeable state as reported by GitHub
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -82,7 +99,7 @@ pub enum MergeableState {
 }
 
 /// Draft vs Ready state for a PR
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, PartialOrd, Ord)]
 #[serde(rename_all = "snake_case")]
 pub enum MaturityState {
     /// PR is a draft (not ready for review)

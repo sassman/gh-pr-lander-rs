@@ -7,7 +7,7 @@ use crate::client::GitHubClient;
 use crate::types::{
     CheckConclusion, CheckRun, CheckRunStatus, CheckState, CheckStatus, CiState, CiStatus,
     CommitStatus, MaturityState, MergeMethod, MergeResult, MergeableState, PullRequest,
-    ReviewComment, ReviewDecision, ReviewEvent, WorkflowRun, WorkflowRunConclusion,
+    ReviewComment, ReviewDecision, ReviewEvent, SortPrsExt, WorkflowRun, WorkflowRunConclusion,
     WorkflowRunStatus,
 };
 use async_trait::async_trait;
@@ -106,8 +106,7 @@ impl GitHubClient for OctocrabClient {
             page_num += 1;
         }
 
-        // Sort by PR number (descending) for stable ordering
-        prs.sort_by(|a, b| b.number.cmp(&a.number));
+        prs.sort_prs();
         prs.dedup_by_key(|pr| pr.number);
 
         debug!("Fetched {} PRs for {}/{}", prs.len(), owner, repo);

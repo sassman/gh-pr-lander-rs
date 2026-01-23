@@ -23,6 +23,23 @@ pub struct Pr {
     pub review_decision: ReviewDecision, // Review status (approved, changes requested, etc.)
 }
 
+pub trait SortPrsExt {
+    fn sort_prs(&mut self);
+}
+
+impl SortPrsExt for Vec<Pr> {
+    /// Always sort for stable, first by maturity (Draft last) then descending by PR number
+    fn sort_prs(&mut self) {
+        self.sort_by(|a, b| {
+            let mat = b.maturity.cmp(&a.maturity);
+            if mat == std::cmp::Ordering::Equal {
+                return b.number.cmp(&a.number);
+            }
+            mat
+        });
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum MergeableStatus {
     Unknown,         // Not yet checked

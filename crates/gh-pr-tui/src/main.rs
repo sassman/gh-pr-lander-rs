@@ -536,9 +536,7 @@ pub async fn fetch_github_data(
         page_num += 1;
     }
 
-    // Sort by PR number (descending) for stable, predictable ordering
-    prs.sort_by(|a, b| b.number.cmp(&a.number));
-
+    prs.sort_prs();
     Ok(prs)
 }
 
@@ -620,8 +618,8 @@ pub async fn fetch_github_data_cached(
                         prs.push(pr);
                     }
 
-                    prs.sort_by(|a, b| b.number.cmp(&a.number));
-
+                    // Always sort for stable, first by maturity (Draft last) then descending by PR number
+                    prs.sort_prs();
                     // If cache entry was stale (status_code 200), refresh in background
                     // but return cached data immediately for fast startup
                     if cached_response.status_code == 200 {
