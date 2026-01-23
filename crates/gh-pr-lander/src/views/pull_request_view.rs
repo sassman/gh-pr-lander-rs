@@ -137,7 +137,7 @@ fn render_pr_table(state: &AppState, area: Rect, f: &mut Frame) {
     let repo_data = state.main_view.repo_data.get(&repo_idx).unwrap();
 
     // Build view model
-    let vm = PrTableViewModel::from_repo_data(repo_data, repo, theme);
+    let vm = PrTableViewModel::from_repo_data(repo_data, repo, theme, &state.claude_sessions);
 
     // Build block with header
     let status_line = Line::from(vm.header.status_text.clone())

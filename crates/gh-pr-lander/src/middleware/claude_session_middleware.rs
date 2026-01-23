@@ -2,22 +2,30 @@
 //!
 //! Handles spawning, attaching to, and cleaning up Claude Code sessions.
 
-use crate::actions::{Action, ClaudeSessionAction, StatusBarAction};
+use crate::actions::{Action, ClaudeSessionAction, PullRequestAction, StatusBarAction};
 use crate::dispatcher::Dispatcher;
 use crate::domain_models::Pr;
 use crate::middleware::Middleware;
 use crate::state::AppState;
-use gh_pr_fix_with_claude::{checkout_pr_branch, spawn_claude_session, CheckoutParams, PrId};
+use gh_pr_fix_with_claude::{
+    checkout_pr_branch, is_session_alive, kill_session, spawn_claude_session, CheckoutParams, PrId,
+};
+use std::collections::HashSet;
 use tokio::runtime::Runtime;
 
 pub struct ClaudeSessionMiddleware {
     runtime: Runtime,
+    /// Counter for throttled liveness checks (every N ticks)
+    tick_counter: usize,
 }
+
+const LIVENESS_CHECK_INTERVAL: usize = 30; // ~4.5s at 150ms tick
 
 impl ClaudeSessionMiddleware {
     pub fn new() -> Self {
         Self {
             runtime: Runtime::new().expect("Failed to create tokio runtime"),
+            tick_counter: 0,
         }
     }
 
@@ -155,6 +163,63 @@ impl Middleware for ClaudeSessionMiddleware {
                     "claude",
                 )));
                 false
+            }
+
+            // Cleanup sessions for PRs that were closed/merged
+            Action::PullRequest(PullRequestAction::Loaded { repo, prs }) => {
+                let active_pr_ids: HashSet<PrId> = prs.iter().map(PrId::from).collect();
+
+                let repo_url_prefix = format!(
+                    "https://{}/{}/{}/pull/",
+                    repo.effective_host(),
+                    repo.org,
+                    repo.repo
+                );
+
+                let stale: Vec<PrId> = state
+                    .claude_sessions
+                    .sessions
+                    .keys()
+                    .filter(|pr_id| {
+                        pr_id.as_str().starts_with(&repo_url_prefix)
+                            && !active_pr_ids.contains(pr_id)
+                    })
+                    .cloned()
+                    .collect();
+
+                for pr_id in stale {
+                    if let Some(session) = state.claude_sessions.get_session(&pr_id) {
+                        kill_session(&session.screen_name);
+                    }
+                    dispatcher.dispatch(Action::ClaudeSession(ClaudeSessionAction::Completed {
+                        pr_id,
+                    }));
+                }
+                true // Pass through
+            }
+
+            // Periodic liveness check (throttled)
+            Action::Global(crate::actions::GlobalAction::Tick) => {
+                self.tick_counter += 1;
+                if self.tick_counter >= LIVENESS_CHECK_INTERVAL
+                    && !state.claude_sessions.sessions.is_empty()
+                {
+                    self.tick_counter = 0;
+                    let dead: Vec<PrId> = state
+                        .claude_sessions
+                        .sessions
+                        .iter()
+                        .filter(|(_, session)| !is_session_alive(&session.screen_name))
+                        .map(|(pr_id, _)| pr_id.clone())
+                        .collect();
+
+                    for pr_id in dead {
+                        dispatcher.dispatch(Action::ClaudeSession(
+                            ClaudeSessionAction::Completed { pr_id },
+                        ));
+                    }
+                }
+                true
             }
 
             // Pass through all other actions

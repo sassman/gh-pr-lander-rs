@@ -167,6 +167,19 @@ fn run_app(
                     log::trace!("Main loop: re-routing event to middleware: {:?}", event);
                     action_tx.send(Action::Event(event)).ok();
                 }
+                Action::ClaudeSession(
+                    crate::actions::ClaudeSessionAction::SuspendForAttach { screen_name },
+                ) => {
+                    // Hand terminal to screen session
+                    execute!(io::stdout(), LeaveAlternateScreen).ok();
+                    disable_raw_mode().ok();
+
+                    let _ = gh_pr_fix_with_claude::attach_session(&screen_name);
+
+                    enable_raw_mode().ok();
+                    execute!(io::stdout(), EnterAlternateScreen).ok();
+                    // Terminal will redraw on next loop iteration
+                }
                 action => {
                     // Apply to reducer
                     store.dispatch(action);

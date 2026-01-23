@@ -619,6 +619,9 @@ impl CommandId {
             // MergeBot is not yet tested nor stable
             Self::MergeBotAddToQueue | Self::MergeBotStart | Self::MergeBotStop => false,
 
+            // Claude commands are added dynamically based on session state
+            Self::ClaudeFixPr | Self::ClaudeAttachSession => false,
+
             // All others are shown (including DiffViewerOpen)
             _ => true,
         }
