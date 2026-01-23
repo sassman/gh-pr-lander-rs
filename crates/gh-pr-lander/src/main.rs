@@ -38,6 +38,7 @@ use clap::Parser;
 use cli::Cli;
 use middleware::{
     app_config_middleware::AppConfigMiddleware, bootstrap_middleware::BootstrapMiddleware,
+    claude_session_middleware::ClaudeSessionMiddleware,
     command_palette_middleware::CommandPaletteMiddleware,
     confirmation_popup_middleware::ConfirmationPopupMiddleware,
     debug_console_middleware::DebugConsoleMiddleware, diff_viewer_middleware::DiffViewerMiddleware,
@@ -93,6 +94,7 @@ fn main() -> io::Result<()> {
         Box::new(ConfirmationPopupMiddleware::new()),
         Box::new(RepositoryMiddleware::new()),
         Box::new(PullRequestMiddleware::new()), // Bulk loading coordination
+        Box::new(ClaudeSessionMiddleware::new()), // Claude Code session management
         Box::new(DebugConsoleMiddleware::new(log_file)), // Debug console log reader
     ];
 

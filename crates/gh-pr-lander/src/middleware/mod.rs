@@ -4,6 +4,7 @@ use crate::state::AppState;
 
 pub mod app_config_middleware;
 pub mod bootstrap_middleware;
+pub mod claude_session_middleware;
 pub mod command_palette_middleware;
 pub mod confirmation_popup_middleware;
 pub mod debug_console_middleware;

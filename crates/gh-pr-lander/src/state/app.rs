@@ -30,6 +30,8 @@ pub struct AppState {
     pub theme: gh_pr_lander_theme::Theme,
     /// The keymap containing all keybindings
     pub keymap: Keymap,
+    /// Claude Code session state
+    pub claude_sessions: gh_pr_fix_with_claude::ClaudeSessionsState,
     /// Application configuration
     pub app_config: gh_pr_config::AppConfig,
 }
@@ -60,6 +62,7 @@ impl std::fmt::Debug for AppState {
             .field("build_log", &self.build_log)
             .field("diff_viewer", &self.diff_viewer)
             .field("confirmation_popup", &self.confirmation_popup)
+            .field("claude_sessions", &self.claude_sessions)
             .field("theme", &"<theme>")
             .field("app_config", &self.app_config)
             .finish()
@@ -82,6 +85,7 @@ impl Clone for AppState {
             build_log: self.build_log.clone(),
             diff_viewer: self.diff_viewer.clone(),
             confirmation_popup: self.confirmation_popup.clone(),
+            claude_sessions: self.claude_sessions.clone(),
             theme: self.theme.clone(),
             keymap: self.keymap.clone(),
             app_config: self.app_config.clone(),
@@ -105,6 +109,7 @@ impl Default for AppState {
             build_log: BuildLogState::default(),
             diff_viewer: DiffViewerState::default(),
             confirmation_popup: None,
+            claude_sessions: gh_pr_fix_with_claude::ClaudeSessionsState::default(),
             theme: gh_pr_lander_theme::Theme::default(),
             keymap: default_keymap(),
             app_config: gh_pr_config::AppConfig::default(),

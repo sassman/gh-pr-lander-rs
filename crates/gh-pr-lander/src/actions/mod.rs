@@ -17,6 +17,7 @@ pub mod text_input;
 // Screen-specific action types
 pub mod bootstrap;
 pub mod build_log;
+pub mod claude_session;
 pub mod command_palette;
 pub mod confirmation_popup;
 pub mod debug_console;
@@ -32,6 +33,7 @@ pub mod status_bar;
 // Re-export all action types for convenience
 pub use available_action::AvailableAction;
 pub use bootstrap::BootstrapAction;
+pub use claude_session::ClaudeSessionAction;
 pub use build_log::BuildLogAction;
 pub use command_palette::CommandPaletteAction;
 pub use confirmation_popup::ConfirmationPopupAction;
@@ -104,6 +106,8 @@ pub enum Action {
     Repository(RepositoryAction),
     /// Session management actions
     Session(SessionAction),
+    /// Claude Code session management actions
+    ClaudeSession(ClaudeSessionAction),
 
     /// No-op action
     None,

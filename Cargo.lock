@@ -1148,6 +1148,7 @@ dependencies = [
  "gh-diff-viewer",
  "gh-pr-config",
  "gh-pr-config-migrate",
+ "gh-pr-fix-with-claude",
  "gh-pr-lander-theme",
  "log",
  "ratatui",

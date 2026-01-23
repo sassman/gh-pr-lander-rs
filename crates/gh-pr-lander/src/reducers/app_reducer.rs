@@ -10,9 +10,10 @@ use crate::actions::{
     RepositoryAction,
 };
 use crate::reducers::{
-    build_log_reducer, command_palette_reducer, confirmation_popup_reducer, debug_console_reducer,
-    diff_viewer_reducer, key_bindings_reducer, pull_request_reducer, repository_reducer,
-    session_reducer, splash_reducer, status_bar_reducer,
+    build_log_reducer, claude_session_reducer, command_palette_reducer,
+    confirmation_popup_reducer, debug_console_reducer, diff_viewer_reducer,
+    key_bindings_reducer, pull_request_reducer, repository_reducer, session_reducer,
+    splash_reducer, status_bar_reducer,
 };
 use crate::state::AppState;
 use crate::views::DiffViewerView;
@@ -260,6 +261,12 @@ pub fn reduce(mut state: AppState, action: &Action) -> AppState {
             state.main_view = repository_reducer::reduce_repository(state.main_view, sub);
             state.add_repo_form =
                 repository_reducer::reduce_add_repo_form(state.add_repo_form, sub);
+            state
+        }
+
+        // Claude session state updates
+        Action::ClaudeSession(_) => {
+            claude_session_reducer::reduce(&mut state, action);
             state
         }
 
