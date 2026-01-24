@@ -59,11 +59,11 @@ pub fn checkout_pr_branch(params: &CheckoutParams) -> Result<PathBuf, String> {
         format!("{}/{}", params.org, params.repo),
         pr_dir.to_string_lossy().to_string(),
     ];
-    if let Some(ref host) = params.host {
-        if host != "github.com" {
-            clone_args.push("--hostname".to_string());
-            clone_args.push(host.clone());
-        }
+    if let Some(ref host) = params.host
+        && host != "github.com"
+    {
+        clone_args.push("--hostname".to_string());
+        clone_args.push(host.clone());
     }
 
     let clone_output = Command::new("gh")

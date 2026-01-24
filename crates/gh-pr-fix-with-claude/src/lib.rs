@@ -11,10 +11,10 @@ mod session;
 mod state;
 pub mod terminal_screen;
 
-pub use checkout::{checkout_pr_branch, CheckoutParams};
+pub use checkout::{CheckoutParams, checkout_pr_branch};
 pub use key_translation::key_event_to_bytes;
 pub use pr_id::PrId;
-pub use pty::{open_tmux_pty, EmbeddedPty};
+pub use pty::{EmbeddedPty, open_tmux_pty};
 pub use session::{attach_session, is_session_alive, kill_session, spawn_claude_session};
 pub use state::{ClaudeSession, ClaudeSessionsState};
 pub use terminal_screen::{TerminalCell, TerminalColor, TerminalScreen};

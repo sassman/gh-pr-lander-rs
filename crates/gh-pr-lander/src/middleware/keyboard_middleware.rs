@@ -14,7 +14,9 @@
 //! Look up keys in the keymap, then check if the active view accepts the action.
 //! This prevents actions from "leaking" to reducers when a different view is active.
 
-use crate::actions::{Action, ClaudeTerminalAction, GlobalAction, NavigationAction, TextInputAction};
+use crate::actions::{
+    Action, ClaudeTerminalAction, GlobalAction, NavigationAction, TextInputAction,
+};
 use crate::dispatcher::Dispatcher;
 use crate::keybindings::PendingKey;
 use crate::middleware::Middleware;

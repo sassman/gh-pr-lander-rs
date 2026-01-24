@@ -485,7 +485,9 @@ impl CommandId {
             Self::DiffViewerPageUp => "Scroll up one page in the diff viewer",
 
             // Claude Code
-            Self::ClaudeFixPr => "Spawn a background Claude Code session to analyze and fix this PR",
+            Self::ClaudeFixPr => {
+                "Spawn a background Claude Code session to analyze and fix this PR"
+            }
             Self::ClaudeAttachSession => "Jump into the running Claude Code session for this PR",
 
             // General

@@ -70,7 +70,12 @@ impl View for ClaudeTerminalView {
 
         // Footer hint
         let footer = Line::from(vec![
-            Span::styled(" Esc ", Style::default().fg(theme.accent_primary).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                " Esc ",
+                Style::default()
+                    .fg(theme.accent_primary)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled("return to PR list ", Style::default().fg(theme.text_muted)),
         ]);
 
@@ -117,10 +122,7 @@ impl View for ClaudeTerminalView {
     }
 
     fn accepts_action(&self, action: &Action) -> bool {
-        matches!(
-            action,
-            Action::ClaudeTerminal(_) | Action::Global(_)
-        )
+        matches!(action, Action::ClaudeTerminal(_) | Action::Global(_))
     }
 
     fn available_actions(&self, _state: &AppState) -> Vec<AvailableAction> {

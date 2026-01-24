@@ -237,12 +237,7 @@ fn run_app(
         }
 
         // Update embedded terminal size if the view is active
-        if store
-            .state()
-            .active_view()
-            .view_id()
-            == crate::views::ViewId::ClaudeTerminal
-        {
+        if store.state().active_view().view_id() == crate::views::ViewId::ClaudeTerminal {
             let (popup_cols, popup_rows) =
                 crate::state::claude_terminal::popup_inner_size(terminal_width, terminal_height);
             let last = store.state().claude_terminal.last_size;

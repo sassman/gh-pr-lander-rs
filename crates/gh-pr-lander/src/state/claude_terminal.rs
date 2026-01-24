@@ -29,13 +29,22 @@ pub fn popup_inner_size(terminal_width: u16, terminal_height: u16) -> (u16, u16)
     let popup_width = (terminal_width * 80 / 100).max(40);
     let popup_height = (terminal_height * 80 / 100).max(10);
     // Subtract 2 for borders on each axis
-    (popup_width.saturating_sub(2), popup_height.saturating_sub(2))
+    (
+        popup_width.saturating_sub(2),
+        popup_height.saturating_sub(2),
+    )
 }
 
 impl std::fmt::Debug for ClaudeTerminalState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ClaudeTerminalState")
-            .field("screen", &self.screen.as_ref().map(|s| format!("{}x{}", s.cols, s.lines)))
+            .field(
+                "screen",
+                &self
+                    .screen
+                    .as_ref()
+                    .map(|s| format!("{}x{}", s.cols, s.lines)),
+            )
             .field("session_name", &self.session_name)
             .field("last_size", &self.last_size)
             .field("terminal_area", &self.terminal_area)

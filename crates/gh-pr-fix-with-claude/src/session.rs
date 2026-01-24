@@ -33,20 +33,11 @@ pub fn spawn_claude_session(
     // Build the shell command to run inside tmux
     // Use POSIX single-quote escaping for the prompt
     let escaped_prompt = claude_prompt.replace('\'', "'\\''");
-    let shell_cmd = format!(
-        "claude --dangerously-skip-permissions '{}'",
-        escaped_prompt
-    );
+    let shell_cmd = format!("claude --dangerously-skip-permissions '{}'", escaped_prompt);
 
     // Spawn detached tmux session running claude
     let output = Command::new("tmux")
-        .args([
-            "new-session",
-            "-d",
-            "-s",
-            &session_name,
-            &shell_cmd,
-        ])
+        .args(["new-session", "-d", "-s", &session_name, &shell_cmd])
         .current_dir(work_dir)
         .output()
         .map_err(|e| format!("Failed to spawn tmux session: {}", e))?;
@@ -76,7 +67,7 @@ pub fn is_session_alive(session_name: &str) -> bool {
 /// Kill a tmux session.
 pub fn kill_session(session_name: &str) {
     let _ = Command::new("tmux")
-        .args(["kill-session", "-t", &session_name])
+        .args(["kill-session", "-t", session_name])
         .output();
     log::info!("Killed tmux session: {}", session_name);
 }

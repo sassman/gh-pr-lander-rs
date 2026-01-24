@@ -34,9 +34,9 @@ pub mod status_bar;
 // Re-export all action types for convenience
 pub use available_action::AvailableAction;
 pub use bootstrap::BootstrapAction;
+pub use build_log::BuildLogAction;
 pub use claude_session::ClaudeSessionAction;
 pub use claude_terminal::ClaudeTerminalAction;
-pub use build_log::BuildLogAction;
 pub use command_palette::CommandPaletteAction;
 pub use confirmation_popup::ConfirmationPopupAction;
 pub use context_action::ContextAction;

@@ -2,7 +2,9 @@
 //!
 //! Handles spawning, attaching to, and cleaning up Claude Code sessions.
 
-use crate::actions::{Action, ClaudeSessionAction, ClaudeTerminalAction, PullRequestAction, StatusBarAction};
+use crate::actions::{
+    Action, ClaudeSessionAction, ClaudeTerminalAction, PullRequestAction, StatusBarAction,
+};
 use crate::dispatcher::Dispatcher;
 use crate::domain_models::Pr;
 use crate::middleware::Middleware;
@@ -90,11 +92,7 @@ impl Middleware for ClaudeSessionMiddleware {
                     match checkout_pr_branch(&params) {
                         Ok(pr_dir) => {
                             match spawn_claude_session(
-                                &org,
-                                &repo_name,
-                                pr_number,
-                                &pr_title,
-                                &pr_dir,
+                                &org, &repo_name, pr_number, &pr_title, &pr_dir,
                             ) {
                                 Ok(screen_name) => {
                                     dispatcher.dispatch(Action::ClaudeSession(
@@ -122,9 +120,8 @@ impl Middleware for ClaudeSessionMiddleware {
                             }
                         }
                         Err(err) => {
-                            dispatcher.dispatch(Action::ClaudeSession(
-                                ClaudeSessionAction::Error(err),
-                            ));
+                            dispatcher
+                                .dispatch(Action::ClaudeSession(ClaudeSessionAction::Error(err)));
                         }
                     }
                 });
@@ -142,11 +139,9 @@ impl Middleware for ClaudeSessionMiddleware {
 
                 if let Some(session) = state.claude_sessions.get_session(&pr_id) {
                     // Open embedded terminal panel attached to the session
-                    dispatcher.dispatch(Action::ClaudeTerminal(
-                        ClaudeTerminalAction::Open {
-                            session_name: session.screen_name.clone(),
-                        },
-                    ));
+                    dispatcher.dispatch(Action::ClaudeTerminal(ClaudeTerminalAction::Open {
+                        session_name: session.screen_name.clone(),
+                    }));
                 } else {
                     dispatcher.dispatch(Action::StatusBar(StatusBarAction::warning(
                         format!("No active session for PR #{}", pr.number),

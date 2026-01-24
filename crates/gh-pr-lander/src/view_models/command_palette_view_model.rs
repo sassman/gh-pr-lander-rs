@@ -8,8 +8,8 @@ use crate::commands::{
     filter_commands, get_issue_commands, get_palette_commands_with_hints, Command,
 };
 use crate::state::AppState;
-use gh_pr_fix_with_claude::PrId;
 use crate::utils::issue_extractor::RepoContext;
+use gh_pr_fix_with_claude::PrId;
 use ratatui::style::Color;
 
 /// View model for the command palette

@@ -2,7 +2,7 @@
 //!
 //! Opens a pseudo-terminal and spawns `tmux attach-session` inside it.
 
-use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 use std::io::{Read, Write};
 
 /// Handle to an open PTY with reader/writer/master

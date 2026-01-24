@@ -12,9 +12,7 @@ pub fn reduce(state: &mut AppState, action: &Action) {
         match sub {
             ClaudeTerminalAction::Open { session_name } => {
                 state.claude_terminal.session_name = Some(session_name.clone());
-                state
-                    .view_stack
-                    .push(Box::new(ClaudeTerminalView::new()));
+                state.view_stack.push(Box::new(ClaudeTerminalView::new()));
             }
             ClaudeTerminalAction::ScreenUpdated(screen) => {
                 state.claude_terminal.screen = Some(screen.clone());

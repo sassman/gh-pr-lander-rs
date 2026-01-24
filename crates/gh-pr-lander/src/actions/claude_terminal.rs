@@ -26,14 +26,17 @@ pub enum ClaudeTerminalAction {
 impl std::fmt::Debug for ClaudeTerminalAction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Open { session_name } => {
-                f.debug_struct("Open").field("session_name", session_name).finish()
-            }
+            Self::Open { session_name } => f
+                .debug_struct("Open")
+                .field("session_name", session_name)
+                .finish(),
             Self::ScreenUpdated(_) => write!(f, "ScreenUpdated(...)"),
             Self::PtyExited => write!(f, "PtyExited"),
-            Self::Resize { cols, rows } => {
-                f.debug_struct("Resize").field("cols", cols).field("rows", rows).finish()
-            }
+            Self::Resize { cols, rows } => f
+                .debug_struct("Resize")
+                .field("cols", cols)
+                .field("rows", rows)
+                .finish(),
             Self::KeyInput(key) => f.debug_tuple("KeyInput").field(key).finish(),
             Self::SetWriter(_) => write!(f, "SetWriter(...)"),
         }
@@ -43,10 +46,15 @@ impl std::fmt::Debug for ClaudeTerminalAction {
 impl Clone for ClaudeTerminalAction {
     fn clone(&self) -> Self {
         match self {
-            Self::Open { session_name } => Self::Open { session_name: session_name.clone() },
+            Self::Open { session_name } => Self::Open {
+                session_name: session_name.clone(),
+            },
             Self::ScreenUpdated(screen) => Self::ScreenUpdated(screen.clone()),
             Self::PtyExited => Self::PtyExited,
-            Self::Resize { cols, rows } => Self::Resize { cols: *cols, rows: *rows },
+            Self::Resize { cols, rows } => Self::Resize {
+                cols: *cols,
+                rows: *rows,
+            },
             Self::KeyInput(key) => Self::KeyInput(*key),
             Self::SetWriter(writer) => Self::SetWriter(writer.clone()),
         }
