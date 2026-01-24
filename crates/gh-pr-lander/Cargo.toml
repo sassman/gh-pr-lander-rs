@@ -11,7 +11,9 @@ gh-pr-fix-with-claude.workspace = true
 gh-pr-config.workspace = true
 gh-pr-config-migrate.workspace = true
 gh-pr-lander-theme.workspace = true
+portable-pty = "0.9"
 ratatui = { version = "0.30", features = ["crossterm"] }
+vt100 = "0.15"
 tokio = { workspace = true }
 anyhow = { workspace = true }
 log = "0.4"

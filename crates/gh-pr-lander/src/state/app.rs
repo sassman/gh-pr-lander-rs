@@ -3,6 +3,7 @@
 use crate::keymap::{default_keymap, Keymap};
 use crate::views::{SplashView, View};
 
+use super::claude_terminal::ClaudeTerminalState;
 use super::{
     AddRepoFormState, BuildLogState, CommandPaletteState, ConfirmationPopupState,
     DebugConsoleState, DiffViewerState, KeyBindingsPanelState, MainViewState, MergeBotState,
@@ -32,6 +33,8 @@ pub struct AppState {
     pub keymap: Keymap,
     /// Claude Code session state
     pub claude_sessions: gh_pr_fix_with_claude::ClaudeSessionsState,
+    /// Embedded terminal panel state
+    pub claude_terminal: ClaudeTerminalState,
     /// Application configuration
     pub app_config: gh_pr_config::AppConfig,
 }
@@ -63,6 +66,7 @@ impl std::fmt::Debug for AppState {
             .field("diff_viewer", &self.diff_viewer)
             .field("confirmation_popup", &self.confirmation_popup)
             .field("claude_sessions", &self.claude_sessions)
+            .field("claude_terminal", &self.claude_terminal)
             .field("theme", &"<theme>")
             .field("app_config", &self.app_config)
             .finish()
@@ -86,6 +90,7 @@ impl Clone for AppState {
             diff_viewer: self.diff_viewer.clone(),
             confirmation_popup: self.confirmation_popup.clone(),
             claude_sessions: self.claude_sessions.clone(),
+            claude_terminal: self.claude_terminal.clone(),
             theme: self.theme.clone(),
             keymap: self.keymap.clone(),
             app_config: self.app_config.clone(),
@@ -110,6 +115,7 @@ impl Default for AppState {
             diff_viewer: DiffViewerState::default(),
             confirmation_popup: None,
             claude_sessions: gh_pr_fix_with_claude::ClaudeSessionsState::default(),
+            claude_terminal: ClaudeTerminalState::default(),
             theme: gh_pr_lander_theme::Theme::default(),
             keymap: default_keymap(),
             app_config: gh_pr_config::AppConfig::default(),

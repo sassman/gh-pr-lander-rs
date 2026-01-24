@@ -10,7 +10,7 @@ use crate::actions::{
     RepositoryAction,
 };
 use crate::reducers::{
-    build_log_reducer, claude_session_reducer, command_palette_reducer,
+    build_log_reducer, claude_session_reducer, claude_terminal_reducer, command_palette_reducer,
     confirmation_popup_reducer, debug_console_reducer, diff_viewer_reducer,
     key_bindings_reducer, pull_request_reducer, repository_reducer, session_reducer,
     splash_reducer, status_bar_reducer,
@@ -267,6 +267,12 @@ pub fn reduce(mut state: AppState, action: &Action) -> AppState {
         // Claude session state updates
         Action::ClaudeSession(_) => {
             claude_session_reducer::reduce(&mut state, action);
+            state
+        }
+
+        // Claude terminal panel state updates
+        Action::ClaudeTerminal(_) => {
+            claude_terminal_reducer::reduce(&mut state, action);
             state
         }
 

@@ -18,6 +18,7 @@ pub mod text_input;
 pub mod bootstrap;
 pub mod build_log;
 pub mod claude_session;
+pub mod claude_terminal;
 pub mod command_palette;
 pub mod confirmation_popup;
 pub mod debug_console;
@@ -34,6 +35,7 @@ pub mod status_bar;
 pub use available_action::AvailableAction;
 pub use bootstrap::BootstrapAction;
 pub use claude_session::ClaudeSessionAction;
+pub use claude_terminal::ClaudeTerminalAction;
 pub use build_log::BuildLogAction;
 pub use command_palette::CommandPaletteAction;
 pub use confirmation_popup::ConfirmationPopupAction;
@@ -108,6 +110,8 @@ pub enum Action {
     Session(SessionAction),
     /// Claude Code session management actions
     ClaudeSession(ClaudeSessionAction),
+    /// Embedded Claude terminal panel actions
+    ClaudeTerminal(ClaudeTerminalAction),
 
     /// No-op action
     None,

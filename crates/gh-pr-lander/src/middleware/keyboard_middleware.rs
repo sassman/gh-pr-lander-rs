@@ -14,7 +14,7 @@
 //! Look up keys in the keymap, then check if the active view accepts the action.
 //! This prevents actions from "leaking" to reducers when a different view is active.
 
-use crate::actions::{Action, GlobalAction, NavigationAction, TextInputAction};
+use crate::actions::{Action, ClaudeTerminalAction, GlobalAction, NavigationAction, TextInputAction};
 use crate::dispatcher::Dispatcher;
 use crate::keybindings::PendingKey;
 use crate::middleware::Middleware;
@@ -42,6 +42,20 @@ impl KeyboardMiddleware {
     fn handle_key(&mut self, key: KeyEvent, state: &AppState, dispatcher: &Dispatcher) -> bool {
         let view = state.view_stack.last();
         let capabilities = view.map(|v| v.capabilities(state)).unwrap_or_default();
+
+        // ═══════════════════════════════════════════════════════════════════
+        // LAYER 0: Raw input views (terminal emulator)
+        // ═══════════════════════════════════════════════════════════════════
+        if capabilities.captures_raw_input() {
+            // Only Esc escapes the terminal panel
+            if key.code == KeyCode::Esc {
+                dispatcher.dispatch(Action::Global(GlobalAction::Close));
+                return false;
+            }
+            // Forward everything else to the terminal PTY
+            dispatcher.dispatch(Action::ClaudeTerminal(ClaudeTerminalAction::KeyInput(key)));
+            return false;
+        }
 
         // ═══════════════════════════════════════════════════════════════════
         // LAYER 1: Priority keys (always work)

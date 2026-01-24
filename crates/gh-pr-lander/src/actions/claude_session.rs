@@ -19,6 +19,4 @@ pub enum ClaudeSessionAction {
     Completed { pr_id: PrId },
     /// Internal: session start failed
     Error(String),
-    /// Internal: request terminal suspend for screen attach
-    SuspendForAttach { screen_name: String },
 }

@@ -1,13 +1,13 @@
-//! GNU screen session management for Claude Code
+//! Tmux session management for Claude Code
 //!
 //! Provides spawn, attach, kill, and liveness-check operations.
 
 use std::path::Path;
 use std::process::Command;
 
-/// Spawn a new Claude Code session in a detached GNU screen.
+/// Spawn a new Claude Code session in a detached tmux session.
 ///
-/// Returns the screen session name on success.
+/// Returns the tmux session name on success.
 pub fn spawn_claude_session(
     org: &str,
     repo: &str,
@@ -15,11 +15,11 @@ pub fn spawn_claude_session(
     pr_title: &str,
     work_dir: &Path,
 ) -> Result<String, String> {
-    let screen_name = format!("claude-{}-{}-pr-{}", org, repo, pr_number);
+    let session_name = format!("claude-{}-{}-pr-{}", org, repo, pr_number);
 
     // Kill any existing session with the same name (stale)
-    let _ = Command::new("screen")
-        .args(["-S", &screen_name, "-X", "quit"])
+    let _ = Command::new("tmux")
+        .args(["kill-session", "-t", &session_name])
         .output();
 
     // Build the claude prompt
@@ -30,73 +30,77 @@ pub fn spawn_claude_session(
         pr_number, pr_title
     );
 
-    // Spawn detached screen session running claude
-    let output = Command::new("screen")
+    // Build the shell command to run inside tmux
+    // Use POSIX single-quote escaping for the prompt
+    let escaped_prompt = claude_prompt.replace('\'', "'\\''");
+    let shell_cmd = format!(
+        "claude --dangerously-skip-permissions '{}'",
+        escaped_prompt
+    );
+
+    // Spawn detached tmux session running claude
+    let output = Command::new("tmux")
         .args([
-            "-dmS",
-            &screen_name,
-            "claude",
-            "--dangerously-skip-permissions",
-            &claude_prompt,
+            "new-session",
+            "-d",
+            "-s",
+            &session_name,
+            &shell_cmd,
         ])
         .current_dir(work_dir)
         .output()
-        .map_err(|e| format!("Failed to spawn screen session: {}", e))?;
+        .map_err(|e| format!("Failed to spawn tmux session: {}", e))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("screen -dmS failed: {}", stderr));
+        return Err(format!("tmux new-session failed: {}", stderr));
     }
 
     log::info!(
         "Claude session '{}' started in {:?}",
-        screen_name,
+        session_name,
         work_dir
     );
-    Ok(screen_name)
+    Ok(session_name)
 }
 
-/// Check if a screen session is still alive.
-pub fn is_session_alive(screen_name: &str) -> bool {
-    let output = Command::new("screen").args(["-list"]).output();
-
-    match output {
-        Ok(output) => {
-            let list = String::from_utf8_lossy(&output.stdout);
-            list.contains(screen_name)
-        }
-        Err(_) => false,
-    }
+/// Check if a tmux session is still alive.
+pub fn is_session_alive(session_name: &str) -> bool {
+    Command::new("tmux")
+        .args(["has-session", "-t", session_name])
+        .output()
+        .map(|output| output.status.success())
+        .unwrap_or(false)
 }
 
-/// Kill a screen session.
-pub fn kill_session(screen_name: &str) {
-    let _ = Command::new("screen")
-        .args(["-S", screen_name, "-X", "quit"])
+/// Kill a tmux session.
+pub fn kill_session(session_name: &str) {
+    let _ = Command::new("tmux")
+        .args(["kill-session", "-t", &session_name])
         .output();
-    log::info!("Killed screen session: {}", screen_name);
+    log::info!("Killed tmux session: {}", session_name);
 }
 
-/// Attach to an existing screen session.
+/// Attach to an existing tmux session.
 ///
 /// This function blocks until the user detaches from the session.
 /// The caller is responsible for terminal suspend/resume.
 ///
 /// Returns Ok(()) when the user detaches, Err if attach failed.
-pub fn attach_session(screen_name: &str) -> Result<(), String> {
-    let status = Command::new("screen")
-        .args(["-r", screen_name])
+pub fn attach_session(session_name: &str) -> Result<(), String> {
+    let status = Command::new("tmux")
+        .args(["attach-session", "-t", session_name])
         .stdin(std::process::Stdio::inherit())
         .stdout(std::process::Stdio::inherit())
         .stderr(std::process::Stdio::inherit())
         .status()
-        .map_err(|e| format!("Failed to attach to screen session: {}", e))?;
+        .map_err(|e| format!("Failed to attach to tmux session: {}", e))?;
 
     if status.success() {
         Ok(())
     } else {
         Err(format!(
-            "screen -r exited with status: {}",
+            "tmux attach exited with status: {}",
             status.code().unwrap_or(-1)
         ))
     }

@@ -5,6 +5,7 @@
 mod add_repo;
 mod app;
 mod build_log;
+pub mod claude_terminal;
 mod command_palette;
 mod confirmation_popup;
 mod debug_console;

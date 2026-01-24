@@ -2,7 +2,7 @@
 //!
 //! Handles spawning, attaching to, and cleaning up Claude Code sessions.
 
-use crate::actions::{Action, ClaudeSessionAction, PullRequestAction, StatusBarAction};
+use crate::actions::{Action, ClaudeSessionAction, ClaudeTerminalAction, PullRequestAction, StatusBarAction};
 use crate::dispatcher::Dispatcher;
 use crate::domain_models::Pr;
 use crate::middleware::Middleware;
@@ -141,10 +141,10 @@ impl Middleware for ClaudeSessionMiddleware {
                 let pr_id: PrId = PrId::from(pr);
 
                 if let Some(session) = state.claude_sessions.get_session(&pr_id) {
-                    // Dispatch suspend action — main loop will handle terminal hand-off
-                    dispatcher.dispatch(Action::ClaudeSession(
-                        ClaudeSessionAction::SuspendForAttach {
-                            screen_name: session.screen_name.clone(),
+                    // Open embedded terminal panel attached to the session
+                    dispatcher.dispatch(Action::ClaudeTerminal(
+                        ClaudeTerminalAction::Open {
+                            session_name: session.screen_name.clone(),
                         },
                     ));
                 } else {

@@ -4,11 +4,15 @@
 //! Text input and navigation are handled via view translation (translate_text_input/translate_navigation).
 
 use crate::actions::{Action, CommandPaletteAction};
-use crate::commands::{filter_commands, get_issue_commands, get_palette_commands_with_hints};
+use crate::command_id::CommandId;
+use crate::commands::{
+    filter_commands, get_issue_commands, get_palette_commands_with_hints, Command,
+};
 use crate::dispatcher::Dispatcher;
 use crate::middleware::Middleware;
 use crate::state::AppState;
 use crate::utils::issue_extractor::RepoContext;
+use gh_pr_fix_with_claude::PrId;
 
 /// Middleware that handles command palette command execution
 pub struct CommandPaletteMiddleware;
@@ -44,6 +48,14 @@ impl CommandPaletteMiddleware {
             .filter_map(|&num| repo_data.prs.iter().find(|pr| pr.number == num))
             .map(|pr| format!("{} {}", pr.title, pr.body))
             .collect()
+    }
+
+    /// Get the PrId for the cursor PR (if any)
+    fn get_cursor_pr_id(state: &AppState) -> Option<PrId> {
+        let repo_idx = state.main_view.selected_repository;
+        let repo_data = state.main_view.repo_data.get(&repo_idx)?;
+        let pr = repo_data.prs.get(repo_data.selected_pr)?;
+        Some(PrId::from(pr))
     }
 
     /// Get repository context for issue extraction
@@ -83,6 +95,18 @@ impl Middleware for CommandPaletteMiddleware {
             let issue_commands =
                 get_issue_commands(&state.app_config.issue_tracker, &pr_texts, &repo_ctx);
             all_commands.extend(issue_commands);
+
+            // Add context-aware Claude commands (must match view model)
+            let cursor_pr_id = Self::get_cursor_pr_id(state);
+            let has_session = cursor_pr_id
+                .as_ref()
+                .map(|id| state.claude_sessions.has_session(id))
+                .unwrap_or(false);
+            if has_session {
+                all_commands.push(Command::new(CommandId::ClaudeAttachSession));
+            } else {
+                all_commands.push(Command::new(CommandId::ClaudeFixPr));
+            }
 
             let filtered = filter_commands(&all_commands, &state.command_palette.query);
 
