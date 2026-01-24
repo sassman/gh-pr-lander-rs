@@ -12,7 +12,7 @@ use crate::view_models::ConfirmationPopupViewModel;
 use crate::views::{View, ViewId};
 use ratatui::{
     layout::{Constraint, Direction, Layout, Margin, Rect},
-    style::{Modifier, Style, Stylize},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Clear, Paragraph},
     Frame,

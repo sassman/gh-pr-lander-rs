@@ -7,7 +7,7 @@ use crate::view_models::CommandPaletteViewModel;
 use crate::views::View;
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Margin, Rect},
-    style::{Modifier, Stylize},
+    style::Modifier,
     text::{Line, Span},
     widgets::{Block, Borders, Cell, Clear, Paragraph, Row, Table, Wrap},
     Frame,
