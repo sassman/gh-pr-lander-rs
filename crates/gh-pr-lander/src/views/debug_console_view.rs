@@ -10,7 +10,6 @@ use crate::views::View;
 use gh_pr_lander_theme::Theme;
 use ratatui::{
     layout::{Alignment, Rect},
-    style::Stylize,
     text::{Line, Span},
     widgets::{Block, Borders, Clear, Paragraph},
     Frame,
