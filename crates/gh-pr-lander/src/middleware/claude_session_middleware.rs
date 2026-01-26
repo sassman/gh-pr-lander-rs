@@ -78,6 +78,7 @@ impl Middleware for ClaudeSessionMiddleware {
                 let host = repo.host.clone();
                 let pr_number = pr.number;
                 let pr_title = pr.title.clone();
+                let fix_config = state.app_config.fix_with_claude_code.clone();
 
                 self.runtime.spawn_blocking(move || {
                     let params = CheckoutParams {
@@ -92,7 +93,7 @@ impl Middleware for ClaudeSessionMiddleware {
                     match checkout_pr_branch(&params) {
                         Ok(pr_dir) => {
                             match spawn_claude_session(
-                                &org, &repo_name, pr_number, &pr_title, &pr_dir,
+                                &org, &repo_name, pr_number, &pr_title, &pr_dir, &fix_config,
                             ) {
                                 Ok(screen_name) => {
                                     dispatcher.dispatch(Action::ClaudeSession(

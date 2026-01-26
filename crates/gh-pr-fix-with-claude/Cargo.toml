@@ -8,4 +8,8 @@ chrono = { version = "0.4", features = ["serde"] }
 crossterm = { version = "0.28", default-features = false, features = ["events"] }
 log.workspace = true
 portable-pty = "0.9"
+serde = { version = "1", features = ["derive"] }
 vt100 = "0.15"
+
+[dev-dependencies]
+toml.workspace = true

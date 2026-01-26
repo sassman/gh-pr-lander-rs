@@ -2,6 +2,7 @@
 //!
 //! Provides spawn, attach, kill, and liveness-check operations.
 
+use crate::config::FixWithClaudeConfig;
 use std::path::Path;
 use std::process::Command;
 
@@ -14,44 +15,63 @@ pub fn spawn_claude_session(
     pr_number: usize,
     pr_title: &str,
     work_dir: &Path,
+    config: &FixWithClaudeConfig,
 ) -> Result<String, String> {
-    let session_name = format!("claude-{}-{}-pr-{}", org, repo, pr_number);
+    let session_name = format!("gh-pr-lander-fix-with-claude--{org}-{repo}-pr-{pr_number}");
 
     // Kill any existing session with the same name (stale)
     let _ = Command::new("tmux")
         .args(["kill-session", "-t", &session_name])
         .output();
 
-    // Build the claude prompt
-    let claude_prompt = format!(
-        "Please analyze and fix PR #{} titled '{}' in this repository. \
-         Check the PR description, review comments, and CI build logs \
-         to understand what needs to be fixed. Then implement the fix.",
-        pr_number, pr_title
-    );
+    // Build the claude prompt from config
+    let claude_prompt = config.build_prompt(pr_number, pr_title);
 
-    // Build the shell command to run inside tmux
-    // Use POSIX single-quote escaping for the prompt
+    // Build the shell command with appropriate permissions
     let escaped_prompt = claude_prompt.replace('\'', "'\\''");
-    let shell_cmd = format!("claude --dangerously-skip-permissions '{}'", escaped_prompt);
+    let shell_cmd = if config.permissions.is_unrestricted() {
+        format!("claude --dangerously-skip-permissions '{escaped_prompt}'")
+    } else {
+        let mut args = Vec::new();
+
+        // Add allowed tools
+        if !config.permissions.tools_allowed().is_empty() {
+            let tools: Vec<_> = config
+                .permissions
+                .tools_allowed()
+                .iter()
+                .map(|t| t.as_str())
+                .collect();
+            args.push(format!("--allowedTools '{}'", tools.join(",")));
+        }
+
+        // Add denied tools
+        if !config.permissions.tools_denied().is_empty() {
+            let tools: Vec<_> = config
+                .permissions
+                .tools_denied()
+                .iter()
+                .map(|t| t.as_str())
+                .collect();
+            args.push(format!("--disallowedTools '{}'", tools.join(",")));
+        }
+
+        format!("claude {} '{}'", args.join(" "), escaped_prompt)
+    };
 
     // Spawn detached tmux session running claude
     let output = Command::new("tmux")
         .args(["new-session", "-d", "-s", &session_name, &shell_cmd])
         .current_dir(work_dir)
         .output()
-        .map_err(|e| format!("Failed to spawn tmux session: {}", e))?;
+        .map_err(|e| format!("Failed to spawn tmux session: {e}"))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("tmux new-session failed: {}", stderr));
+        return Err(format!("tmux new-session failed: {stderr}"));
     }
 
-    log::info!(
-        "Claude session '{}' started in {:?}",
-        session_name,
-        work_dir
-    );
+    log::info!("Claude session '{session_name}' started in {work_dir:?}");
     Ok(session_name)
 }
 
