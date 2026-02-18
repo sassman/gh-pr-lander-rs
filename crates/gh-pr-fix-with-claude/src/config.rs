@@ -83,6 +83,15 @@ Steps:
 Notes: PR#: {pr_number} and PR Title: {pr_title}
 "#;
 
+/// Terminal multiplexer backend for Claude Code sessions
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum Multiplexer {
+    Tmux,
+    #[default]
+    Zellij,
+}
+
 /// Configuration for "Fix with Claude Code" feature
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FixWithClaudeConfig {
@@ -94,6 +103,10 @@ pub struct FixWithClaudeConfig {
     /// Permissions for Claude Code session
     #[serde(default)]
     pub permissions: Permissions,
+
+    /// Terminal multiplexer to use (tmux or zellij)
+    #[serde(default)]
+    pub multiplexer: Multiplexer,
 }
 
 fn default_prompt() -> String {
@@ -105,6 +118,7 @@ impl Default for FixWithClaudeConfig {
         Self {
             prompt: default_prompt(),
             permissions: Permissions::default(),
+            multiplexer: Multiplexer::default(),
         }
     }
 }
@@ -123,6 +137,8 @@ impl FixWithClaudeConfig {
 
         output.push_str("# Fix with Claude Code configuration\n");
         output.push_str("[fix_with_claude_code]\n");
+        output.push_str("# Terminal multiplexer: \"zellij\" (default) or \"tmux\"\n");
+        output.push_str("multiplexer = \"zellij\"\n");
         output.push_str("# The prompt template sent to Claude Code\n");
         output.push_str("# Use {pr_number} and {pr_title} as placeholders\n");
         output.push_str("prompt = '''\n");
@@ -155,6 +171,7 @@ mod tests {
         let config = FixWithClaudeConfig {
             prompt: "Fix PR #{pr_number}: {pr_title}".to_string(),
             permissions: Permissions::default(),
+            multiplexer: Multiplexer::default(),
         };
         let prompt = config.build_prompt(123, "Fix login bug");
         assert_eq!(prompt, "Fix PR #123: Fix login bug");
@@ -220,7 +237,43 @@ deny = ["Bash(rm *)"]
     fn test_generate_toml_section() {
         let toml = FixWithClaudeConfig::generate_toml_section();
         assert!(toml.contains("[fix_with_claude_code]"));
+        assert!(toml.contains("multiplexer"));
         assert!(toml.contains("prompt"));
         assert!(toml.contains("[fix_with_claude_code.permissions]"));
+    }
+
+    #[test]
+    fn test_multiplexer_default_is_zellij() {
+        let config = FixWithClaudeConfig::default();
+        assert_eq!(config.multiplexer, Multiplexer::Zellij);
+    }
+
+    #[test]
+    fn test_multiplexer_tmux_from_toml() {
+        let toml = r#"
+prompt = "Fix it"
+multiplexer = "tmux"
+    "#;
+        let config: FixWithClaudeConfig = toml::from_str(toml).unwrap();
+        assert_eq!(config.multiplexer, Multiplexer::Tmux);
+    }
+
+    #[test]
+    fn test_multiplexer_zellij_from_toml() {
+        let toml = r#"
+prompt = "Fix it"
+multiplexer = "zellij"
+    "#;
+        let config: FixWithClaudeConfig = toml::from_str(toml).unwrap();
+        assert_eq!(config.multiplexer, Multiplexer::Zellij);
+    }
+
+    #[test]
+    fn test_multiplexer_default_when_omitted() {
+        let toml = r#"
+prompt = "Fix it"
+    "#;
+        let config: FixWithClaudeConfig = toml::from_str(toml).unwrap();
+        assert_eq!(config.multiplexer, Multiplexer::Zellij);
     }
 }

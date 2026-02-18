@@ -1,7 +1,7 @@
 //! Claude Terminal Middleware
 //!
 //! Manages the PTY lifecycle for the embedded terminal panel:
-//! - Spawns tmux attach in a PTY on Open
+//! - Spawns multiplexer attach in a PTY on Open
 //! - Runs a reader thread that parses output via vt100 and dispatches screen updates
 //! - Forwards key input to the PTY writer
 //! - Handles PTY resize (both PTY and vt100 parser)
@@ -11,7 +11,7 @@ use crate::dispatcher::Dispatcher;
 use crate::middleware::Middleware;
 use crate::state::claude_terminal::{popup_inner_size, PtyWriter};
 use crate::state::AppState;
-use gh_pr_fix_with_claude::{key_event_to_bytes, open_tmux_pty, TerminalScreen};
+use gh_pr_fix_with_claude::{key_event_to_bytes, open_multiplexer_pty, TerminalScreen};
 use portable_pty::PtySize;
 use std::io::Read;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -52,7 +52,12 @@ impl ClaudeTerminalMiddleware {
             (120, 40) // Fallback if terminal area not yet known
         };
 
-        match open_tmux_pty(session_name, cols, rows) {
+        match open_multiplexer_pty(
+            &state.app_config.fix_with_claude_code.multiplexer,
+            session_name,
+            cols,
+            rows,
+        ) {
             Ok(pty) => {
                 // Store master for resize
                 self.master = Some(pty.master);

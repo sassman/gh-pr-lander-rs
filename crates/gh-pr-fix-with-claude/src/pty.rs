@@ -1,7 +1,8 @@
 //! PTY spawn helper
 //!
-//! Opens a pseudo-terminal and spawns `tmux attach-session` inside it.
+//! Opens a pseudo-terminal and spawns a multiplexer attach inside it.
 
+use crate::config::Multiplexer;
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 use std::io::{Read, Write};
 
@@ -12,8 +13,13 @@ pub struct EmbeddedPty {
     pub master: Box<dyn portable_pty::MasterPty + Send>,
 }
 
-/// Open a PTY and spawn `tmux attach-session -t <session_name>` inside it.
-pub fn open_tmux_pty(session_name: &str, cols: u16, rows: u16) -> Result<EmbeddedPty, String> {
+/// Open a PTY and spawn a multiplexer attach inside it.
+pub fn open_multiplexer_pty(
+    multiplexer: &Multiplexer,
+    session_name: &str,
+    cols: u16,
+    rows: u16,
+) -> Result<EmbeddedPty, String> {
     let pty_system = native_pty_system();
 
     let size = PtySize {
@@ -27,12 +33,27 @@ pub fn open_tmux_pty(session_name: &str, cols: u16, rows: u16) -> Result<Embedde
         .openpty(size)
         .map_err(|e| format!("Failed to open PTY: {}", e))?;
 
-    let mut cmd = CommandBuilder::new("tmux");
-    cmd.args(["attach-session", "-t", session_name]);
+    let cmd = match multiplexer {
+        Multiplexer::Tmux => {
+            let mut cmd = CommandBuilder::new("tmux");
+            cmd.args(["attach-session", "-t", session_name]);
+            cmd
+        }
+        Multiplexer::Zellij => {
+            let mut cmd = CommandBuilder::new("zellij");
+            cmd.args(["attach", session_name]);
+            cmd
+        }
+    };
+
+    let mux_name = match multiplexer {
+        Multiplexer::Tmux => "tmux",
+        Multiplexer::Zellij => "zellij",
+    };
 
     pair.slave
         .spawn_command(cmd)
-        .map_err(|e| format!("Failed to spawn tmux: {}", e))?;
+        .map_err(|e| format!("Failed to spawn {mux_name}: {}", e))?;
 
     let reader = pair
         .master

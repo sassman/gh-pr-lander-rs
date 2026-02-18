@@ -93,7 +93,12 @@ impl Middleware for ClaudeSessionMiddleware {
                     match checkout_pr_branch(&params) {
                         Ok(pr_dir) => {
                             match spawn_claude_session(
-                                &org, &repo_name, pr_number, &pr_title, &pr_dir, &fix_config,
+                                &org,
+                                &repo_name,
+                                pr_number,
+                                &pr_title,
+                                &pr_dir,
+                                &fix_config,
                             ) {
                                 Ok(screen_name) => {
                                     dispatcher.dispatch(Action::ClaudeSession(
@@ -185,7 +190,10 @@ impl Middleware for ClaudeSessionMiddleware {
 
                 for pr_id in stale {
                     if let Some(session) = state.claude_sessions.get_session(&pr_id) {
-                        kill_session(&session.screen_name);
+                        kill_session(
+                            &session.screen_name,
+                            &state.app_config.fix_with_claude_code.multiplexer,
+                        );
                     }
                     dispatcher.dispatch(Action::ClaudeSession(ClaudeSessionAction::Completed {
                         pr_id,
@@ -205,7 +213,12 @@ impl Middleware for ClaudeSessionMiddleware {
                         .claude_sessions
                         .sessions
                         .iter()
-                        .filter(|(_, session)| !is_session_alive(&session.screen_name))
+                        .filter(|(_, session)| {
+                            !is_session_alive(
+                                &session.screen_name,
+                                &state.app_config.fix_with_claude_code.multiplexer,
+                            )
+                        })
                         .map(|(pr_id, _)| pr_id.clone())
                         .collect();
 
