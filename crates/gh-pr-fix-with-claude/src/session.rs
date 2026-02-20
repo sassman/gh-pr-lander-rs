@@ -28,7 +28,7 @@ pub fn spawn_claude_session(
         }
         Multiplexer::Zellij => {
             let _ = Command::new("zellij")
-                .args(["kill-session", &session_name])
+                .args(["delete-session", "-f", &session_name])
                 .output();
         }
     }
@@ -69,26 +69,54 @@ pub fn spawn_claude_session(
     };
 
     // Spawn detached session running claude
-    let output = match config.multiplexer {
-        Multiplexer::Tmux => Command::new("tmux")
-            .args(["new-session", "-d", "-s", &session_name, &shell_cmd])
-            .current_dir(work_dir)
-            .output()
-            .map_err(|e| format!("Failed to spawn tmux session: {e}"))?,
-        Multiplexer::Zellij => Command::new("zellij")
-            .args(["-s", &session_name, "--", "sh", "-c", &shell_cmd])
-            .current_dir(work_dir)
-            .output()
-            .map_err(|e| format!("Failed to spawn zellij session: {e}"))?,
-    };
+    match config.multiplexer {
+        Multiplexer::Tmux => {
+            let output = Command::new("tmux")
+                .args(["new-session", "-d", "-s", &session_name, &shell_cmd])
+                .current_dir(work_dir)
+                .output()
+                .map_err(|e| format!("Failed to spawn tmux session: {e}"))?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let mux_name = match config.multiplexer {
-            Multiplexer::Tmux => "tmux",
-            Multiplexer::Zellij => "zellij",
-        };
-        return Err(format!("{mux_name} new-session failed: {stderr}"));
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                return Err(format!("tmux new-session failed: {stderr}"));
+            }
+        }
+        Multiplexer::Zellij => {
+            // Step 1: Create a detached background session
+            let create = Command::new("zellij")
+                .args(["attach", &session_name, "--create-background"])
+                .output()
+                .map_err(|e| format!("Failed to create zellij session: {e}"))?;
+
+            if !create.status.success() {
+                let stderr = String::from_utf8_lossy(&create.stderr);
+                return Err(format!("zellij attach --create-background failed: {stderr}"));
+            }
+
+            // Step 2: Run the command in the session, replacing the default shell pane
+            let work_dir_str = work_dir.to_string_lossy();
+            let run = Command::new("zellij")
+                .args([
+                    "-s",
+                    &session_name,
+                    "run",
+                    "--in-place",
+                    "--cwd",
+                    &work_dir_str,
+                    "--",
+                    "sh",
+                    "-c",
+                    &shell_cmd,
+                ])
+                .output()
+                .map_err(|e| format!("Failed to run command in zellij session: {e}"))?;
+
+            if !run.status.success() {
+                let stderr = String::from_utf8_lossy(&run.stderr);
+                return Err(format!("zellij run failed: {stderr}"));
+            }
+        }
     }
 
     log::info!("Claude session '{session_name}' started in {work_dir:?}");
@@ -104,13 +132,13 @@ pub fn is_session_alive(session_name: &str, multiplexer: &Multiplexer) -> bool {
             .map(|output| output.status.success())
             .unwrap_or(false),
         Multiplexer::Zellij => Command::new("zellij")
-            .args(["list-sessions"])
+            .args(["list-sessions", "--short", "--no-formatting"])
             .output()
             .map(|output| {
                 output.status.success()
                     && String::from_utf8_lossy(&output.stdout)
                         .lines()
-                        .any(|line| line.contains(session_name))
+                        .any(|line| line.trim() == session_name)
             })
             .unwrap_or(false),
     }
@@ -126,7 +154,7 @@ pub fn kill_session(session_name: &str, multiplexer: &Multiplexer) {
         }
         Multiplexer::Zellij => {
             let _ = Command::new("zellij")
-                .args(["kill-session", session_name])
+                .args(["delete-session", "-f", session_name])
                 .output();
         }
     }
