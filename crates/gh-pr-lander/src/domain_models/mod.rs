@@ -6,6 +6,7 @@
 pub mod auto_merge;
 pub mod operation_monitor;
 pub mod pr_filter;
+pub mod pr_id_ext;
 pub mod pr_number;
 pub mod pull_request;
 pub mod repository;

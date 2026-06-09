@@ -154,6 +154,12 @@ pub enum CommandId {
     /// Page up in diff viewer
     DiffViewerPageUp,
 
+    // === Claude Code ===
+    /// Task Claude Code to fix the current PR
+    ClaudeFixPr,
+    /// Attach to the running Claude Code session for this PR
+    ClaudeAttachSession,
+
     // === General ===
     /// Close the current view/panel
     GlobalClose,
@@ -168,8 +174,8 @@ impl CommandId {
     /// those are handled separately in the reducer.
     pub fn to_action(self) -> crate::actions::Action {
         use crate::actions::{
-            Action, ContextAction, DebugConsoleAction, GlobalAction, MergeBotAction,
-            NavigationAction, PullRequestAction,
+            Action, ClaudeSessionAction, ContextAction, DebugConsoleAction, GlobalAction,
+            MergeBotAction, NavigationAction, PullRequestAction,
         };
         use crate::views::{AddRepositoryView, CommandPaletteView, DebugConsoleView};
 
@@ -284,6 +290,10 @@ impl CommandId {
             }
             Self::DiffViewerPageUp => Action::DiffViewer(crate::actions::DiffViewerAction::PageUp),
 
+            // Claude Code
+            Self::ClaudeFixPr => Action::ClaudeSession(ClaudeSessionAction::Start),
+            Self::ClaudeAttachSession => Action::ClaudeSession(ClaudeSessionAction::Attach),
+
             // General
             Self::GlobalClose => Action::Global(GlobalAction::Close),
             Self::GlobalQuit => Action::Global(GlobalAction::Quit),
@@ -374,6 +384,10 @@ impl CommandId {
             Self::DiffViewerShowReviewPopup => "Submit review",
             Self::DiffViewerPageDown => "Page down",
             Self::DiffViewerPageUp => "Page up",
+
+            // Claude Code
+            Self::ClaudeFixPr => "Task Claude Code to fix this PR",
+            Self::ClaudeAttachSession => "Attach to Claude session",
 
             // General
             Self::GlobalClose => "Close",
@@ -470,6 +484,12 @@ impl CommandId {
             Self::DiffViewerPageDown => "Scroll down one page in the diff viewer",
             Self::DiffViewerPageUp => "Scroll up one page in the diff viewer",
 
+            // Claude Code
+            Self::ClaudeFixPr => {
+                "Spawn a background Claude Code session to analyze and fix this PR"
+            }
+            Self::ClaudeAttachSession => "Jump into the running Claude Code session for this PR",
+
             // General
             Self::GlobalClose => "Close the current view or panel",
             Self::GlobalQuit => "Exit the application",
@@ -537,6 +557,8 @@ impl CommandId {
             | Self::DiffViewerPageDown
             | Self::DiffViewerPageUp => "Diff Viewer",
 
+            Self::ClaudeFixPr | Self::ClaudeAttachSession => "Claude",
+
             Self::GlobalClose | Self::GlobalQuit => "General",
         }
     }
@@ -552,6 +574,7 @@ impl CommandId {
             "Merge Bot",
             "Command Palette",
             "Debug",
+            "Claude",
             "Help",
             "General",
         ]
@@ -597,6 +620,9 @@ impl CommandId {
 
             // MergeBot is not yet tested nor stable
             Self::MergeBotAddToQueue | Self::MergeBotStart | Self::MergeBotStop => false,
+
+            // Claude commands are added dynamically based on session state
+            Self::ClaudeFixPr | Self::ClaudeAttachSession => false,
 
             // All others are shown (including DiffViewerOpen)
             _ => true,

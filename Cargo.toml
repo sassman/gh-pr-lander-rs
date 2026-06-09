@@ -9,6 +9,7 @@ members = [
     "crates/gh-pr-lander",
     "crates/gh-pr-lander-theme",
     # "crates/gh-pr-tui",
+    "crates/gh-pr-fix-with-claude",
     "crates/gh-pr-tui-command-palette",
 ]
 resolver = "3"
@@ -19,6 +20,7 @@ gh-client = { path = "crates/gh-client" }
 gh-diff-viewer = { path = "crates/gh-diff-viewer" }
 gh-pr-config = { path = "crates/gh-pr-config" }
 gh-pr-config-migrate = { path = "crates/gh-pr-config-migrate" }
+gh-pr-fix-with-claude = { path = "crates/gh-pr-fix-with-claude" }
 gh-pr-lander-theme = { path = "crates/gh-pr-lander-theme" }
 
 # Shared dependencies

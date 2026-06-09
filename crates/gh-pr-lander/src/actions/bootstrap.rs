@@ -16,7 +16,7 @@ pub enum BootstrapAction {
     /// Bootstrap process completed
     End,
     /// Application configuration loaded
-    ConfigLoaded(gh_pr_config::AppConfig),
+    ConfigLoaded(Box<gh_pr_config::AppConfig>),
     /// Request to load recent repositories from config
     LoadRecentRepositories,
     /// Recent repositories loaded

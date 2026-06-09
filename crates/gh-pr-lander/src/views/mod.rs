@@ -6,6 +6,7 @@ use ratatui::{layout::Rect, Frame};
 // New view modules (concrete view types)
 pub mod add_repository_view;
 pub mod build_log_view;
+pub mod claude_terminal_view;
 pub mod command_palette_view;
 pub mod confirmation_popup_view;
 pub mod debug_console_view;
@@ -39,6 +40,7 @@ pub enum ViewId {
     BuildLog,
     ConfirmationPopup,
     DiffViewer,
+    ClaudeTerminal,
 }
 
 /// View trait - defines the interface that all views must implement

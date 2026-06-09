@@ -41,6 +41,9 @@ bitflags! {
 
         /// Panel has multiple panes that Tab can switch between
         const PANE_SWITCHING = 1 << 7;
+
+        /// Panel captures all raw keyboard input (terminal emulator)
+        const RAW_INPUT = 1 << 8;
     }
 }
 
@@ -82,6 +85,14 @@ impl PanelCapabilities {
     /// When true, Tab key switches between panes instead of field navigation
     pub fn supports_pane_switching(self) -> bool {
         self.contains(Self::PANE_SWITCHING)
+    }
+
+    /// Check if panel captures all raw keyboard input
+    ///
+    /// When true, all keys except escape sequences are forwarded directly
+    /// to the panel (used by embedded terminal views)
+    pub fn captures_raw_input(self) -> bool {
+        self.contains(Self::RAW_INPUT)
     }
 }
 

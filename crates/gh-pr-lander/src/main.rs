@@ -38,6 +38,8 @@ use clap::Parser;
 use cli::Cli;
 use middleware::{
     app_config_middleware::AppConfigMiddleware, bootstrap_middleware::BootstrapMiddleware,
+    claude_session_middleware::ClaudeSessionMiddleware,
+    claude_terminal_middleware::ClaudeTerminalMiddleware,
     command_palette_middleware::CommandPaletteMiddleware,
     confirmation_popup_middleware::ConfirmationPopupMiddleware,
     debug_console_middleware::DebugConsoleMiddleware, diff_viewer_middleware::DiffViewerMiddleware,
@@ -93,6 +95,8 @@ fn main() -> io::Result<()> {
         Box::new(ConfirmationPopupMiddleware::new()),
         Box::new(RepositoryMiddleware::new()),
         Box::new(PullRequestMiddleware::new()), // Bulk loading coordination
+        Box::new(ClaudeSessionMiddleware::new()), // Claude Code session management
+        Box::new(ClaudeTerminalMiddleware::new()), // Embedded terminal PTY lifecycle
         Box::new(DebugConsoleMiddleware::new(log_file)), // Debug console log reader
     ];
 
@@ -193,11 +197,21 @@ fn run_app(
 
         // === PHASE 2: Render ===
         let mut terminal_height = 0u16;
+        let mut terminal_width = 0u16;
         terminal.draw(|frame| {
             let area = frame.area();
+            terminal_width = area.width;
             terminal_height = area.height;
             views::render(store.state(), area, frame);
         })?;
+
+        // Update terminal area in state (used by middleware for PTY sizing)
+        if store.state().claude_terminal.terminal_area != (terminal_width, terminal_height) {
+            store.state_mut().claude_terminal.terminal_area = (terminal_width, terminal_height);
+            if let Ok(mut shared) = shared_state.write() {
+                *shared = store.state().clone();
+            }
+        }
 
         // Update debug console visible height based on terminal size
         // (70% of screen height minus 2 for borders)
@@ -210,7 +224,6 @@ fn run_app(
 
         // Update diff viewer viewport height based on terminal size
         // (full height minus 3 for status bar and borders)
-        let terminal_width = terminal.size()?.width;
         let diff_viewport_height = terminal_height.saturating_sub(3) as usize;
         if let Some(ref inner) = store.state().diff_viewer.inner {
             if inner.viewport_height != diff_viewport_height {
@@ -220,6 +233,24 @@ fn run_app(
                         height: diff_viewport_height as u16,
                     },
                 ));
+            }
+        }
+
+        // Update embedded terminal size if the view is active
+        if store.state().active_view().view_id() == crate::views::ViewId::ClaudeTerminal {
+            let (popup_cols, popup_rows) =
+                crate::state::claude_terminal::popup_inner_size(terminal_width, terminal_height);
+            let last = store.state().claude_terminal.last_size;
+            if last != (popup_cols, popup_rows) {
+                // Send through middleware chain so PTY gets resized
+                action_tx
+                    .send(Action::ClaudeTerminal(
+                        crate::actions::ClaudeTerminalAction::Resize {
+                            cols: popup_cols,
+                            rows: popup_rows,
+                        },
+                    ))
+                    .ok();
             }
         }
 

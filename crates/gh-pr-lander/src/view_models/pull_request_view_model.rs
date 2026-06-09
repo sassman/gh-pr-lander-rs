@@ -7,6 +7,7 @@ use crate::domain_models::{
     LoadingState, MaturityState, MergeableStatus, Pr, Repository, ReviewDecision,
 };
 use crate::state::RepositoryData;
+use gh_pr_fix_with_claude::{ClaudeSessionsState, PrId};
 use gh_pr_lander_theme::Theme;
 use ratatui::style::Color;
 
@@ -55,7 +56,12 @@ pub struct PrRowViewModel {
 
 impl PrTableViewModel {
     /// Transform state into display-ready view model
-    pub fn from_repo_data(repo_data: &RepositoryData, repo: &Repository, theme: &Theme) -> Self {
+    pub fn from_repo_data(
+        repo_data: &RepositoryData,
+        repo: &Repository,
+        theme: &Theme,
+        claude_sessions: &ClaudeSessionsState,
+    ) -> Self {
         // Build header
         let header = Self::build_header(repo_data, repo, theme);
 
@@ -66,7 +72,15 @@ impl PrTableViewModel {
             .enumerate()
             .map(|(index, pr)| {
                 let is_multi_selected = repo_data.selected_pr_numbers.contains(&pr.number);
-                Self::build_row(pr, index, repo_data.selected_pr, is_multi_selected, theme)
+                let has_claude_session = claude_sessions.has_session(&PrId::from(pr));
+                Self::build_row(
+                    pr,
+                    index,
+                    repo_data.selected_pr,
+                    is_multi_selected,
+                    has_claude_session,
+                    theme,
+                )
             })
             .collect();
 
@@ -102,6 +116,7 @@ impl PrTableViewModel {
         index: usize,
         cursor_index: usize,
         is_multi_selected: bool,
+        has_claude_session: bool,
         theme: &Theme,
     ) -> PrRowViewModel {
         let is_cursor = index == cursor_index;
@@ -109,7 +124,11 @@ impl PrTableViewModel {
         // Pre-compute display text with selection indicator
         let selection_indicator = if is_multi_selected { "●" } else { " " };
         let pr_number = format!("{} #{}", selection_indicator, pr.number);
-        let title = pr.title.clone();
+        let title = if has_claude_session {
+            format!("🤖 {}", pr.title)
+        } else {
+            pr.title.clone()
+        };
         let author = pr.author.clone();
 
         // Format maturity (Draft/Ready)

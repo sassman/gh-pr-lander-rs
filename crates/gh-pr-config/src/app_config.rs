@@ -2,6 +2,7 @@
 //!
 //! Configuration loaded from gh-pr-tui.toml file.
 
+use gh_pr_fix_with_claude::FixWithClaudeConfig;
 use serde::{Deserialize, Serialize};
 use std::env;
 use std::path::Path;
@@ -50,6 +51,10 @@ pub struct AppConfig {
     /// External issue tracker configurations
     #[serde(default)]
     pub issue_tracker: Vec<IssueTrackerConfig>,
+
+    /// Fix with Claude Code session configuration
+    #[serde(default)]
+    pub fix_with_claude_code: FixWithClaudeConfig,
 }
 
 fn default_ide_command() -> String {
@@ -89,6 +94,7 @@ impl Default for AppConfig {
             request_changes_message: default_request_changes_message(),
             close_message: default_close_message(),
             issue_tracker: Vec::new(),
+            fix_with_claude_code: FixWithClaudeConfig::default(),
         }
     }
 }
@@ -105,13 +111,55 @@ impl AppConfig {
                     return config;
                 }
                 Err(e) => {
-                    log::warn!("Failed to parse config file: {}", e);
+                    log::warn!("Failed to parse config file: {e}");
                 }
             }
         }
 
         log::debug!("Using default app config");
         Self::default()
+    }
+
+    /// Generate default config as TOML string with documentation comments
+    pub fn generate_default_toml() -> String {
+        let config = Self::default();
+        let mut output = String::new();
+
+        output.push_str("# gh-pr-lander configuration\n");
+        output.push_str("# https://github.com/sassman/gh-pr-lander\n\n");
+
+        output.push_str("# IDE command for opening PRs\n");
+        output.push_str(&format!("ide_command = \"{}\"\n\n", config.ide_command));
+
+        output.push_str("# Temporary directory for PR checkouts\n");
+        output.push_str(&format!("temp_dir = \"{}\"\n\n", config.temp_dir));
+
+        output.push_str("# Default message for PR approvals\n");
+        output.push_str(&format!(
+            "approval_message = \"{}\"\n\n",
+            config.approval_message
+        ));
+
+        output.push_str("# Default message for PR comments (empty = prompt user)\n");
+        output.push_str(&format!(
+            "comment_message = \"{}\"\n\n",
+            config.comment_message
+        ));
+
+        output.push_str("# Default message for requesting changes\n");
+        output.push_str(&format!(
+            "request_changes_message = \"{}\"\n\n",
+            config.request_changes_message
+        ));
+
+        output.push_str("# Default message for closing PRs\n");
+        output.push_str(&format!("close_message = \"{}\"\n\n", config.close_message));
+
+        // Append the fix-with-claude section from the crate
+        output.push('\n');
+        output.push_str(&FixWithClaudeConfig::generate_toml_section());
+
+        output
     }
 }
 
@@ -224,5 +272,78 @@ repos = ["my-org/*", "other-org/repo"]
 
         // Defaults — not whatever the global config might happen to contain.
         assert_eq!(config.ide_command, "code");
+    }
+
+    #[test]
+    fn test_fix_with_claude_config_from_toml() {
+        let toml = r#"
+ide_command = "zed"
+
+[fix_with_claude_code]
+prompt = "Fix PR #{pr_number}: {pr_title}"
+
+[fix_with_claude_code.permissions]
+allow = ["Bash(git *)", "Read", "Write"]
+deny = ["Bash(rm *)"]
+        "#;
+        let config: AppConfig = toml::from_str(toml).unwrap();
+        assert_eq!(
+            config.fix_with_claude_code.prompt,
+            "Fix PR #{pr_number}: {pr_title}"
+        );
+        assert!(!config.fix_with_claude_code.permissions.is_unrestricted());
+        assert_eq!(
+            config
+                .fix_with_claude_code
+                .permissions
+                .tools_allowed()
+                .len(),
+            3
+        );
+        assert_eq!(
+            config.fix_with_claude_code.permissions.tools_denied().len(),
+            1
+        );
+    }
+
+    #[test]
+    fn test_fix_with_claude_default_when_omitted() {
+        let toml = r#"
+ide_command = "zed"
+        "#;
+        let config: AppConfig = toml::from_str(toml).unwrap();
+        // Should use defaults
+        assert!(config
+            .fix_with_claude_code
+            .prompt
+            .contains("analyze and fix"));
+        assert!(config.fix_with_claude_code.permissions.is_unrestricted());
+    }
+
+    #[test]
+    fn test_generate_default_toml() {
+        let toml = AppConfig::generate_default_toml();
+        assert!(toml.contains("# gh-pr-lander configuration"));
+        assert!(toml.contains("ide_command"));
+        assert!(toml.contains("[fix_with_claude_code]"));
+        assert!(toml.contains("multiplexer"));
+        assert!(toml.contains("prompt"));
+        assert!(toml.contains("[fix_with_claude_code.permissions]"));
+    }
+
+    #[test]
+    fn test_fix_with_claude_multiplexer_from_toml() {
+        let toml = r#"
+ide_command = "zed"
+
+[fix_with_claude_code]
+multiplexer = "tmux"
+prompt = "Fix PR #{pr_number}: {pr_title}"
+    "#;
+        let config: AppConfig = toml::from_str(toml).unwrap();
+        assert_eq!(
+            config.fix_with_claude_code.multiplexer,
+            gh_pr_fix_with_claude::Multiplexer::Tmux
+        );
     }
 }

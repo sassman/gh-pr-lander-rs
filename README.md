@@ -22,6 +22,11 @@ Full PR review in your terminal. Syntax highlighting, inline comments, submit re
 ### Build log viewer
 CI failed? Jump straight to errors with `n`. Navigate through workflows → jobs → steps in a tree.
 
+### Fix PR with Claude
+Spawn a Claude Code session to fix a failing PR. The session runs in tmux and renders inside an embedded terminal panel — no context switching.
+
+<video src="screenshots/fix-pr-with-claude.webm" autoplay loop muted playsinline></video>
+
 ### Command palette
 Forgot a keybinding? `Ctrl+P` and fuzzy search. Every action is discoverable.
 
