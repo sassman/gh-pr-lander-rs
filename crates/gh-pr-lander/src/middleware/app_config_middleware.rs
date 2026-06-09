@@ -42,7 +42,9 @@ impl Middleware for AppConfigMiddleware {
                         "AppConfigMiddleware: Loaded config (ide_command: {})",
                         config.ide_command
                     );
-                    dispatcher.dispatch(Action::Bootstrap(BootstrapAction::ConfigLoaded(config)));
+                    dispatcher.dispatch(Action::Bootstrap(BootstrapAction::ConfigLoaded(
+                        Box::new(config),
+                    )));
                     self.config_loaded = true;
                 }
                 true // Pass through

@@ -194,7 +194,7 @@ pub fn reduce(mut state: AppState, action: &Action) -> AppState {
                     state.splash.bootstrapping = false;
                 }
                 BootstrapAction::ConfigLoaded(config) => {
-                    state.app_config = config.clone();
+                    state.app_config = (**config).clone();
                     log::info!("App config loaded into state");
                 }
                 BootstrapAction::LoadRecentRepositories
