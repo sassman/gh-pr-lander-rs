@@ -15,6 +15,7 @@ use std::time::{Duration, Instant};
 mod actions;
 mod background;
 mod capabilities;
+mod cli;
 mod command_id;
 mod commands;
 mod dispatcher;
@@ -33,6 +34,8 @@ mod views;
 
 use actions::{Action, BootstrapAction, GlobalAction};
 use background::{spawn_background_worker, SharedState};
+use clap::Parser;
+use cli::Cli;
 use middleware::{
     app_config_middleware::AppConfigMiddleware, bootstrap_middleware::BootstrapMiddleware,
     command_palette_middleware::CommandPaletteMiddleware,
@@ -47,6 +50,10 @@ use state::AppState;
 use store::Store;
 
 fn main() -> io::Result<()> {
+    // Parse CLI args first — `--help`/`--version`/parse errors must print
+    // before we touch the terminal, otherwise raw mode swallows the output.
+    let cli = Cli::parse();
+
     // Initialize file-based logger (returns log file path for debug console)
     let log_file = logger::init();
 
@@ -74,7 +81,7 @@ fn main() -> io::Result<()> {
     let middleware: Vec<Box<dyn Middleware + Send>> = vec![
         Box::new(BootstrapMiddleware::new()),
         Box::new(SessionMiddleware::new()), // Session load/save - early in chain
-        Box::new(AppConfigMiddleware::new()), // Load app config early
+        Box::new(AppConfigMiddleware::new(cli.config.clone())), // Load app config early
         Box::new(GitHubMiddleware::new()),  // GitHub client & API operations
         Box::new(KeyboardMiddleware::new()),
         // Translation middlewares - convert generic actions to view-specific actions

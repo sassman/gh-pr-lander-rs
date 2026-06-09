@@ -4,6 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::env;
+use std::path::Path;
 
 /// Configuration for an external issue tracker (Jira, Linear, etc.)
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
@@ -93,9 +94,11 @@ impl Default for AppConfig {
 }
 
 impl AppConfig {
-    /// Load config from CWD first, then home directory, or use defaults
-    pub fn load() -> Self {
-        if let Some(content) = crate::load_config_file() {
+    /// Load config. With `Some(path)`, reads that exact file (no fallback to
+    /// the global one); with `None`, reads the global config. Falls back to
+    /// `Self::default()` when the file is missing or unparseable.
+    pub fn load(override_path: Option<&Path>) -> Self {
+        if let Some(content) = crate::load_config_file(override_path) {
             match toml::from_str(&content) {
                 Ok(config) => {
                     log::info!("Loaded app config from file");
@@ -191,5 +194,35 @@ repos = ["my-org/*", "other-org/repo"]
         assert_eq!(config.issue_tracker.len(), 1);
         assert_eq!(config.issue_tracker[0].repos.len(), 2);
         assert_eq!(config.issue_tracker[0].repos[0], "my-org/*");
+    }
+
+    #[test]
+    fn test_load_with_override_path_reads_that_file() {
+        let path = env::temp_dir().join(format!(
+            "gh-pr-config-override-{}-{}.toml",
+            std::process::id(),
+            line!()
+        ));
+        std::fs::write(&path, r#"ide_command = "nvim""#).unwrap();
+
+        let config = AppConfig::load(Some(&path));
+
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(config.ide_command, "nvim");
+    }
+
+    #[test]
+    fn test_load_with_missing_override_falls_back_to_defaults() {
+        let path = env::temp_dir().join(format!(
+            "gh-pr-config-missing-{}-{}.toml",
+            std::process::id(),
+            line!()
+        ));
+        assert!(!path.exists());
+
+        let config = AppConfig::load(Some(&path));
+
+        // Defaults — not whatever the global config might happen to contain.
+        assert_eq!(config.ide_command, "code");
     }
 }
