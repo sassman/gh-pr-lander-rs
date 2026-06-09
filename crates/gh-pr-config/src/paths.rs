@@ -1,11 +1,7 @@
-//! Configuration and data directory paths
+//! Config and data directory paths.
 //!
-//! Uses XDG directories via `dirs` crate with fallbacks.
-//!
-//! Platform-specific locations:
-//! - Linux: `~/.config/gh-pr-lander/`, `~/.cache/gh-pr-lander/`
-//! - macOS: `~/Library/Application Support/gh-pr-lander/`, `~/Library/Caches/gh-pr-lander/`
-//! - Windows: `%APPDATA%\gh-pr-lander\`, `%LOCALAPPDATA%\gh-pr-lander\`
+//! Uses `dirs-lite` with `favor-xdg-style`: macOS gets XDG paths
+//! (`~/.config`, `~/.cache`) instead of `~/Library/...`.
 
 use anyhow::{Context, Result};
 use std::path::PathBuf;
@@ -13,50 +9,41 @@ use std::path::PathBuf;
 const APP_NAME: &str = "gh-pr-lander";
 const LOCAL_SESSION_FILE: &str = ".gh-pr-lander.session.toml";
 
-/// Get the application config directory
-/// Returns ~/.config/gh-pr-lander/ on Linux, ~/Library/Application Support/gh-pr-lander/ on macOS
 pub fn config_dir() -> Result<PathBuf> {
-    let base = dirs::config_dir().context("Could not determine config directory")?;
+    let base = dirs_lite::config_dir().context("Could not determine config directory")?;
     let dir = base.join(APP_NAME);
     std::fs::create_dir_all(&dir)?;
     Ok(dir)
 }
 
-/// Get the application cache directory
-/// Returns ~/.cache/gh-pr-lander/ on Linux, ~/Library/Caches/gh-pr-lander/ on macOS
 pub fn cache_dir() -> Result<PathBuf> {
-    let base = dirs::cache_dir().context("Could not determine cache directory")?;
+    let base = dirs_lite::cache_dir().context("Could not determine cache directory")?;
     let dir = base.join(APP_NAME);
     std::fs::create_dir_all(&dir)?;
     Ok(dir)
 }
 
-/// Get path to global session file
 pub fn global_session_path() -> Result<PathBuf> {
     Ok(config_dir()?.join("session.toml"))
 }
 
-/// Get path to local session file (in CWD)
+/// Session file in the current working directory.
 pub fn local_session_path() -> Result<PathBuf> {
     Ok(std::env::current_dir()?.join(LOCAL_SESSION_FILE))
 }
 
-/// Check if local session file exists
 pub fn has_local_session() -> bool {
     local_session_path().map(|p| p.exists()).unwrap_or(false)
 }
 
-/// Get path to recent repositories file
 pub fn recent_repositories_path() -> Result<PathBuf> {
     Ok(config_dir()?.join("recent-repositories.toml"))
 }
 
-/// Get path to API cache file
 pub fn api_cache_path() -> Result<PathBuf> {
     Ok(cache_dir()?.join("gh-api-cache.json"))
 }
 
-/// Get path to app config file
 pub fn app_config_path() -> Result<PathBuf> {
     Ok(config_dir()?.join("config.toml"))
 }
