@@ -4,3 +4,4 @@
 .gh-pr-lander.repos.json
 
 target/
+debug*.log
