@@ -293,26 +293,40 @@ impl Keymap {
     /// Get a compact hint string for a command (e.g., "j/↓" for NavigateNext)
     /// Deduplicates hints and joins with "/"
     pub fn compact_hint_for_command(&self, command: CommandId) -> Option<String> {
-        let hints: Vec<&str> = self
+        self.compact_hint_for_command_filtered(command, |_| true)
+    }
+
+    /// Like [`compact_hint_for_command`], but only keeps hints for which `keep`
+    /// returns true. Useful when a view captures certain key shapes (e.g. a
+    /// text input swallows single ASCII chars) and the footer should hide them.
+    /// Returns `None` if no hints match the command, or if the filter rejects
+    /// every hint.
+    pub fn compact_hint_for_command_filtered<F>(
+        &self,
+        command: CommandId,
+        keep: F,
+    ) -> Option<String>
+    where
+        F: Fn(&str) -> bool,
+    {
+        let mut unique_hints: Vec<&str> = Vec::new();
+        for hint in self
             .bindings
             .iter()
             .filter(|(b, _)| b.command == command)
             .map(|(b, _)| b.hint.as_str())
-            .collect();
-
-        if hints.is_empty() {
-            return None;
-        }
-
-        // Deduplicate (e.g., backtab and shift+tab both have "Shift+Tab" hint)
-        let mut unique_hints: Vec<&str> = Vec::new();
-        for hint in hints {
+            .filter(|h| keep(h))
+        {
             if !unique_hints.contains(&hint) {
                 unique_hints.push(hint);
             }
         }
 
-        Some(unique_hints.join("/"))
+        if unique_hints.is_empty() {
+            None
+        } else {
+            Some(unique_hints.join("/"))
+        }
     }
 }
 

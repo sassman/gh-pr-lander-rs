@@ -4,9 +4,8 @@
 //! data preparation from rendering logic.
 
 use crate::command_id::CommandId;
-use crate::commands::{filter_commands, get_issue_commands, get_palette_commands_with_hints};
+use crate::commands::{build_palette_commands, filter_commands};
 use crate::state::AppState;
-use crate::utils::issue_extractor::RepoContext;
 use ratatui::style::Color;
 
 /// View model for the command palette
@@ -68,29 +67,17 @@ pub struct SelectedCommandDetails {
 }
 
 impl CommandPaletteViewModel {
-    /// Build view model from application state
-    pub fn from_state(state: &AppState) -> Self {
+    /// Build view model from application state.
+    ///
+    /// `inner_height` is the row count the results table will actually render
+    /// into — the view computes it from its layout and hands it down. Offset
+    /// is derived here, so neither the reducer nor app state needs to know
+    /// about widget geometry.
+    pub fn from_state(state: &AppState, inner_height: u16) -> Self {
         let theme = &state.theme;
 
-        // Get static commands
-        let mut all_commands = get_palette_commands_with_hints(&state.keymap);
-
-        // Add dynamic issue commands based on selected PRs and repo context
-        let pr_texts = Self::get_selected_pr_texts(state);
-        let repo_ctx = Self::get_repo_context(state);
-        log::debug!(
-            "CommandPaletteViewModel: issue_tracker config count={}, pr_texts={:?}, repo_ctx={:?}",
-            state.app_config.issue_tracker.len(),
-            pr_texts,
-            repo_ctx
-        );
-        let issue_commands =
-            get_issue_commands(&state.app_config.issue_tracker, &pr_texts, &repo_ctx);
-        log::debug!(
-            "CommandPaletteViewModel: generated {} issue commands",
-            issue_commands.len()
-        );
-        all_commands.extend(issue_commands);
+        // Single source of truth — same list reducer clamps and middleware executes.
+        let all_commands = build_palette_commands(state);
 
         let total_commands = all_commands.len();
 
@@ -110,12 +97,33 @@ impl CommandPaletteViewModel {
             .unwrap_or(10) as u16
             + 4;
 
-        // Build visible rows
-        let visible_rows: Vec<CommandRow> = filtered_commands
+        // Clamp selection against the current filtered list (defensive — the
+        // reducer already clamps on navigation, but typing changes the list).
+        let selected_index = state
+            .command_palette
+            .selected_index
+            .min(filtered_commands.len().saturating_sub(1));
+
+        // Derive the visible window from selection + rendered area:
+        //   anchor selection at the bottom of the viewport when scrolled,
+        //   otherwise show from the top.
+        let viewport = inner_height as usize;
+        let (offset, end) = if viewport == 0 || filtered_commands.is_empty() {
+            (0, filtered_commands.len())
+        } else {
+            let offset = selected_index
+                .saturating_sub(viewport.saturating_sub(1))
+                .min(filtered_commands.len().saturating_sub(viewport.min(filtered_commands.len())));
+            let end = (offset + viewport).min(filtered_commands.len());
+            (offset, end)
+        };
+
+        let visible_rows: Vec<CommandRow> = filtered_commands[offset..end]
             .iter()
             .enumerate()
-            .map(|(idx, cmd)| {
-                let is_selected = idx == state.command_palette.selected_index;
+            .map(|(local_idx, cmd)| {
+                let absolute_idx = offset + local_idx;
+                let is_selected = absolute_idx == selected_index;
 
                 // Selection indicator
                 let indicator = if is_selected {
@@ -156,27 +164,37 @@ impl CommandPaletteViewModel {
             .collect();
 
         // Get selected command details
-        let selected_command = filtered_commands
-            .get(state.command_palette.selected_index)
-            .map(|cmd| SelectedCommandDetails {
-                description: cmd.description().to_string(),
-            });
+        let selected_command =
+            filtered_commands
+                .get(selected_index)
+                .map(|cmd| SelectedCommandDetails {
+                    description: cmd.description().to_string(),
+                });
 
-        // Build footer hints from keymap
+        // Build footer hints from keymap. The command palette has TEXT_INPUT
+        // capability, so single-ASCII-char bindings (j, k, …) are swallowed by
+        // the input field and shouldn't appear in the navigation hint.
+        let keep_non_text_input = |hint: &str| !(hint.len() == 1 && hint.is_ascii());
+
         let footer_hints = FooterHints {
             navigate_up: state
                 .keymap
-                .compact_hint_for_command(CommandId::NavigatePrevious)
+                .compact_hint_for_command_filtered(
+                    CommandId::NavigatePrevious,
+                    keep_non_text_input,
+                )
                 .unwrap_or_else(|| "↑".to_string()),
             navigate_down: state
                 .keymap
-                .compact_hint_for_command(CommandId::NavigateNext)
+                .compact_hint_for_command_filtered(
+                    CommandId::NavigateNext,
+                    keep_non_text_input,
+                )
                 .unwrap_or_else(|| "↓".to_string()),
             close: state
                 .keymap
-                .hint_for_command(CommandId::GlobalClose)
-                .unwrap_or("Esc")
-                .to_string(),
+                .compact_hint_for_command_filtered(CommandId::GlobalClose, keep_non_text_input)
+                .unwrap_or_else(|| "Esc".to_string()),
         };
 
         Self {
@@ -188,50 +206,5 @@ impl CommandPaletteViewModel {
             max_category_width,
             footer_hints,
         }
-    }
-
-    /// Get PR texts from currently selected/active PRs for issue extraction
-    fn get_selected_pr_texts(state: &AppState) -> Vec<String> {
-        let repo_idx = state.main_view.selected_repository;
-        let Some(repo_data) = state.main_view.repo_data.get(&repo_idx) else {
-            return vec![];
-        };
-
-        // If PRs are explicitly selected, use those; otherwise use cursor PR
-        let pr_numbers: Vec<usize> = if repo_data.selected_pr_numbers.is_empty() {
-            // Use cursor PR
-            repo_data
-                .prs
-                .get(repo_data.selected_pr)
-                .map(|pr| vec![pr.number])
-                .unwrap_or_default()
-        } else {
-            // Use explicitly selected PRs
-            repo_data.selected_pr_numbers.iter().copied().collect()
-        };
-
-        // Build text for each PR (title + description)
-        pr_numbers
-            .iter()
-            .filter_map(|&num| repo_data.prs.iter().find(|pr| pr.number == num))
-            .map(|pr| format!("{} {}", pr.title, pr.body))
-            .collect()
-    }
-
-    /// Get repository context for issue extraction
-    fn get_repo_context(state: &AppState) -> RepoContext {
-        let repo_idx = state.main_view.selected_repository;
-        state
-            .main_view
-            .repositories
-            .get(repo_idx)
-            .map(|repo| {
-                RepoContext::new(
-                    &repo.org,
-                    &repo.repo,
-                    repo.host.as_deref().unwrap_or(gh_client::DEFAULT_HOST),
-                )
-            })
-            .unwrap_or_default()
     }
 }

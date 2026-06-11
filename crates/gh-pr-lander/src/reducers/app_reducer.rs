@@ -151,10 +151,11 @@ pub fn reduce(mut state: AppState, action: &Action) -> AppState {
                 let popped = state.view_stack.pop();
                 log::debug!("Closed view: {:?}", popped.map(|v| v.view_id()));
             }
+            let all_commands = crate::commands::build_palette_commands(&state);
             state.command_palette = command_palette_reducer::reduce_command_palette(
                 state.command_palette,
                 sub,
-                &state.keymap,
+                &all_commands,
             );
             state
         }

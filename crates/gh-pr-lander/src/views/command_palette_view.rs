@@ -92,9 +92,6 @@ impl View for CommandPaletteView {
 fn render(state: &AppState, area: Rect, f: &mut Frame) {
     let theme = &state.theme;
 
-    // Build view model - all data preparation happens here
-    let vm = CommandPaletteViewModel::from_state(state);
-
     // Render dimmed overlay over the entire screen to create modal effect
     let overlay = Block::default().style(
         ratatui::style::Style::default()
@@ -121,6 +118,26 @@ fn render(state: &AppState, area: Rect, f: &mut Frame) {
 
     // Render popup background
     f.render_widget(Block::default().style(theme.panel_background()), popup_area);
+
+    // Calculate inner area with margins, then split. Layout is done first so
+    // the view model knows the exact results-table height and can window
+    // visible rows accordingly — no viewport state in the store.
+    let inner = popup_area.inner(Margin {
+        horizontal: 2,
+        vertical: 1,
+    });
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3), // Input box
+            Constraint::Min(5),    // Results list
+            Constraint::Length(1), // Help line — sits on the last inner row
+        ])
+        .split(inner);
+
+    // Build view model with the rendered results-table height in hand.
+    let vm = CommandPaletteViewModel::from_state(state, chunks[1].height);
 
     // Build footer hint for bottom border using pre-computed hints from view model
     let footer_hint = Line::from(vec![
@@ -150,22 +167,6 @@ fn render(state: &AppState, area: Rect, f: &mut Frame) {
         .style(theme.panel_background());
 
     f.render_widget(block, popup_area);
-
-    // Calculate inner area with margins
-    let inner = popup_area.inner(Margin {
-        horizontal: 2,
-        vertical: 1,
-    });
-
-    // Split into input area, results area, and details area (footer is now in bottom border)
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(3), // Input box
-            Constraint::Min(5),    // Results list
-            Constraint::Length(2), // Details area
-        ])
-        .split(inner);
 
     // Render input box
     let input_text = if vm.input_is_empty {
@@ -238,12 +239,13 @@ fn render(state: &AppState, area: Rect, f: &mut Frame) {
         f.render_widget(table, chunks[1]);
     }
 
-    // Render details area with selected command description
+    // Render help line with selected command description on the last inner row.
+    // Bulb prefix + italic muted style signals "helper context, not a list item".
     if let Some(ref selected_cmd) = vm.selected_command {
-        let details_line = Line::from(vec![Span::styled(
-            &selected_cmd.description,
-            theme.text_secondary(),
-        )]);
+        let details_line = Line::from(vec![
+            Span::styled("💡 ", theme.muted()),
+            Span::styled(&selected_cmd.description, theme.muted().italic()),
+        ]);
 
         let details_paragraph = Paragraph::new(details_line)
             .wrap(Wrap { trim: false })
