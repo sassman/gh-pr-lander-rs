@@ -160,7 +160,14 @@ Tracked repositories are stored in `.gh-pr-lander.repos.json`:
 
 ### App Settings
 
-Create `~/.gh-pr-lander.toml` (or `.gh-pr-lander.toml` in the current directory):
+Create `config.toml` inside the app's config directory:
+
+| OS            | Path                                                        |
+|---------------|-------------------------------------------------------------|
+| Linux / macOS | `$XDG_CONFIG_HOME/gh-pr-lander/config.toml` (defaults to `~/.config/gh-pr-lander/config.toml`) |
+| Windows       | `%APPDATA%\gh-pr-lander\config.toml`                        |
+
+To use a different file ad-hoc, pass `--config <path>` on the command line.
 
 ```toml
 # IDE to open PRs in (default: "code")

@@ -296,7 +296,7 @@ impl Keymap {
         self.compact_hint_for_command_filtered(command, |_| true)
     }
 
-    /// Like [`compact_hint_for_command`], but only keeps hints for which `keep`
+    /// Like [`Self::compact_hint_for_command`], but only keeps hints for which `keep`
     /// returns true. Useful when a view captures certain key shapes (e.g. a
     /// text input swallows single ASCII chars) and the footer should hide them.
     /// Returns `None` if no hints match the command, or if the filter rejects
