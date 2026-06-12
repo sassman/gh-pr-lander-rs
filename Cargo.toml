@@ -44,7 +44,7 @@ ratatui = "0.30.0"
 chrono = { version = "0.4", features = ["serde"] }
 
 # Config
-toml = "0.9"
+toml = "1.1"
 dotenvy = "0.15"
 
 # Logging
