@@ -1,0 +1,2 @@
+[aliases]
+i = "cargo install --path ./crates/gh-pr-lander"
