@@ -113,7 +113,11 @@ impl CommandPaletteViewModel {
         } else {
             let offset = selected_index
                 .saturating_sub(viewport.saturating_sub(1))
-                .min(filtered_commands.len().saturating_sub(viewport.min(filtered_commands.len())));
+                .min(
+                    filtered_commands
+                        .len()
+                        .saturating_sub(viewport.min(filtered_commands.len())),
+                );
             let end = (offset + viewport).min(filtered_commands.len());
             (offset, end)
         };
@@ -179,17 +183,11 @@ impl CommandPaletteViewModel {
         let footer_hints = FooterHints {
             navigate_up: state
                 .keymap
-                .compact_hint_for_command_filtered(
-                    CommandId::NavigatePrevious,
-                    keep_non_text_input,
-                )
+                .compact_hint_for_command_filtered(CommandId::NavigatePrevious, keep_non_text_input)
                 .unwrap_or_else(|| "↑".to_string()),
             navigate_down: state
                 .keymap
-                .compact_hint_for_command_filtered(
-                    CommandId::NavigateNext,
-                    keep_non_text_input,
-                )
+                .compact_hint_for_command_filtered(CommandId::NavigateNext, keep_non_text_input)
                 .unwrap_or_else(|| "↓".to_string()),
             close: state
                 .keymap
