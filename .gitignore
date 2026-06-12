@@ -5,3 +5,4 @@
 
 target/
 debug*.log
+.DS_Store
